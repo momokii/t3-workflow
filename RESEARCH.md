@@ -153,19 +153,47 @@ Komponen dan tanggung jawab:
 | **1. Bridge baca** | `/help`, `/projects`, `/threads`, `/ctx` | perintah dijawab dari data nyata; tidak ada penulisan ke T3 | **selesai** — `bridge/t3_bridge.py`, diuji dengan T3 sungguhan |
 | **1b. Bridge tulis** | `/send`, `/new` | pesan benar-benar masuk ke thread tujuan; id thread divalidasi; audit tercatat | **selesai** — 17 test lulus, jalur tulis diuji sampai ke CLI nyata (kasus negatif) |
 | **2. Approval routing** | kirim permintaan persetujuan ke Telegram, balasan `approve/reject` | satu permintaan, satu balasan, idempoten; percobaan kedua diabaikan | desain siap, belum dibangun |
-| **3. Tiket** | GitHub Issues + label status, atau SQLite | tiket bisa dibuat dari Telegram, status terlihat | desain siap |
-| **4. Watcher dev** | poller → `t3 thread start/send`, catat id thread ke tiket | satu tiket = satu thread, tanpa duplikasi | desain siap |
+| **3. Tiket** | SQLite + CLI (`tickets/store.py`, `tickets/cli.py`), profil model di config | tiket bisa dibuat/dipindah, profil model divalidasi saat pembuatan | **selesai (dasar)** — 12 test |
+| **4. Watcher dev** | `watcher.py --once`, dry-run dulu | rencana perintah benar; klaim atomik; tiket gagal → `blocked` | **selesai untuk `--once` + dry-run**; loop & pemilihan otomatis menyusul |
 | **5. Watcher test** | jalankan test, tempel bukti, pindah status | status hanya berubah bila exit code 0 | desain siap |
 | **6. Rilis** | changelog + bukti + PR, push manual | PR berisi changelog dan bukti test | desain siap, menunggu keputusan aturan push |
 
 ---
 
-## 7. Keputusan yang menunggu Anda
+## 7. Keputusan yang sudah diambil (2026-11-25)
 
-1. **Sumber tiket**: GitHub Issues atau SQLite lokal?
-2. **Batas otonomi**: watcher boleh `thread start` sendiri, atau selalu membuat draft yang Anda setujui?
-3. **Push**: tetap manual, atau nanti didelegasikan ke watcher setelah ada rollback teruji?
-4. **Kanal persetujuan**: Telegram saja, atau Telegram + WhatsApp saat sesi WA hidup?
+| # | Keputusan | Alasan Anda | Konsekuensi teknis |
+|---|---|---|---|
+| 1 | **SQLite dulu**, GitHub Issues menyusul bila perlu | ingin database persisten yang proper | `tickets/store.py`; migrasi nanti cukup menambah sinkronisasi, bukan menulis ulang |
+| 2 | **Model dipilih manusia, persisten, watcher mengikuti** | pemilihan model hanya oleh Anda | tiket menyebut *profil*; profil hidup di `~/.config/t3-workflow/config.json`; profil asing ditolak saat tiket dibuat |
+| 3 | **Push setelah semuanya aman**, iterasi sampai aman | kualitas di atas kecepatan | watcher berhenti di "siap di-push"; gate test wajib lulus |
+| 4 | **Telegram saja** untuk persetujuan | sesuai rekomendasi | layanan approval idempoten, balasan pertama menang |
+| 5 | **Bridge diaktifkan** | agar bisa memerintah dari HP | `t3-bridge.service` enabled + active |
+| 6 | **Repo pilot: `t3-workflow`** | risiko nol untuk uji loop | tiket pilot T-0001 |
+| 7 | **Model + harness lewat config**, bukan ditulis manual tiap tiket | ingin pembagian model yang konsisten | 4 profil: `fast`, `deep`, `cheap`, `build` (provider `pi` dan `opencode`) |
+
+### Masih terbuka
+
+- **UI kanban**: CLI dulu; web UI menyusul di repo ini juga (lihat §9).
+- **Waktu migrasi ke GitHub Issues**: setelah loop terbukti di SQLite.
+- **Siapa yang memindahkan tiket `testing → review`**: watcher test (fase 5) atau Anda.
+
+## 9. Kanban: dibangun di repo ini, bukan project terpisah
+
+Keputusan: **satu repo** (`t3-workflow`). Alasannya `[inference]`:
+
+1. Tiket, watcher, dan bridge berbagi model data yang sama; memisahkan repo berarti memelihara kontrak antar-repo untuk hal yang masih berubah cepat.
+2. Ukurannya kecil: store + CLI sekarang ±350 baris, dan UI nanti cukup satu halaman yang membaca SQLite yang sama.
+3. Risiko operasional lebih rendah: satu service, satu config, satu tempat audit.
+
+Bentuk yang direncanakan, berurutan:
+
+| Tahap | Isi | Alasan urutan |
+|---|---|---|
+| Sekarang | CLI + SQLite (selesai) | membuktikan state machine dan klaim atomik lebih dulu |
+| Berikutnya | Halaman baca-saja (HTML dari SQLite) | memberi gambaran papan tanpa menambah jalur tulis baru |
+| Setelah itu | Papan drag-and-drop | butuh endpoint tulis + autentikasi; baru layak setelah alur stabil |
+| Opsional | Sinkronisasi GitHub Issues | dua arah menambah kompleksitas; tunggu kebutuhan nyata |
 
 ---
 

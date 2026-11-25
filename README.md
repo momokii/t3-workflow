@@ -64,6 +64,22 @@ journalctl --user -u t3-bridge -f
 - `dryRun: true` → perintah tulis hanya dicetak, tidak dijalankan.
 - `allowWrites: false` → `/send` dan `/new` ditolak.
 
+## Tiket dan watcher
+
+```bash
+python3 tickets/cli.py init
+python3 tickets/cli.py profiles
+python3 tickets/cli.py add "Judul" --project t3-workflow --profile fast --test "python3 -m unittest discover -s tests"
+python3 tickets/cli.py list
+python3 tickets/cli.py move T-0001 ready
+python3 watcher.py --once --dry-run     # cetak rencana, tidak mengubah apa pun
+python3 watcher.py --once               # klaim atomik + mulai thread
+```
+
+Status: `backlog → ready → in-progress → testing → review → done`, plus `blocked`.
+Transisi lain ditolak. Profil model ada di `~/.config/t3-workflow/config.json`
+dan hanya dibaca oleh watcher — watcher tidak pernah memilih model sendiri.
+
 ## Status audit
 
 Setiap perintah dicatat di `~/.local/state/t3-bridge/audit.jsonl`; log di `bridge.log`; offset update di `state.json`.
