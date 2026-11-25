@@ -197,6 +197,10 @@ def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: s
 def loop(store_factory, config: dict, t3_cli: str, interval: int, worker: str) -> None:
     print(f"watcher mulai (interval {interval}s)", flush=True)
     while True:
+        if not (config.get("watcher") or {}).get("enabled", True):
+            print("watcher dijeda lewat config (watcher.enabled=false)", flush=True)
+            time.sleep(max(60, interval))
+            continue
         store = store_factory()
         try:
             message = step(store, config, t3_cli, dry_run=False, worker=worker)

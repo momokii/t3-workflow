@@ -80,6 +80,40 @@ Status: `backlog → ready → in-progress → testing → review → done`, plu
 Transisi lain ditolak. Profil model ada di `~/.config/t3-workflow/config.json`
 dan hanya dibaca oleh watcher — watcher tidak pernah memilih model sendiri.
 
+## Layanan yang berjalan
+
+| Unit | Isi | Bind / irama |
+|---|---|---|
+| `t3-bridge.service` | Telegram ⇄ T3 | long polling |
+| `t3-watcher.service` | dev + test stage | tiap `watcher.intervalSeconds` (120 s) |
+| `t3-board.service` | papan kanban | `100.124.184.116:8787` |
+
+Menjeda tanpa mematikan service: set `watcher.enabled=false` di
+`~/.config/t3-workflow/config.json`, lalu `systemctl --user restart t3-watcher`.
+Menghentikan total: `systemctl --user disable --now t3-watcher`.
+
+## Alur lengkap
+
+```
+backlog ──(anda)──► ready ──(watcher dev)──► in-progress ──(anda/model)──► testing
+                                                      ▲                        │
+                                                      │            (watcher test: test_cmd)
+                                                      │                        │
+                                                      └──── gagal ◄────────────┤
+                                                                               │ lulus
+                                                                               ▼
+                                                     done ◄──(anda)── review ◄─┘
+                                                       │
+                                                laporan otomatis
+                                       ~/.local/state/t3-workflow/reports/T-xxxx.md
+```
+
+- Tiket dengan `requires_approval` menunggu keputusan; bridge mengirim pesan dan
+  menerima `/approve <id>` atau `/reject <id>`. Balasan kedua diabaikan.
+- `in-progress → testing` bisa dilakukan model atau Anda (papan punya "Paksa pindah…").
+- `testing` selalu dijalankan watcher: exit code 0 → `review` dengan bukti; selain itu
+  kembali `in-progress` dengan kutipan kegagalan.
+
 ## Papan kanban
 
 Board berjalan sebagai service user di **tailnet**, bukan di localhost:

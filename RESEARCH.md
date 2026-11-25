@@ -152,11 +152,11 @@ Komponen dan tanggung jawab:
 |---|---|---|---|
 | **1. Bridge baca** | `/help`, `/projects`, `/threads`, `/ctx` | perintah dijawab dari data nyata; tidak ada penulisan ke T3 | **selesai** — `bridge/t3_bridge.py`, diuji dengan T3 sungguhan |
 | **1b. Bridge tulis** | `/send`, `/new` | pesan benar-benar masuk ke thread tujuan; id thread divalidasi; audit tercatat | **selesai** — 17 test lulus, jalur tulis diuji sampai ke CLI nyata (kasus negatif) |
-| **2. Approval routing** | kirim permintaan persetujuan ke Telegram, balasan `approve/reject` | satu permintaan, satu balasan, idempoten; percobaan kedua diabaikan | desain siap, belum dibangun |
+| **2. Approval routing** | kirim permintaan persetujuan ke Telegram, balasan `approve/reject` | satu permintaan, satu balasan, idempoten; percobaan kedua diabaikan | **selesai** — bridge + papan + `decide_approval` idempoten |
 | **3. Tiket** | SQLite + CLI (`tickets/store.py`, `tickets/cli.py`), profil model di config | tiket bisa dibuat/dipindah, profil model divalidasi saat pembuatan | **selesai (dasar)** — 12 test |
 | **4. Watcher dev** | `watcher.py --once`, dry-run dulu | rencana perintah benar; klaim atomik; tiket gagal → `blocked` | **selesai untuk `--once` + dry-run**; loop & pemilihan otomatis menyusul |
-| **5. Watcher test** | jalankan test, tempel bukti, pindah status | status hanya berubah bila exit code 0 | desain siap |
-| **6. Rilis** | changelog + bukti + PR, push manual | PR berisi changelog dan bukti test | desain siap, menunggu keputusan aturan push |
+| **5. Watcher test** | jalankan test, tempel bukti, pindah status | status hanya berubah bila exit code 0 | **selesai** — `run_test`, bukti tersimpan, `t3-watcher.service` aktif |
+| **6. Rilis** | laporan markdown otomatis saat `done` | laporan memuat status, thread, bukti test, riwayat | **selesai sebagian** — laporan jalan; PR/push tetap manual (keputusan 3B) |
 | **7. Papan kanban** | `board/server.py` + `board/static/index.html` | drag-and-drop berfungsi; ada alternatif single-pointer (WCAG 2.2 SC 2.5.7); laporan per tiket bisa diunduh | **selesai** — 20 test API + verifikasi visual terang/gelap |
 
 ---
@@ -181,6 +181,12 @@ Komponen dan tanggung jawab:
 | WCAG 2.1.1 / 2.4.7 | harus bisa keyboard, fokus terlihat `[w3c]` | kartu `tabindex=0`, `:focus-visible` 2px, select/button native |
 | NN/g drag-and-drop | signifier grabbable, feedback saat grab dan saat drop, alternatif untuk presisi `[nng]` | `cursor: grab`, kartu `dragging` memudar, kolom tujuan bergaris putus-putus, select sebagai alternatif presisi |
 | ARIA live | perubahan status diumumkan `[w3c]` | `aria-live="polite"` untuk toast dan pengumuman |
+
+### Bukti siklus penuh (2026-11-25)
+
+T-0001 dijalankan ujung ke ujung pada repo ini: `backlog → ready → in-progress`
+(thread `mcp:72b322c1…`), `→ testing` (watcher menjalankan `python3 -m unittest discover -s tests`,
+rc=0), `→ review`, `→ done`. Laporan otomatis: `~/.local/state/t3-workflow/reports/T-0001.md`.
 
 ### Masih terbuka
 
