@@ -59,11 +59,15 @@
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x proximity; }
   section.col { scroll-snap-align: start; }
   .col[data-status="done"], .col[data-status="blocked"] { max-width: 220px; }
-  @media (max-width: 1180px) {
-    .board { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Semua kolom harus terlihat tanpa scroll horizontal di lebar umum.
+     7 kolom hanya muat di layar sangat lebar; di bawah itu grid membungkus. */
+  @media (max-width: 1800px) {
+    .board { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .col[data-status="done"], .col[data-status="blocked"] { max-width: none; }
   }
-  @media (max-width: 720px) { .board { grid-template-columns: 1fr; } }
+  @media (max-width: 1400px) { .board { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 980px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 660px) { .board { grid-template-columns: 1fr; } }
   section.col { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; min-height: 140px; }
   section.col[data-drop="on"] { outline: 2px dashed var(--accent); outline-offset: -4px; background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
   .col-head { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px 10px; }
@@ -286,6 +290,12 @@
     }
     force.appendChild(row);
     el.appendChild(force);
+
+    // Kolom akhir (done) tidak punya transisi: sembunyikan kontrol yang tak berguna.
+    if (!allowed.length) {
+      el.querySelector('.move')?.remove();
+      el.querySelector('details.force')?.remove();
+    }
 
     el.addEventListener('dragstart', (e) => {
       e.dataTransfer.setData('text/ticket', t.id);
