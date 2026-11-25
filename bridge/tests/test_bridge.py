@@ -55,6 +55,82 @@ def make_config(tmp: Path, **overrides) -> dict:
     return config
 
 
+WF_CONFIG = {
+    "models": {"fast": {"provider": "pi", "model": "opencode-go/deepseek-v4.1-flash"}},
+    "defaults": {"profile": "fast"},
+}
+
+
+class TicketCommandTests(unittest.TestCase):
+    """Perintah tiket dan persetujuan lewat bridge."""
+
+    def setUp(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        sys.path.insert(0, str(root / "tickets"))
+        from store import TicketStore
+
+        self.store_cls = TicketStore
+        self.tmp = Path(tempfile.mkdtemp(prefix="bridge-tickets-"))
+        self.wf_config = self.tmp / "wf.json"
+        self.wf_config.write_text(json.dumps(WF_CONFIG))
+        self.db = self.tmp / "t.sqlite"
+        TicketStore(self.db, self.wf_config).close()
+
+        self.config = json.loads(json.dumps(bridge.DEFAULTS))
+        self.config["telegram"].update({"botToken": "t", "allowChatIds": [CHAT], "apiBase": "http://127.0.0.1:1"})
+        self.config["workflow"] = {"dbPath": str(self.db), "configPath": str(self.wf_config)}
+        bridge.STATE_DIR = self.tmp
+        bridge.STATE_PATH = self.tmp / "state.json"
+        bridge.LOG_PATH = self.tmp / "bridge.log"
+        bridge.AUDIT_PATH = self.tmp / "audit.jsonl"
+
+    def read(self, ticket_id: str):
+        store = self.store_cls(self.db, self.wf_config)
+        try:
+            return store.get(ticket_id)
+        finally:
+            store.close()
+
+    def test_ticket_command_creates_backlog_ticket(self) -> None:
+        answer = bridge.handle(self.config, CHAT, "/ticket t3-workflow perbaiki laporan")
+        self.assertIn("T-0001", answer or "")
+        ticket = self.read("T-0001")
+        self.assertEqual(ticket["status"], "backlog")
+        self.assertEqual(ticket["model_profile"], "fast")
+
+    def test_tickets_command_lists(self) -> None:
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
+        answer = bridge.handle(self.config, CHAT, "/tickets")
+        self.assertIn("T-0001", answer or "")
+        self.assertIn("backlog", answer or "")
+
+    def test_approve_command_decides(self) -> None:
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
+        store = self.store_cls(self.db, self.wf_config)
+        try:
+            approval = store.request_approval("T-0001", "mulai?")
+        finally:
+            store.close()
+        answer = bridge.handle(self.config, CHAT, f"/approve {approval['approval_id']}")
+        self.assertIn("disetujui", answer or "")
+        store = self.store_cls(self.db, self.wf_config)
+        try:
+            self.assertEqual(store.approval_state("T-0001"), "approved")
+        finally:
+            store.close()
+
+    def test_second_decision_is_reported_not_crashing(self) -> None:
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
+        store = self.store_cls(self.db, self.wf_config)
+        try:
+            approval = store.request_approval("T-0001", "mulai?")
+        finally:
+            store.close()
+        bridge.handle(self.config, CHAT, f"/approve {approval['approval_id']}")
+        answer = bridge.handle(self.config, CHAT, f"/reject {approval['approval_id']}")
+        self.assertIn("sudah", answer or "")
+
+
 class BridgeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="t3bridge-"))

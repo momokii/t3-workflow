@@ -461,12 +461,15 @@ def handle(config: dict, chat_id: str, text: str) -> str | None:
                 return "Pakai: /new <project> <teks>"
             return cmd_new(config, parts[0], parts[1])
         return f"Perintah /{command} tidak dikenal.\n\n" + cmd_help()
+    except StoreError as exc:
+        log(f"ditolak /{command}: {exc}")
+        return f"Ditolak: {str(exc)[:300]}"
     except RuntimeError as exc:
         log(f"error perintah /{command}: {exc}")
         return f"Error: {str(exc)[:300]}"
     except Exception as exc:  # bridge tidak boleh mati karena satu perintah
         log(f"error tak terduga /{command}: {type(exc).__name__}: {exc}")
-        return f"Error tak terduga: {type(exc).__name__}"
+        return f"Error tak terduga: {type(exc).__name__}: {str(exc)[:200]}"
 
 
 # ---------------------------------------------------------------- loop
