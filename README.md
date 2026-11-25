@@ -157,6 +157,21 @@ curl http://127.0.0.1:8787/api/report/T-0001     # dari papan
 Laporan memuat status, profil model, thread, perintah test, catatan bukti, dan
 seluruh riwayat tiket.
 
+## Batas dan pemeliharaan
+
+```bash
+# batas konkurensi + anggaran waktu (menit) ada di config
+python3 -c "import json,pathlib;print(json.loads((pathlib.Path.home()/'.config/t3-workflow/config.json').read_text()).get('limits'))"
+
+# backup database tiket + laporan
+python3 tickets/cli.py backup --out ~/.local/state/t3-workflow/backups
+```
+
+- `watcher.maxConcurrent` — jumlah tiket `in-progress` yang boleh berjalan bersamaan.
+- `limits.maxInProgressMinutes` — tiket yang melewatinya dipindah ke `blocked` beserta
+  menit terukurnya, supaya slot tidak tertahan thread yang macet. `0` mematikan.
+- Notifikasi: bridge mengirim satu pesan saat tiket masuk `review`, `done`, atau `blocked`.
+
 ## Status audit
 
 Setiap perintah dicatat di `~/.local/state/t3-bridge/audit.jsonl`; log di `bridge.log`; offset update di `state.json`.
