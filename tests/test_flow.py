@@ -58,6 +58,13 @@ class ProofTests(Base):
         kinds = [event["kind"] for event in self.store.events(ticket["id"])]
         self.assertIn("proof", kinds)
 
+    def test_list_public_hides_proof(self) -> None:
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing")
+        self.store.attach_proof(ticket["id"], True, "output rahasia")
+        public = self.store.list_public()[0]
+        self.assertNotIn("proof", public)
+        self.assertIn("proof", self.store.get(ticket["id"]))
+
     def test_report_contains_proof(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing")
         self.store.attach_proof(ticket["id"], False, "gagal di test 3")

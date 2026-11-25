@@ -86,6 +86,7 @@ MIGRATIONS = [
     ("tickets", "proof", "text not null default ''"),
     ("tickets", "report_path", "text not null default ''"),
     ("tickets", "requires_approval", "integer not null default 0"),
+    ("tickets", "pr_body_path", "text not null default ''"),
 ]
 
 
@@ -216,6 +217,41 @@ class TicketStore:
         if status == "done":
             self.write_report(ticket_id)
         return self.get(ticket_id)
+
+    def write_pr_body(self, ticket_id: str, branch: str, remote_url: str) -> str:
+        """Ringkasan untuk badan PR: apa yang berubah, bukti test, dan tautan."""
+        ticket = self.get(ticket_id)
+        reports_dir = Path(os.environ.get("T3_REPORTS_DIR", REPORTS_DIR))
+        target = reports_dir / f"{ticket_id}.pr.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            f"## {ticket_id} · {ticket['title']}",
+            "",
+            ticket["body"] or "",
+            "",
+            f"- Branch: `{branch}`",
+            f"- Profil model: `{ticket['model_profile'] or 'default'}`",
+        ]
+        if ticket["thread_id"]:
+            lines.append(f"- Thread: `{ticket['thread_id']}`")
+        if ticket["proof"]:
+            lines += ["", "### Bukti test", "", "```", ticket["proof"], "```"]
+        if ticket["test_cmd"]:
+            lines += ["", f"Perintah test: `{ticket['test_cmd']}`"]
+        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.con.execute(
+            "update tickets set pr_body_path=?, updated_at=? where id=?", (str(target), now(), ticket_id)
+        )
+        self._event(ticket_id, "pr-body", str(target))
+        self.con.commit()
+        return str(target)
+
+    def list_public(self, status: str | None = None) -> list[dict]:
+        """Daftar untuk HTTP: buang kolom yang bisa besar atau sensitif."""
+        rows = self.list(status)
+        for row in rows:
+            row.pop("proof", None)
+        return rows
 
     def write_report(self, ticket_id: str) -> str:
         """Tulis laporan markdown ke disk dan simpan path-nya di tiket.

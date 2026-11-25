@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import datetime, timezone
 import sqlite3
 import subprocess
 import sys
@@ -99,7 +100,7 @@ def approval_gate(store: TicketStore, ticket: dict) -> str | None:
     if state == "pending":
         return f"{ticket['id']} menunggu persetujuan"
     if state == "rejected":
-        store.move(ticket["id"], "blocked", "persetujuan ditolak", force=True)
+        store.move(ticket["id"], "blocked", "persetujuan ditolak")
         return f"{ticket['id']} ditolak → blocked"
     approval = store.request_approval(ticket["id"], f"Mulai tiket {ticket['id']}: {ticket['title']}")
     return f"{ticket['id']} butuh persetujuan (approval #{approval['approval_id']})"
@@ -134,15 +135,15 @@ def run_once(
     try:
         proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        store.move(ticket["id"], "blocked", f"start gagal: {type(exc).__name__}", force=True)
+        store.move(ticket["id"], "blocked", f"start gagal: {type(exc).__name__}")
         raise TicketError(f"gagal menjalankan t3: {type(exc).__name__}: {exc}") from exc
     if proc.returncode != 0:
-        store.move(ticket["id"], "blocked", f"t3 rc={proc.returncode}", force=True)
+        store.move(ticket["id"], "blocked", f"t3 rc={proc.returncode}")
         raise TicketError(f"t3 gagal (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:300]}")
     try:
         thread_id = json.loads(proc.stdout)["threadId"]
     except (json.JSONDecodeError, KeyError) as exc:
-        store.move(ticket["id"], "blocked", "output t3 bukan JSON", force=True)
+        store.move(ticket["id"], "blocked", "output t3 bukan JSON")
         raise TicketError(f"output t3 tidak berisi threadId: {(proc.stdout or '')[:200]}") from exc
     store.attach_thread(ticket["id"], thread_id)
     return f"{ticket['id']} → thread {thread_id} (profil {profile['name']})"
@@ -189,6 +190,14 @@ def release(store: TicketStore, ticket: dict, config: dict) -> str:
     cfg = config.get("release") or {}
     if not cfg.get("enabled"):
         raise TicketError("release dimatikan (release.enabled=false di config)")
+    mode = cfg.get("mode", "branch")
+    if mode != "branch":
+        raise TicketError(f"release.mode '{mode}' belum didukung (hanya 'branch')")
+    proof = (ticket.get("proof") or "").strip()
+    if not proof.startswith("[LULUS]"):
+        raise TicketError(
+            f"{ticket['id']} belum punya bukti test lulus — jalankan test dulu, atau pindahkan manual"
+        )
     path = project_path(ticket["project"])
     remote = cfg.get("remote", "origin")
     code, _ = _git(["remote", "get-url", remote], path)
@@ -199,7 +208,7 @@ def release(store: TicketStore, ticket: dict, config: dict) -> str:
     if code != 0:
         raise TicketError(f"git status gagal di {path}")
     if not status.strip():
-        store.move(ticket["id"], "done", "release: tidak ada perubahan untuk di-push", force=True)
+        store.move(ticket["id"], "done", "release: tidak ada perubahan untuk di-push")
         return f"{ticket['id']}: tidak ada perubahan — tiket langsung selesai"
 
     branch = f"ticket/{ticket['id'].lower()}-{_slug(ticket['title'])}"
@@ -224,9 +233,12 @@ def release(store: TicketStore, ticket: dict, config: dict) -> str:
     _, remote_url = _git(["remote", "get-url", remote], path)
     base = (config.get("release") or {}).get("baseBranch") or "main"
     link = compare_url(remote_url, base, branch)
+    body_path = store.write_pr_body(ticket["id"], branch, remote_url)
     store.set_branch(ticket["id"], branch, pr_url=link)
-    store.move(ticket["id"], "done", f"release: {branch} di-push ke {remote}", force=True)
+    store.move(ticket["id"], "done", f"release: {branch} di-push ke {remote}")
     suffix = f" · PR: {link}" if link else ""
+    if body_path:
+        suffix += f" · body: {body_path}"
     return f"{ticket['id']}: branch {branch} di-push ke {remote}{suffix}"
 
 
@@ -238,7 +250,7 @@ def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
     command = (ticket.get("test_cmd") or "").strip()
     if not command:
         store.attach_proof(ticket["id"], False, "tidak ada test_cmd pada tiket")
-        store.move(ticket["id"], "in-progress", "test dilewati: test_cmd kosong", force=True)
+        store.move(ticket["id"], "in-progress", "test dilewati: test_cmd kosong")
         return f"{ticket['id']}: test_cmd kosong → in-progress"
     cwd = project_path(ticket["project"])
     try:
@@ -248,7 +260,7 @@ def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         output = f"{type(exc).__name__}: {exc}"
         store.attach_proof(ticket["id"], False, output)
-        store.move(ticket["id"], "in-progress", "test timeout/error", force=True)
+        store.move(ticket["id"], "in-progress", "test timeout/error")
         return f"{ticket['id']}: test error ({type(exc).__name__}) → in-progress"
 
     output = ((proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")).strip()
@@ -256,9 +268,9 @@ def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
     ok = proc.returncode == 0
     store.attach_proof(ticket["id"], ok, tail or "(tanpa output)")
     if ok:
-        store.move(ticket["id"], "review", "test lulus", force=True)
+        store.move(ticket["id"], "review", "test lulus")
         return f"{ticket['id']}: test lulus (rc=0) → review"
-    store.move(ticket["id"], "in-progress", f"test gagal (rc={proc.returncode})", force=True)
+    store.move(ticket["id"], "in-progress", f"test gagal (rc={proc.returncode})")
     return f"{ticket['id']}: test gagal (rc={proc.returncode}) → in-progress"
 
 
@@ -276,8 +288,6 @@ def enforce_budget(store: TicketStore, config: dict) -> list[str]:
     limit = int((config.get("limits") or {}).get("maxInProgressMinutes", 0) or 0)
     if limit <= 0:
         return []
-    from datetime import datetime, timezone
-
     notes = []
     for ticket in active_tickets(store):
         stamp = ticket.get("claimed_at") or ticket.get("updated_at")
@@ -291,7 +301,7 @@ def enforce_budget(store: TicketStore, config: dict) -> list[str]:
         if minutes > limit:
             store.move(
                 ticket["id"], "blocked",
-                f"anggaran waktu: {minutes:.0f} menit > {limit} menit", force=True,
+                f"anggaran waktu: {minutes:.0f} menit > {limit} menit",
             )
             notes.append(f"{ticket['id']} melewati anggaran ({minutes:.0f} menit) → blocked")
     return notes

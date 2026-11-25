@@ -100,6 +100,31 @@ class ReleaseTests(unittest.TestCase):
         )
         self.assertEqual(watcher.compare_url("/tmp/bare.git", "main", "b"), "")
 
+    def test_release_refuses_without_passing_proof(self) -> None:
+        ticket = self.store.add("tanpa bukti", str(self.repo), model_profile="fast", status="review")
+        with self.assertRaises(TicketError) as ctx:
+            watcher.release(self.store, ticket, CONFIG)
+        self.assertIn("bukti test", str(ctx.exception))
+        self.assertEqual(self.store.get(ticket["id"])["status"], "review")
+
+    def test_release_refuses_unknown_mode(self) -> None:
+        ticket = self.ticket()
+        (self.repo / "c.txt").write_text("x\n")
+        config = json.loads(json.dumps(CONFIG))
+        config["release"]["mode"] = "main"
+        with self.assertRaises(TicketError):
+            watcher.release(self.store, ticket, config)
+
+    def test_release_writes_pr_body(self) -> None:
+        ticket = self.ticket()
+        (self.repo / "b.txt").write_text("perubahan\n")
+        watcher.release(self.store, ticket, CONFIG)
+        stored = self.store.get(ticket["id"])
+        self.assertTrue(stored["pr_body_path"])
+        body = Path(stored["pr_body_path"]).read_text()
+        self.assertIn(ticket["id"], body)
+        self.assertIn("Bukti test", body)
+
     def test_release_refuses_without_remote(self) -> None:
         ticket = self.ticket()
         git(["remote", "remove", "origin"], self.repo)

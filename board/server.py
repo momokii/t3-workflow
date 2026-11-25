@@ -107,7 +107,7 @@ class Handler(BaseHTTPRequestHandler):
                 profiles = sorted((config.get("models") or {}).keys())
                 pending = store.pending_approvals()
                 self._json(200, {
-                    "tickets": store.list(),
+                    "tickets": store.list_public(),
                     "approvals": pending,
                     "statuses": list(STATUSES),
                     "transitions": {key: sorted(value) for key, value in TRANSITIONS.items()},
