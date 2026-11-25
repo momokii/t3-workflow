@@ -110,6 +110,33 @@ class BoardApiTests(unittest.TestCase):
         response, _ = self.request("GET", "/api/report/T-9999")
         self.assertEqual(response.status, 404)
 
+    def test_tickets_include_pending_approvals(self) -> None:
+        store = TicketStore(self.db, self.config)
+        approval = store.request_approval("T-0001", "mulai?")
+        store.close()
+        response, raw = self.request("GET", "/api/tickets")
+        data = json.loads(raw)
+        self.assertEqual(data["approvalCount"], 1)
+        self.assertEqual(data["approvals"][0]["approval_id"], approval["approval_id"])
+
+    def test_decide_approval_requires_token(self) -> None:
+        store = TicketStore(self.db, self.config)
+        approval = store.request_approval("T-0001", "mulai?")
+        store.close()
+        response, _ = self.request("POST", f"/api/approvals/{approval['approval_id']}/decide", {"approved": True})
+        self.assertEqual(response.status, 401)
+
+    def test_decide_approval_then_second_attempt_conflicts(self) -> None:
+        store = TicketStore(self.db, self.config)
+        approval = store.request_approval("T-0001", "mulai?")
+        store.close()
+        path = f"/api/approvals/{approval['approval_id']}/decide"
+        first, _ = self.request("POST", path, {"approved": True}, token="rahasia")
+        self.assertEqual(first.status, 200)
+        second, raw = self.request("POST", path, {"approved": False}, token="rahasia")
+        self.assertEqual(second.status, 409)
+        self.assertIn("sudah", json.loads(raw)["error"])
+
     def test_page_is_served(self) -> None:
         response, raw = self.request("GET", "/")
         self.assertEqual(response.status, 200)

@@ -99,12 +99,15 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 config = load_config(Path(self.config_path))
                 profiles = sorted((config.get("models") or {}).keys())
+                pending = store.pending_approvals()
                 self._json(200, {
                     "tickets": store.list(),
+                    "approvals": pending,
                     "statuses": list(STATUSES),
                     "transitions": {key: sorted(value) for key, value in TRANSITIONS.items()},
                     "profiles": profiles,
                     "summary": store.summary(),
+                    "approvalCount": len(pending),
                 })
             finally:
                 store.close()
@@ -135,6 +138,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        if path.startswith("/api/approvals/") and path.endswith("/decide"):
+            if not self._authorised():
+                self._json(401, {"error": "token tidak valid"})
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                approval_id = int(path.split("/")[3])
+            except (json.JSONDecodeError, ValueError):
+                self._json(400, {"error": "body atau id tidak valid"})
+                return
+            store = self._store()
+            try:
+                approval = store.decide_approval(
+                    approval_id, bool(payload.get("approved", False)), "board", str(payload.get("note", ""))
+                )
+                self._json(200, {"approval": approval})
+            except TicketError as exc:
+                self._json(409, {"error": str(exc)})
+            finally:
+                store.close()
+            return
         if not (path.startswith("/api/tickets/") and path.endswith("/move")):
             self._json(404, {"error": "not found"})
             return

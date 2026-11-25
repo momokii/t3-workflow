@@ -59,7 +59,11 @@
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x proximity; }
   section.col { scroll-snap-align: start; }
   .col[data-status="done"], .col[data-status="blocked"] { max-width: 220px; }
-  @media (max-width: 900px) { .board { grid-auto-flow: row; grid-auto-columns: auto; } }
+  @media (max-width: 1180px) {
+    .board { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .col[data-status="done"], .col[data-status="blocked"] { max-width: none; }
+  }
+  @media (max-width: 720px) { .board { grid-template-columns: 1fr; } }
   section.col { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; min-height: 140px; }
   section.col[data-drop="on"] { outline: 2px dashed var(--accent); outline-offset: -4px; background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
   .col-head { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px 10px; }
@@ -86,6 +90,12 @@
   .move { margin-top: 10px; display: flex; gap: 6px; align-items: center; }
   .move label { font-size: 11px; color: var(--ink-soft); }
   .move select { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+  .approval { margin-top: 8px; padding: 7px 8px; border: 1px dashed color-mix(in srgb, var(--warn) 55%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .approval p { margin: 0 0 6px; font-size: 11px; color: var(--ink-soft); }
+  .approval .row { display: flex; gap: 6px; }
+  .approval button { font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .approval button.yes { border-color: var(--ok); color: var(--ok); }
+  .approval button.no { border-color: var(--danger); color: var(--danger); }
   details.force { margin-top: 6px; }
   details.force summary { font-size: 11px; color: var(--ink-soft); cursor: pointer; }
   details.force .row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
@@ -155,6 +165,10 @@
     if (projectSel.value && t.project !== projectSel.value) return false;
     return true;
   };
+
+  function approvalFor(t) {
+    return (state.approvals || []).find(a => a.ticket_id === t.id);
+  }
 
   function card(t) {
     const el = document.createElement('article');
@@ -231,6 +245,29 @@
     move.append(label, sel);
     el.appendChild(move);
 
+    const pending = approvalFor(t);
+    if (pending) {
+      const box = document.createElement('div');
+      box.className = 'approval';
+      const q = document.createElement('p');
+      q.textContent = `Persetujuan #${pending.approval_id} menunggu: ${pending.question}`;
+      const row = document.createElement('div');
+      row.className = 'row';
+      const yes = document.createElement('button');
+      yes.type = 'button';
+      yes.className = 'yes';
+      yes.textContent = 'Setujui';
+      yes.addEventListener('click', () => decide(pending.approval_id, true));
+      const no = document.createElement('button');
+      no.type = 'button';
+      no.className = 'no';
+      no.textContent = 'Tolak';
+      no.addEventListener('click', () => decide(pending.approval_id, false));
+      row.append(yes, no);
+      box.append(q, row);
+      el.appendChild(box);
+    }
+
     const force = document.createElement('details');
     force.className = 'force';
     const summary = document.createElement('summary');
@@ -299,7 +336,12 @@
       for (const ticket of items) col.appendChild(card(ticket));
       board.appendChild(col);
     }
-    counts.innerHTML = ORDER
+    if ((state.approvalCount || 0) > 0) {
+      counts.innerHTML = `<span class="chip" style="border-color:var(--warn);color:var(--warn)">Persetujuan: ${state.approvalCount}</span>`;
+    } else {
+      counts.innerHTML = '';
+    }
+    counts.innerHTML += ORDER
       .filter(s => (state.summary || {})[s])
       .map(s => `<span class="chip">${LABELS[s] || s}: ${state.summary[s]}</span>`)
       .join('');
@@ -337,6 +379,22 @@
     } catch (err) {
       state.tickets = state.tickets.map(t => t.id === id ? before : t);
       render();
+      say(String(err.message || err), true);
+    }
+  }
+
+  async function decide(approvalId, approved) {
+    try {
+      const res = await fetch(`/api/approvals/${approvalId}/decide`, {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, TOKEN ? { 'X-Board-Token': TOKEN } : {}),
+        body: JSON.stringify({ approved })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'gagal');
+      say(`Persetujuan #${approvalId} ${approved ? 'disetujui' : 'ditolak'}`);
+      await load();
+    } catch (err) {
       say(String(err.message || err), true);
     }
   }
