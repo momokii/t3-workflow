@@ -189,6 +189,34 @@ class BridgeTests(unittest.TestCase):
         self.assertIsNone(project)
         self.assertIn("tidak ada", error)
 
+    # ---------------------------------------------------------- resolve thread
+
+    def test_send_accepts_project_with_single_thread(self) -> None:
+        payload = [{"threadId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "status": "idle", "title": "satu-satunya"}]
+        original = bridge.thread_rows
+        bridge.thread_rows = lambda config, project: payload
+        try:
+            answer = bridge.handle(self.config, CHAT, "/send petarasa halo dari hp")
+        finally:
+            bridge.thread_rows = original
+        self.assertIn("Terkirim", answer or "")
+        self.assertEqual(self.args(), ["thread", "send", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "-", "--json"])
+
+    def test_send_lists_threads_when_project_has_many(self) -> None:
+        rows = [
+            {"threadId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "status": "idle", "title": "satu"},
+            {"threadId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", "status": "idle", "title": "dua"},
+        ]
+        original = bridge.thread_rows
+        bridge.thread_rows = lambda config, project: rows
+        try:
+            answer = bridge.handle(self.config, CHAT, "/send petarasa halo")
+        finally:
+            bridge.thread_rows = original
+        self.assertIn("sebut id-nya", answer or "")
+        self.assertIn("aaaaaaaa", answer or "")
+        self.assertFalse((self.tmp / "args.txt").exists())
+
     # ---------------------------------------------------------- send
 
     def test_send_invokes_cli_with_stdin(self) -> None:
@@ -197,9 +225,9 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.args(), ["thread", "send", THREAD, "-", "--json"])
         self.assertEqual(self.stdin(), "halo dari telegram")
 
-    def test_send_rejects_bad_thread_id(self) -> None:
+    def test_send_explains_when_target_is_unknown(self) -> None:
         answer = bridge.handle(self.config, CHAT, "/send bukan-uuid halo")
-        self.assertIn("tidak valid", answer or "")
+        self.assertIn("Kirim thread id", answer or "")
         self.assertFalse((self.tmp / "args.txt").exists())
 
     def test_send_respects_allow_writes_false(self) -> None:

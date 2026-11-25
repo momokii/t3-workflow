@@ -344,9 +344,31 @@ def cmd_threads(config: dict, needle: str) -> str:
     return f"Thread di {project['title']} ({len(rows)}):\n" + "\n".join(lines)
 
 
+def resolve_thread(config: dict, needle: str) -> tuple[str | None, str]:
+    """UUID langsung, atau nama project yang hanya punya satu thread."""
+    needle = needle.strip()
+    if THREAD_ID.match(needle):
+        return needle, ""
+    project, error = resolve_project(config, needle)
+    if not project:
+        return None, (
+            f"{error}\n\nKirim thread id (UUID), atau nama project yang hanya punya satu thread. "
+            "Lihat id dengan /threads <project>."
+        )
+    rows = thread_rows(config, project)
+    if not rows:
+        return None, f"{project['title']} belum punya thread."
+    if len(rows) > 1:
+        lines = "\n".join(f"• {row['threadId']}  [{(row.get('title') or '')[:40]}]" for row in rows[:8])
+        return None, f"{project['title']} punya {len(rows)} thread — sebut id-nya:\n{lines}"
+    return rows[0]["threadId"], ""
+
+
 def cmd_ctx(config: dict, thread_id: str, count: int = 3) -> str:
-    if not THREAD_ID.match(thread_id):
-        return "Format thread id tidak valid (UUID, dengan atau tanpa awalan mcp:)."
+    resolved, error = resolve_thread(config, thread_id)
+    if not resolved:
+        return error
+    thread_id = resolved
     data = thread_show(config, thread_id, count)
     thread = data.get("thread") or {}
     # `t3 thread show --json` mengembalikan {"thread": {...}, "messages": [...]}
@@ -362,8 +384,10 @@ def cmd_ctx(config: dict, thread_id: str, count: int = 3) -> str:
 
 
 def cmd_send(config: dict, thread_id: str, text: str) -> str:
-    if not THREAD_ID.match(thread_id):
-        return "Format thread id tidak valid (UUID, dengan atau tanpa awalan mcp:)."
+    resolved, error = resolve_thread(config, thread_id)
+    if not resolved:
+        return error
+    thread_id = resolved
     if not text.strip():
         return "Teks kosong."
     if not config["bridge"].get("allowWrites", True):
