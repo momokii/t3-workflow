@@ -37,6 +37,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HOME = Path.home()
+WORKFLOW_ROOT = Path(__file__).resolve().parents[1]
+if str(WORKFLOW_ROOT / "tickets") not in sys.path:
+    sys.path.insert(0, str(WORKFLOW_ROOT / "tickets"))
+
+try:  # pragma: no cover - hanya berbeda bila repo dipindah
+    from store import TicketError as StoreError
+    from store import TicketStore, load_config as load_workflow_config
+except Exception:  # noqa: BLE001
+    StoreError = Exception  # type: ignore[assignment]
+    TicketStore = None  # type: ignore[assignment]
+    load_workflow_config = None  # type: ignore[assignment]
+
 CONFIG_PATH = Path(os.environ.get("T3_BRIDGE_CONFIG", HOME / ".config/t3-bridge/config.json"))
 STATE_DIR = HOME / ".local/state/t3-bridge"
 STATE_PATH = STATE_DIR / "state.json"
@@ -56,6 +68,10 @@ DEFAULTS = {
         "timeoutSeconds": 180,
     },
     "bridge": {"dryRun": False, "allowWrites": True, "pollTimeout": 25, "quiet": False},
+    "workflow": {
+        "dbPath": str(HOME / ".local/state/t3-workflow/tickets.sqlite"),
+        "configPath": str(HOME / ".config/t3-workflow/config.json"),
+    },
 }
 
 
@@ -161,6 +177,15 @@ def t3_run(config: dict, args: list[str], stdin: str | None = None) -> tuple[int
     return proc.returncode, output
 
 
+def ticket_store(config: dict):
+    if TicketStore is None or load_workflow_config is None:
+        raise RuntimeError("modul tickets tidak tersedia di sebelah bridge")
+    workflow = config.get("workflow") or {}
+    db = Path(workflow.get("dbPath", HOME / ".local/state/t3-workflow/tickets.sqlite")).expanduser()
+    cfg = Path(workflow.get("configPath", HOME / ".config/t3-workflow/config.json")).expanduser()
+    return TicketStore(db, cfg)
+
+
 def projects(config: dict) -> list[dict]:
     path = Path(config["t3"]["dbPath"])
     if not path.exists():
@@ -227,7 +252,13 @@ def thread_show(config: dict, thread_id: str, messages: int) -> dict:
 
 def cmd_help() -> str:
     return (
-        "Perintah:\n"
+        "Tiket:\n"
+        "/tickets [status] — daftar tiket\n"
+        "/ticket <project> <teks> — tiket baru (backlog)\n"
+        "/pending — persetujuan menunggu\n"
+        "/approve <id> [catatan] — setujui\n"
+        "/reject <id> [catatan] — tolak\n"
+        "\nPerintah:\n"
         "/projects — daftar project\n"
         "/threads <project> — thread terbaru\n"
         "/ctx <thread> [n] — pesan terakhir\n"
@@ -236,6 +267,58 @@ def cmd_help() -> str:
         "/id — chat id ini\n"
         "\nPersetujuan (approval) tetap dijawab di UI T3, bukan dari sini."
     )
+
+
+def cmd_tickets(config: dict, status: str = "") -> str:
+    store = ticket_store(config)
+    try:
+        rows = store.list(status or None)
+    finally:
+        store.close()
+    if not rows:
+        return f"tidak ada tiket{' berstatus ' + status if status else ''}"
+    lines = [f"{t['id']} [{t['status']}] p{t['priority']} {t['title'][:50]}" for t in rows[:20]]
+    return f"Tiket ({len(rows)}):\n" + "\n".join(lines)
+
+
+def cmd_ticket_new(config: dict, project: str, text: str) -> str:
+    store = ticket_store(config)
+    try:
+        workflow = load_workflow_config(Path((config.get("workflow") or {}).get(
+            "configPath", HOME / ".config/t3-workflow/config.json")))
+        profile = (workflow.get("defaults") or {}).get("profile", "")
+        ticket = store.add(text, project, model_profile=profile, status="backlog")
+    finally:
+        store.close()
+    audit({"action": "ticket-add", "ticket": ticket["id"], "project": project})
+    return f"{ticket['id']} dibuat di {project} [{ticket['status']}] · profil {profile or '(default)'}"
+
+
+def cmd_pending(config: dict) -> str:
+    store = ticket_store(config)
+    try:
+        rows = store.pending_approvals()
+    finally:
+        store.close()
+    if not rows:
+        return "tidak ada persetujuan menunggu"
+    return "Menunggu persetujuan:\n" + "\n".join(
+        f"#{row['approval_id']} {row['ticket_id']}: {row['question'][:60]}" for row in rows
+    )
+
+
+def cmd_decide(config: dict, raw_id: str, approved: bool, note: str, chat_id: str) -> str:
+    try:
+        approval_id = int(raw_id.lstrip("#"))
+    except ValueError:
+        return "id persetujuan harus angka"
+    store = ticket_store(config)
+    try:
+        approval = store.decide_approval(approval_id, approved, f"telegram:{chat_id}", note)
+    finally:
+        store.close()
+    audit({"action": "approve" if approved else "reject", "approval": approval_id})
+    return f"#{approval_id} {'disetujui' if approved else 'ditolak'} ({approval['ticket_id']})"
 
 
 def cmd_projects(config: dict) -> str:
@@ -340,6 +423,21 @@ def handle(config: dict, chat_id: str, text: str) -> str | None:
             return cmd_help()
         if command == "id":
             return f"chat id: {chat_id}"
+        if command == "tickets":
+            return cmd_tickets(config, rest.strip())
+        if command == "ticket":
+            parts = rest.split(maxsplit=1)
+            if len(parts) < 2:
+                return "Pakai: /ticket <project> <teks>"
+            return cmd_ticket_new(config, parts[0], parts[1])
+        if command == "pending":
+            return cmd_pending(config)
+        if command in ("approve", "reject"):
+            parts = rest.split(maxsplit=1)
+            if not parts:
+                return f"Pakai: /{command} <id> [catatan]"
+            note = parts[1] if len(parts) > 1 else ""
+            return cmd_decide(config, parts[0], command == "approve", note, str(chat_id))
         if command == "projects":
             return cmd_projects(config)
         if command == "threads":
@@ -382,6 +480,37 @@ def _stop(signum, frame):  # noqa: ARG001
     raise Stop()
 
 
+def notify_approvals(config: dict, state: dict) -> int:
+    """Kirim satu pesan untuk tiap persetujuan yang belum pernah diberitahukan."""
+    if TicketStore is None:
+        return 0
+    chats = config["telegram"]["allowChatIds"]
+    if not chats:
+        return 0
+    store = ticket_store(config)
+    try:
+        pending = store.pending_approvals()
+    finally:
+        store.close()
+    notified = set(state.get("notifiedApprovals") or [])
+    sent = 0
+    for approval in pending:
+        key = str(approval["approval_id"])
+        if key in notified:
+            continue
+        reply(
+            config,
+            str(chats[0]),
+            f"Persetujuan #{key} · {approval['ticket_id']}\n{approval['question']}\n\n"
+            f"Balas: /approve {key} atau /reject {key}",
+        )
+        notified.add(key)
+        sent += 1
+    state["notifiedApprovals"] = sorted(notified)[-200:]
+    save_state(state)
+    return sent
+
+
 def poll_once(config: dict, state: dict) -> int:
     """Satu putaran getUpdates. Mengembalikan jumlah perintah yang dijawab."""
     payload = {
@@ -418,6 +547,7 @@ def poll_forever(config: dict) -> int:
     signal.signal(signal.SIGINT, _stop)
     while True:
         try:
+            notify_approvals(config, state)
             result = poll_once(config, state)
         except Stop:
             raise

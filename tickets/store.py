@@ -27,6 +27,7 @@ from pathlib import Path
 
 HOME = Path.home()
 DB_PATH = Path(os.environ.get("T3_TICKETS_DB", HOME / ".local/state/t3-workflow/tickets.sqlite"))
+REPORTS_DIR = Path(os.environ.get("T3_REPORTS_DIR", HOME / ".local/state/t3-workflow/reports"))
 CONFIG_PATH = Path(os.environ.get("T3_WORKFLOW_CONFIG", HOME / ".config/t3-workflow/config.json"))
 
 STATUSES = ("backlog", "ready", "in-progress", "testing", "review", "done", "blocked")
@@ -67,7 +68,33 @@ create table if not exists events (
     detail    text not null default ''
 );
 create index if not exists tickets_status on tickets(status, priority, created_at);
+create table if not exists approvals (
+    approval_id integer primary key autoincrement,
+    ticket_id   text not null,
+    question    text not null,
+    status      text not null default 'pending',
+    created_at  text not null,
+    decided_at  text,
+    decided_by  text,
+    note        text not null default ''
+);
+create index if not exists approvals_status on approvals(status, approval_id);
 """
+
+# kolom yang ditambahkan sesudah rilis pertama; aman dijalankan berulang
+MIGRATIONS = [
+    ("tickets", "proof", "text not null default ''"),
+    ("tickets", "report_path", "text not null default ''"),
+    ("tickets", "requires_approval", "integer not null default 0"),
+]
+
+
+def migrate(con: sqlite3.Connection) -> None:
+    for table, column, definition in MIGRATIONS:
+        existing = {row[1] for row in con.execute(f"pragma table_info({table})")}
+        if column not in existing:
+            con.execute(f"alter table {table} add column {column} {definition}")
+    con.commit()
 
 
 class TicketError(Exception):
@@ -111,6 +138,7 @@ class TicketStore:
         self.con.row_factory = sqlite3.Row
         self.con.executescript(SCHEMA)
         self.con.commit()
+        migrate(self.con)
 
     # -------------------------------------------------------------- helpers
 
@@ -138,6 +166,7 @@ class TicketStore:
         test_cmd: str = "",
         priority: int = 3,
         status: str = "backlog",
+        requires_approval: bool = False,
     ) -> dict:
         if not title.strip():
             raise TicketError("judul tiket kosong")
@@ -151,9 +180,9 @@ class TicketStore:
         ticket_id = self._next_id()
         stamp = now()
         self.con.execute(
-            "insert into tickets (id,title,body,status,priority,project,model_profile,test_cmd,created_at,updated_at)"
-            " values (?,?,?,?,?,?,?,?,?,?)",
-            (ticket_id, title.strip(), body, status, priority, project, model_profile, test_cmd, stamp, stamp),
+            "insert into tickets (id,title,body,status,priority,project,model_profile,test_cmd,created_at,updated_at,requires_approval)"
+            " values (?,?,?,?,?,?,?,?,?,?,?)",
+            (ticket_id, title.strip(), body, status, priority, project, model_profile, test_cmd, stamp, stamp, 1 if requires_approval else 0),
         )
         self._event(ticket_id, "created", f"status={status} profile={model_profile or '-'}")
         self.con.commit()
@@ -184,7 +213,21 @@ class TicketStore:
         kind = "moved" if allowed else "forced"
         self._event(ticket_id, kind, f"{ticket['status']} → {status} {note}".strip())
         self.con.commit()
+        if status == "done":
+            self.write_report(ticket_id)
         return self.get(ticket_id)
+
+    def write_report(self, ticket_id: str) -> str:
+        """Tulis laporan markdown ke disk dan simpan path-nya di tiket."""
+        target = REPORTS_DIR / f"{ticket_id}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(self.report(ticket_id), encoding="utf-8")
+        self.con.execute(
+            "update tickets set report_path=?, updated_at=? where id=?", (str(target), now(), ticket_id)
+        )
+        self._event(ticket_id, "report", str(target))
+        self.con.commit()
+        return str(target)
 
     def claim(self, ticket_id: str, worker: str) -> dict:
         """Atomic claim. Returns the ticket, or raises when somebody else won."""
@@ -201,6 +244,73 @@ class TicketStore:
         self._event(ticket_id, "claimed", worker)
         self.con.commit()
         return self.get(ticket_id)
+
+    def attach_proof(self, ticket_id: str, ok: bool, output: str) -> dict:
+        """Simpan bukti test: hasil, cuplikan output, dan waktunya."""
+        stamp = now()
+        proof = f"[{'LULUS' if ok else 'GAGAL'}] {stamp}\n{output.strip()[:4000]}"
+        self.con.execute(
+            "update tickets set proof=?, updated_at=? where id=?", (proof, stamp, ticket_id)
+        )
+        self._event(ticket_id, "proof", "lulus" if ok else "gagal")
+        self.con.commit()
+        return self.get(ticket_id)
+
+    def set_report_path(self, ticket_id: str, path: str) -> dict:
+        self.con.execute("update tickets set report_path=?, updated_at=? where id=?", (path, now(), ticket_id))
+        self.con.commit()
+        return self.get(ticket_id)
+
+    # ---------------------------------------------------------- approvals
+
+    def request_approval(self, ticket_id: str, question: str) -> dict:
+        self.get(ticket_id)  # pastikan tiket ada
+        existing = self.con.execute(
+            "select * from approvals where ticket_id=? and status='pending' order by approval_id desc limit 1",
+            (ticket_id,),
+        ).fetchone()
+        if existing:
+            return dict(existing)
+        self.con.execute(
+            "insert into approvals (ticket_id, question, status, created_at) values (?,?,'pending',?)",
+            (ticket_id, question, now()),
+        )
+        approval_id = self.con.execute("select last_insert_rowid() as id").fetchone()["id"]
+        self._event(ticket_id, "approval-requested", question[:200])
+        self.con.commit()
+        return self.get_approval(approval_id)
+
+    def get_approval(self, approval_id: int) -> dict:
+        row = self.con.execute("select * from approvals where approval_id=?", (approval_id,)).fetchone()
+        if row is None:
+            raise TicketError(f"approval {approval_id} tidak ada")
+        return dict(row)
+
+    def pending_approvals(self) -> list[dict]:
+        rows = self.con.execute(
+            "select * from approvals where status='pending' order by approval_id"
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def decide_approval(self, approval_id: int, approved: bool, by: str, note: str = "") -> dict:
+        approval = self.get_approval(approval_id)
+        if approval["status"] != "pending":
+            raise TicketError(f"approval {approval_id} sudah {approval['status']} — balasan kedua diabaikan")
+        self.con.execute(
+            "update approvals set status=?, decided_at=?, decided_by=?, note=? where approval_id=?",
+            ("approved" if approved else "rejected", now(), by, note, approval_id),
+        )
+        self._event(approval["ticket_id"], "approval-decided", f"{'approved' if approved else 'rejected'} oleh {by}")
+        self.con.commit()
+        return self.get_approval(approval_id)
+
+    def approval_state(self, ticket_id: str) -> str:
+        """approved | rejected | pending | none"""
+        row = self.con.execute(
+            "select status from approvals where ticket_id=? order by approval_id desc limit 1",
+            (ticket_id,),
+        ).fetchone()
+        return row["status"] if row else "none"
 
     def attach_thread(self, ticket_id: str, thread_id: str, note: str = "") -> dict:
         self.con.execute(
@@ -264,7 +374,12 @@ class TicketStore:
             lines += ["", "## Perintah test", "", "```bash", ticket["test_cmd"], "```"]
         if ticket["body"]:
             lines += ["", "## Deskripsi", "", ticket["body"]]
+        approval = self.approval_state(ticket_id)
+        if approval != "none":
+            lines += ["", f"**Persetujuan**: `{approval}`"]
         lines += ["", "## Bukti & catatan", "", ticket["note"] or "_belum ada catatan bukti_"]
+        if ticket.get("proof"):
+            lines += ["", "### Bukti test", "", "```", ticket["proof"], "```"]
         lines += ["", "## Riwayat", "", "| Waktu | Kejadian | Detail |", "|---|---|---|"]
         for event in events:
             lines.append(f"| {event['at'][:19]} | {event['kind']} | {event['detail'].replace('|', '/')} |")
