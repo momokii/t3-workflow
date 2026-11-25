@@ -33,4 +33,6 @@ Rules for coding agents working in this repository. `README.md` explains usage;
 ## Git
 
 - Conventional commits, one logical change per commit.
-- **No push.** This repository has no remote by design; the human pushes.
+- **Pushes are automatic, on a branch.** The release stage pushes `ticket/T-xxxx-…`
+  to `origin` and then finishes the ticket. It never pushes the base branch, and a
+  repo without a remote makes release fail loudly instead of silently skipping.

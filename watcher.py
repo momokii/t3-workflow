@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Watcher: dev stage and test stage, one step at a time.
 
-Dev stage   `ready`            → claim → `t3 thread start` → `in-progress` (+ thread id)
+Release stage `review`         → branch `ticket/T-xxxx-…`, commit, push to origin
+                                → `done` (+ report); never pushes the base branch
 Test stage  `testing`          → run the ticket's test command → proof
                                 → `review` when exit code is 0
                                 → `in-progress` with the failure note otherwise
+Dev stage   `ready`            → claim → `t3 thread start` → `in-progress` (+ thread id)
 
 The order matters: a ticket waiting in `testing` is handled before a new ticket is
 started, so the loop drains work instead of piling up threads.
@@ -146,6 +148,71 @@ def run_once(
     return f"{ticket['id']} → thread {thread_id} (profil {profile['name']})"
 
 
+# ---------------------------------------------------------------- release stage
+
+
+def _git(args: list[str], cwd: str, timeout: int = 180) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 1, f"{type(exc).__name__}: {exc}"
+    return proc.returncode, ((proc.stdout or "") + (proc.stderr or "")).strip()
+
+
+def _slug(text: str, limit: int = 40) -> str:
+    out = "".join(ch.lower() if ch.isalnum() else "-" for ch in text)
+    while "--" in out:
+        out = out.replace("--", "-")
+    return out.strip("-")[:limit] or "tiket"
+
+
+def release(store: TicketStore, ticket: dict, config: dict) -> str:
+    """Push the ticket's work on its own branch, then finish the ticket.
+
+    Policy (human decision): pushes happen automatically, but never to the base
+    branch. The branch name carries the ticket id so a reviewer can trace a push
+    back to the ticket, and the report records the branch and compare URL.
+    """
+    cfg = config.get("release") or {}
+    if not cfg.get("enabled"):
+        raise TicketError("release dimatikan (release.enabled=false di config)")
+    path = project_path(ticket["project"])
+    remote = cfg.get("remote", "origin")
+    code, _ = _git(["remote", "get-url", remote], path)
+    if code != 0:
+        raise TicketError(f"repo {path} tidak punya remote '{remote}' — push tidak mungkin")
+
+    code, status = _git(["status", "--porcelain"], path)
+    if code != 0:
+        raise TicketError(f"git status gagal di {path}")
+    if not status.strip():
+        store.move(ticket["id"], "done", "release: tidak ada perubahan untuk di-push", force=True)
+        return f"{ticket['id']}: tidak ada perubahan — tiket langsung selesai"
+
+    branch = f"ticket/{ticket['id'].lower()}-{_slug(ticket['title'])}"
+    code, current = _git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+    if current != branch:
+        code, out = _git(["checkout", "-b", branch], path)
+        if code != 0:
+            code, out = _git(["checkout", branch], path)
+            if code != 0:
+                raise TicketError(f"tidak bisa pindah ke branch {branch}: {out[:200]}")
+
+    _git(["add", "-A"], path)
+    message = f"feat({ticket['id'].lower()}): {ticket['title']}"
+    code, out = _git(["commit", "-m", message], path)
+    if code != 0 and "nothing to commit" not in out:
+        raise TicketError(f"commit gagal: {out[:200]}")
+
+    code, out = _git(["push", "-u", remote, branch], path)
+    if code != 0:
+        raise TicketError(f"push gagal: {out[:300]}")
+
+    store.set_branch(ticket["id"], branch)
+    store.move(ticket["id"], "done", f"release: {branch} di-push ke {remote}", force=True)
+    return f"{ticket['id']}: branch {branch} di-push ke {remote}"
+
+
 # ---------------------------------------------------------------- test stage
 
 
@@ -178,6 +245,11 @@ def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
     return f"{ticket['id']}: test gagal (rc={proc.returncode}) → in-progress"
 
 
+def next_review(store: TicketStore) -> dict | None:
+    rows = [ticket for ticket in store.list("review")]
+    return rows[0] if rows else None
+
+
 def next_testing(store: TicketStore) -> dict | None:
     rows = [ticket for ticket in store.list("testing")]
     return rows[0] if rows else None
@@ -186,6 +258,12 @@ def next_testing(store: TicketStore) -> dict | None:
 def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: str = "watcher",
          runner=subprocess.run) -> str:
     """One unit of work: drain `testing` first, then start new work."""
+    review = next_review(store)
+    if review is not None:
+        if dry_run:
+            return f"[dry-run] {review['id']} · release: push branch dan selesaikan tiket"
+        return release(store, review, config)
+
     testing = next_testing(store)
     if testing is not None:
         if dry_run:

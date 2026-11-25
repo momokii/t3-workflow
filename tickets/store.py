@@ -261,6 +261,15 @@ class TicketStore:
         self.con.commit()
         return self.get(ticket_id)
 
+    def set_branch(self, ticket_id: str, branch: str, pr_url: str = "") -> dict:
+        self.con.execute(
+            "update tickets set branch=?, pr_url=?, updated_at=? where id=?",
+            (branch, pr_url, now(), ticket_id),
+        )
+        self._event(ticket_id, "branch", branch)
+        self.con.commit()
+        return self.get(ticket_id)
+
     def set_report_path(self, ticket_id: str, path: str) -> dict:
         self.con.execute("update tickets set report_path=?, updated_at=? where id=?", (path, now(), ticket_id))
         self.con.commit()
