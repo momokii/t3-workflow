@@ -1,5 +1,7 @@
 # t3-workflow
 
+<img src="board/static/logo.svg" alt="" width="56" height="56">
+
 Otomasi alur kerja T3 Code: bridge Telegram dua arah, dan rencana kanban + watcher.
 
 | Berkas | Isi |

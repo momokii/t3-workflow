@@ -90,7 +90,13 @@ class Handler(BaseHTTPRequestHandler):
             name = Path(path).name  # basename saja: tidak ada traversal
             target = STATIC / name
             if target.is_file():
-                self._send(200, target.read_bytes(), "text/html; charset=utf-8" if name.endswith(".html") else "application/octet-stream")
+                kind = (
+                    "text/html; charset=utf-8" if name.endswith(".html")
+                    else "image/svg+xml" if name.endswith(".svg")
+                    else "image/png" if name.endswith(".png")
+                    else "application/octet-stream"
+                )
+                self._send(200, target.read_bytes(), kind)
             else:
                 self._json(404, {"error": "not found"})
             return
