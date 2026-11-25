@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,7 @@ CONFIG = {
 
 class StoreTests(unittest.TestCase):
     def setUp(self) -> None:
+        os.environ["T3_REPORTS_DIR"] = str(Path(tempfile.mkdtemp(prefix="reports-")) / "reports")
         self.tmp = Path(tempfile.mkdtemp(prefix="tickets-"))
         self.config = self.tmp / "config.json"
         self.config.write_text(json.dumps(CONFIG))

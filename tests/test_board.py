@@ -6,6 +6,7 @@ from __future__ import annotations
 import http.client
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -38,6 +39,7 @@ class BoardApiTests(unittest.TestCase):
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
 
     def setUp(self) -> None:
+        os.environ["T3_REPORTS_DIR"] = str(Path(tempfile.mkdtemp(prefix="reports-")) / "reports")
         """Database baru per test, supaya urutan test tidak saling mempengaruhi."""
         self.tmp = Path(tempfile.mkdtemp(prefix="board-"))
         self.config = self.tmp / "config.json"

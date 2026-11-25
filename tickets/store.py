@@ -218,8 +218,13 @@ class TicketStore:
         return self.get(ticket_id)
 
     def write_report(self, ticket_id: str) -> str:
-        """Tulis laporan markdown ke disk dan simpan path-nya di tiket."""
-        target = REPORTS_DIR / f"{ticket_id}.md"
+        """Tulis laporan markdown ke disk dan simpan path-nya di tiket.
+
+        Direktori dibaca ulang dari environment setiap kali supaya test bisa
+        mengarahkannya ke folder sementara dan tidak mengotori folder produksi.
+        """
+        reports_dir = Path(os.environ.get("T3_REPORTS_DIR", REPORTS_DIR))
+        target = reports_dir / f"{ticket_id}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(self.report(ticket_id), encoding="utf-8")
         self.con.execute(

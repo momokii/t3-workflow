@@ -65,6 +65,7 @@ class TicketCommandTests(unittest.TestCase):
     """Perintah tiket dan persetujuan lewat bridge."""
 
     def setUp(self) -> None:
+        os.environ["T3_REPORTS_DIR"] = str(Path(tempfile.mkdtemp(prefix="reports-")) / "reports")
         root = Path(__file__).resolve().parents[2]
         sys.path.insert(0, str(root / "tickets"))
         from store import TicketStore

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,7 @@ def fail_runner(command, **kwargs):  # noqa: ARG001
 
 class Base(unittest.TestCase):
     def setUp(self) -> None:
+        os.environ["T3_REPORTS_DIR"] = str(Path(tempfile.mkdtemp(prefix="reports-")) / "reports")
         self.tmp = Path(tempfile.mkdtemp(prefix="flow-"))
         self.config_path = self.tmp / "config.json"
         self.config_path.write_text(json.dumps(CONFIG))
