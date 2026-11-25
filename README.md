@@ -82,11 +82,28 @@ dan hanya dibaca oleh watcher — watcher tidak pernah memilih model sendiri.
 
 ## Papan kanban
 
-```bash
-python3 board/server.py                 # http://127.0.0.1:8787
-python3 board/server.py --host 0.0.0.0 --token RAHASIA   # akses dari device lain
-systemctl --user enable --now t3-board  # sudah terpasang, jalan di localhost
+Board berjalan sebagai service user di **tailnet**, bukan di localhost:
+
 ```
+http://100.124.184.116:8787
+```
+
+| Item | Nilai |
+|---|---|
+| Service | `t3-board.service` (enabled, active) |
+| Bind | `100.124.184.116:8787` (hanya interface Tailscale) |
+| Token tulis | `~/.config/t3-workflow/board.env` (mode 600), dibaca lewat `EnvironmentFile` |
+| Halaman | menyuntikkan token ke `<meta name="board-token">` supaya UI bisa POST |
+
+Menjalankan manual:
+
+```bash
+python3 board/server.py --host 100.124.184.116 --port 8787 --token "$(grep -o '[0-9a-f]\{32\}' ~/.config/t3-workflow/board.env)"
+systemctl --user restart t3-board
+```
+
+POST tanpa token ditolak `401`. Kontrol akses sebenarnya adalah keanggotaan tailnet:
+hanya perangkat di tailnet yang bisa memuat halaman ini.
 
 Halaman menyediakan drag-and-drop **dan** kontrol "Pindahkan" per kartu, karena
 WCAG 2.2 SC 2.5.7 mewajibkan alternatif pointer tunggal untuk setiap aksi drag.

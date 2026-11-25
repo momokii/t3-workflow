@@ -137,6 +137,7 @@
   const LABELS = { backlog:'Backlog', ready:'Siap', 'in-progress':'Dikerjakan', testing:'Testing', review:'Review', done:'Selesai', blocked:'Terhambat' };
   const ORDER = ['backlog','ready','in-progress','testing','review','done','blocked'];
   let state = { tickets: [], transitions: {}, profiles: [], statuses: ORDER };
+  const TOKEN = (document.querySelector('meta[name="board-token"]') || {}).content || '';
 
   const say = (msg, isError=false) => {
     live.textContent = msg;
@@ -325,7 +326,7 @@
     try {
       const res = await fetch(`/api/tickets/${id}/move`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: Object.assign({ 'Content-Type': 'application/json' }, TOKEN ? { 'X-Board-Token': TOKEN } : {}),
         body: JSON.stringify({ status, force })
       });
       const data = await res.json();

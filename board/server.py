@@ -40,6 +40,7 @@ class Handler(BaseHTTPRequestHandler):
     store_path = DB_PATH
     config_path = CONFIG_PATH
     token = ""
+    inject_token = True
     server_version = "t3-kanban/1.0"
 
     # ------------------------------------------------------------ helpers
@@ -63,6 +64,18 @@ class Handler(BaseHTTPRequestHandler):
             return True
         return self.headers.get("X-Board-Token", "") == self.token
 
+    def _page(self) -> bytes:
+        """Serve the page, embedding the token when one is configured.
+
+        Access control here is tailnet membership: only a device on the tailnet can
+        load this page. The token keeps scripts and stray POSTs honest.
+        """
+        raw = (STATIC / "index.html").read_bytes()
+        if self.token and self.inject_token:
+            meta = f'<meta name="board-token" content="{self.token}">'.encode()
+            raw = raw.replace(b"</head>", meta + b"</head>", 1)
+        return raw
+
     def log_message(self, fmt: str, *args) -> None:  # ringkas
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
@@ -71,8 +84,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
-            page = (STATIC / "index.html").read_bytes()
-            self._send(200, page, "text/html; charset=utf-8")
+            self._send(200, self._page(), "text/html; charset=utf-8")
             return
         if path.startswith("/static/"):
             name = Path(path).name  # basename saja: tidak ada traversal
@@ -155,14 +167,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
-    parser.add_argument("--token", default="", help="wajibkan header X-Board-Token untuk POST")
+    parser.add_argument("--token", default="", help="wajibkan header X-Board-Token untuk POST (fallback: env T3_BOARD_TOKEN)")
     parser.add_argument("--db", default=str(DB_PATH))
     parser.add_argument("--config", default=str(CONFIG_PATH))
     args = parser.parse_args()
 
     Handler.store_path = Path(args.db)
     Handler.config_path = Path(args.config)
-    Handler.token = args.token
+    Handler.token = args.token or __import__("os").environ.get("T3_BOARD_TOKEN", "")
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"kanban di http://{args.host}:{args.port}  (db={args.db})", flush=True)
