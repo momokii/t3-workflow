@@ -1,0 +1,13 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+# runtime state and secrets never belong in the repo
+*.log
+audit.jsonl
+state.json
+*.local.json
+# editors
+.DS_Store
+.idea/
+.vscode/
