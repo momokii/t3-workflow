@@ -82,6 +82,24 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(stored["report_path"])
         self.assertTrue(Path(stored["report_path"]).exists())
 
+    def test_release_leaves_pr_url_empty_for_non_http_remote(self) -> None:
+        """Remote berupa path lokal tidak menghasilkan tautan PR — dan itu benar."""
+        ticket = self.ticket()
+        (self.repo / "b.txt").write_text("perubahan\n")
+        watcher.release(self.store, ticket, CONFIG)
+        self.assertEqual(self.store.get(ticket["id"])["pr_url"], "")
+
+    def test_compare_url_from_ssh_and_https(self) -> None:
+        self.assertEqual(
+            watcher.compare_url("git@github.com:o/r.git", "main", "b"),
+            "https://github.com/o/r/compare/main...b?expand=1",
+        )
+        self.assertEqual(
+            watcher.compare_url("https://github.com/o/r", "main", "b"),
+            "https://github.com/o/r/compare/main...b?expand=1",
+        )
+        self.assertEqual(watcher.compare_url("/tmp/bare.git", "main", "b"), "")
+
     def test_release_refuses_without_remote(self) -> None:
         ticket = self.ticket()
         git(["remote", "remove", "origin"], self.repo)

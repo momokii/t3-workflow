@@ -166,6 +166,19 @@ def _slug(text: str, limit: int = 40) -> str:
     return out.strip("-")[:limit] or "tiket"
 
 
+def compare_url(remote_url: str, base: str, branch: str) -> str:
+    """Tautan 'buat PR' dari URL remote, tanpa perlu gh atau token."""
+    url = remote_url.strip()
+    if url.startswith("git@"):  # git@github.com:owner/repo.git
+        host, _, path = url[4:].partition(":")
+        url = f"https://{host}/{path}"
+    if url.endswith(".git"):
+        url = url[:-4]
+    if not url.startswith("http"):
+        return ""
+    return f"{url}/compare/{base}...{branch}?expand=1"
+
+
 def release(store: TicketStore, ticket: dict, config: dict) -> str:
     """Push the ticket's work on its own branch, then finish the ticket.
 
@@ -208,9 +221,13 @@ def release(store: TicketStore, ticket: dict, config: dict) -> str:
     if code != 0:
         raise TicketError(f"push gagal: {out[:300]}")
 
-    store.set_branch(ticket["id"], branch)
+    _, remote_url = _git(["remote", "get-url", remote], path)
+    base = (config.get("release") or {}).get("baseBranch") or "main"
+    link = compare_url(remote_url, base, branch)
+    store.set_branch(ticket["id"], branch, pr_url=link)
     store.move(ticket["id"], "done", f"release: {branch} di-push ke {remote}", force=True)
-    return f"{ticket['id']}: branch {branch} di-push ke {remote}"
+    suffix = f" · PR: {link}" if link else ""
+    return f"{ticket['id']}: branch {branch} di-push ke {remote}{suffix}"
 
 
 # ---------------------------------------------------------------- test stage
