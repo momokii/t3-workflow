@@ -159,20 +159,30 @@ class TicketStore:
         self.con.commit()
         return self.get(ticket_id)
 
-    def move(self, ticket_id: str, status: str, note: str = "") -> dict:
+    def move(self, ticket_id: str, status: str, note: str = "", force: bool = False) -> dict:
+        """Move a ticket. `force` is the human override: it skips the state machine.
+
+        The model follows the state machine; a human may jump anywhere, and the
+        jump is recorded as a distinct event so the report shows it.
+        """
         ticket = self.get(ticket_id)
         if status not in STATUSES:
             raise TicketError(f"status '{status}' tidak dikenal")
-        if status not in TRANSITIONS[ticket["status"]]:
+        if ticket["status"] == status:
+            raise TicketError(f"tiket {ticket_id} sudah berstatus {status}")
+        allowed = status in TRANSITIONS[ticket["status"]]
+        if not allowed and not force:
             raise TicketError(
                 f"transisi {ticket['status']} → {status} tidak diizinkan "
-                f"(boleh: {', '.join(sorted(TRANSITIONS[ticket['status']])) or 'tidak ada'})"
+                f"(boleh: {', '.join(sorted(TRANSITIONS[ticket['status']])) or 'tidak ada'}; "
+                "pakai --force untuk memaksa)"
             )
         self.con.execute(
             "update tickets set status=?, updated_at=?, note=? where id=?",
             (status, now(), note or ticket["note"], ticket_id),
         )
-        self._event(ticket_id, "moved", f"{ticket['status']} → {status} {note}".strip())
+        kind = "moved" if allowed else "forced"
+        self._event(ticket_id, kind, f"{ticket['status']} → {status} {note}".strip())
         self.con.commit()
         return self.get(ticket_id)
 
@@ -227,6 +237,38 @@ class TicketStore:
             "select * from tickets where status='ready' order by priority asc, created_at asc limit 1"
         ).fetchone()
         return dict(row) if row else None
+
+    def summary(self) -> dict:
+        rows = self.con.execute("select status, count(*) as n from tickets group by status").fetchall()
+        return {row["status"]: row["n"] for row in rows}
+
+    def report(self, ticket_id: str, t3_link: str = "") -> str:
+        """Markdown report for a finished (or in-flight) ticket."""
+        ticket = self.get(ticket_id)
+        events = self.events(ticket_id)
+        lines = [
+            f"# {ticket['id']} · {ticket['title']}",
+            "",
+            f"- **Status**: `{ticket['status']}`",
+            f"- **Project**: {ticket['project']}",
+            f"- **Profil model**: {ticket['model_profile'] or '(default config)'}",
+            f"- **Prioritas**: {ticket['priority']}",
+            f"- **Dibuat**: {ticket['created_at']}",
+            f"- **Diperbarui**: {ticket['updated_at']}",
+        ]
+        if ticket["thread_id"]:
+            lines.append(f"- **Thread**: `{ticket['thread_id']}`")
+        if t3_link:
+            lines.append(f"- **Tautan**: {t3_link}")
+        if ticket["test_cmd"]:
+            lines += ["", "## Perintah test", "", "```bash", ticket["test_cmd"], "```"]
+        if ticket["body"]:
+            lines += ["", "## Deskripsi", "", ticket["body"]]
+        lines += ["", "## Bukti & catatan", "", ticket["note"] or "_belum ada catatan bukti_"]
+        lines += ["", "## Riwayat", "", "| Waktu | Kejadian | Detail |", "|---|---|---|"]
+        for event in events:
+            lines.append(f"| {event['at'][:19]} | {event['kind']} | {event['detail'].replace('|', '/')} |")
+        return "\n".join(lines) + "\n"
 
     def events(self, ticket_id: str) -> list[dict]:
         rows = self.con.execute(

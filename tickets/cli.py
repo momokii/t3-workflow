@@ -72,6 +72,11 @@ def main() -> int:
     move.add_argument("ticket")
     move.add_argument("status", choices=STATUSES)
     move.add_argument("--note", default="")
+    move.add_argument("--force", action="store_true", help="lewati state machine (override manusia)")
+
+    report = sub.add_parser("report", help="tulis laporan markdown untuk satu tiket")
+    report.add_argument("ticket")
+    report.add_argument("--out", default="", help="path tujuan; kosong = cetak ke stdout")
 
     args = parser.parse_args()
     store = TicketStore(Path(args.db), Path(args.config))
@@ -103,7 +108,16 @@ def main() -> int:
         elif args.command == "show":
             print_ticket(store.get(args.ticket), store.events(args.ticket))
         elif args.command == "move":
-            print_ticket(store.move(args.ticket, args.status, args.note))
+            print_ticket(store.move(args.ticket, args.status, args.note, force=args.force))
+        elif args.command == "report":
+            text = store.report(args.ticket)
+            if args.out:
+                out = Path(args.out)
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(text, encoding="utf-8")
+                print(f"laporan ditulis: {out}")
+            else:
+                print(text)
     except TicketError as exc:
         print(f"ditolak: {exc}", file=sys.stderr)
         return 2

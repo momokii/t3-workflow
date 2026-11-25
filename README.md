@@ -80,6 +80,30 @@ Status: `backlog → ready → in-progress → testing → review → done`, plu
 Transisi lain ditolak. Profil model ada di `~/.config/t3-workflow/config.json`
 dan hanya dibaca oleh watcher — watcher tidak pernah memilih model sendiri.
 
+## Papan kanban
+
+```bash
+python3 board/server.py                 # http://127.0.0.1:8787
+python3 board/server.py --host 0.0.0.0 --token RAHASIA   # akses dari device lain
+systemctl --user enable --now t3-board  # sudah terpasang, jalan di localhost
+```
+
+Halaman menyediakan drag-and-drop **dan** kontrol "Pindahkan" per kartu, karena
+WCAG 2.2 SC 2.5.7 mewajibkan alternatif pointer tunggal untuk setiap aksi drag.
+Ada juga "Paksa pindah…" untuk override manusia; setiap override dicatat sebagai
+event `forced` supaya tampak di laporan.
+
+## Laporan per tiket
+
+```bash
+python3 tickets/cli.py report T-0001            # cetak markdown
+python3 tickets/cli.py report T-0001 --out reports/T-0001.md
+curl http://127.0.0.1:8787/api/report/T-0001     # dari papan
+```
+
+Laporan memuat status, profil model, thread, perintah test, catatan bukti, dan
+seluruh riwayat tiket.
+
 ## Status audit
 
 Setiap perintah dicatat di `~/.local/state/t3-bridge/audit.jsonl`; log di `bridge.log`; offset update di `state.json`.

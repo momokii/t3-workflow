@@ -43,7 +43,9 @@ STATE_PATH = STATE_DIR / "state.json"
 LOG_PATH = STATE_DIR / "bridge.log"
 AUDIT_PATH = STATE_DIR / "audit.jsonl"
 
-THREAD_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+THREAD_ID = re.compile(
+    r"^(?:mcp:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 MAX_REPLY = 3500
 
 DEFAULTS = {
@@ -261,7 +263,7 @@ def cmd_threads(config: dict, needle: str) -> str:
 
 def cmd_ctx(config: dict, thread_id: str, count: int = 3) -> str:
     if not THREAD_ID.match(thread_id):
-        return "Format thread id tidak valid (harus UUID)."
+        return "Format thread id tidak valid (UUID, dengan atau tanpa awalan mcp:)."
     data = thread_show(config, thread_id, count)
     thread = data.get("thread") or {}
     # `t3 thread show --json` mengembalikan {"thread": {...}, "messages": [...]}
@@ -278,7 +280,7 @@ def cmd_ctx(config: dict, thread_id: str, count: int = 3) -> str:
 
 def cmd_send(config: dict, thread_id: str, text: str) -> str:
     if not THREAD_ID.match(thread_id):
-        return "Format thread id tidak valid (harus UUID)."
+        return "Format thread id tidak valid (UUID, dengan atau tanpa awalan mcp:)."
     if not text.strip():
         return "Teks kosong."
     if not config["bridge"].get("allowWrites", True):

@@ -157,6 +157,7 @@ Komponen dan tanggung jawab:
 | **4. Watcher dev** | `watcher.py --once`, dry-run dulu | rencana perintah benar; klaim atomik; tiket gagal → `blocked` | **selesai untuk `--once` + dry-run**; loop & pemilihan otomatis menyusul |
 | **5. Watcher test** | jalankan test, tempel bukti, pindah status | status hanya berubah bila exit code 0 | desain siap |
 | **6. Rilis** | changelog + bukti + PR, push manual | PR berisi changelog dan bukti test | desain siap, menunggu keputusan aturan push |
+| **7. Papan kanban** | `board/server.py` + `board/static/index.html` | drag-and-drop berfungsi; ada alternatif single-pointer (WCAG 2.2 SC 2.5.7); laporan per tiket bisa diunduh | **selesai** — 20 test API + verifikasi visual terang/gelap |
 
 ---
 
@@ -171,6 +172,15 @@ Komponen dan tanggung jawab:
 | 5 | **Bridge diaktifkan** | agar bisa memerintah dari HP | `t3-bridge.service` enabled + active |
 | 6 | **Repo pilot: `t3-workflow`** | risiko nol untuk uji loop | tiket pilot T-0001 |
 | 7 | **Model + harness lewat config**, bukan ditulis manual tiap tiket | ingin pembagian model yang konsisten | 4 profil: `fast`, `deep`, `cheap`, `build` (provider `pi` dan `opencode`) |
+
+### Catatan implementasi UI (riset 2026-11-25)
+
+| Sumber | Aturan yang diambil | Wujud di papan |
+|---|---|---|
+| WCAG 2.2 SC 2.5.7 (Level AA) | setiap aksi drag wajib punya alternatif pointer tunggal tanpa drag `[w3c]` | kontrol "Pindahkan" (select) di tiap kartu + tombol "Paksa pindah…" |
+| WCAG 2.1.1 / 2.4.7 | harus bisa keyboard, fokus terlihat `[w3c]` | kartu `tabindex=0`, `:focus-visible` 2px, select/button native |
+| NN/g drag-and-drop | signifier grabbable, feedback saat grab dan saat drop, alternatif untuk presisi `[nng]` | `cursor: grab`, kartu `dragging` memudar, kolom tujuan bergaris putus-putus, select sebagai alternatif presisi |
+| ARIA live | perubahan status diumumkan `[w3c]` | `aria-live="polite"` untuk toast dan pengumuman |
 
 ### Masih terbuka
 

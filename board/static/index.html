@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Papan Tiket · t3-workflow</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #16181d;
+    --ink-soft: #5b6472;
+    --line: #dfe3ea;
+    --accent: #4f46e5;
+    --accent-ink: #ffffff;
+    --ok: #0f766e;
+    --warn: #b45309;
+    --danger: #b91c1c;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .06);
+    --focus: 2px solid #4f46e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --surface: #161a21;
+      --surface-2: #1d232c;
+      --ink: #e8ecf3;
+      --ink-soft: #9aa5b5;
+      --line: #2a323d;
+      --accent: #8b8cf9;
+      --accent-ink: #10131a;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1600px; margin: 0 auto; padding: 14px 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .brand { font-weight: 650; letter-spacing: -.01em; font-size: 16px; }
+  .brand span { color: var(--ink-soft); font-weight: 450; }
+  .counts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { font-size: 12px; color: var(--ink-soft); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
+  .spacer { flex: 1 1 auto; }
+  .controls { display: flex; gap: 8px; align-items: center; }
+  input[type="search"], select.filter {
+    font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 10px; min-width: 180px;
+  }
+  input[type="search"]:focus-visible, select.filter:focus-visible, button:focus-visible, a:focus-visible,
+  article.card:focus-visible, [draggable="true"]:focus-visible { outline: var(--focus); outline-offset: 2px; }
+  main { max-width: 1600px; margin: 0 auto; padding: 18px 20px 48px; }
+  .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x proximity; }
+  section.col { scroll-snap-align: start; }
+  .col[data-status="done"], .col[data-status="blocked"] { max-width: 220px; }
+  @media (max-width: 900px) { .board { grid-auto-flow: row; grid-auto-columns: auto; } }
+  section.col { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; min-height: 140px; }
+  section.col[data-drop="on"] { outline: 2px dashed var(--accent); outline-offset: -4px; background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+  .col-head { display: flex; align-items: baseline; gap: 8px; padding: 4px 6px 10px; }
+  .col-head h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin: 0; color: var(--ink-soft); font-weight: 600; }
+  .col-head .n { font-size: 12px; color: var(--ink-soft); }
+  article.card {
+    background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--line);
+    border-radius: 10px; padding: 10px 11px; margin-bottom: 8px; box-shadow: var(--shadow);
+    cursor: grab; transition: transform .12s ease, box-shadow .12s ease;
+  }
+  article.card:active { cursor: grabbing; }
+  article.card.dragging { opacity: .45; transform: rotate(.5deg); }
+  article.card[data-priority="1"] { border-left-color: var(--danger); }
+  article.card[data-priority="2"] { border-left-color: var(--warn); }
+  @media (prefers-reduced-motion: reduce) { article.card { transition: none; } }
+  .card-top { display: flex; gap: 8px; justify-content: space-between; align-items: baseline; }
+  .id { font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-soft); }
+  .title { font-weight: 560; margin: 4px 0 8px; }
+  .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .tag { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-soft); background: var(--surface-2); }
+  .tag.profile { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  a.thread { font-size: 11px; color: var(--accent); text-decoration: none; }
+  a.thread:hover { text-decoration: underline; }
+  .move { margin-top: 10px; display: flex; gap: 6px; align-items: center; }
+  .move label { font-size: 11px; color: var(--ink-soft); }
+  .move select { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+  details.force { margin-top: 6px; }
+  details.force summary { font-size: 11px; color: var(--ink-soft); cursor: pointer; }
+  details.force .row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  details.force button { font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  details.force button:hover { border-color: var(--accent); color: var(--accent); }
+  .empty { color: var(--ink-soft); font-size: 12px; padding: 6px; }
+  #toast { position: fixed; inset-inline: 0; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
+  #toast .item { pointer-events: auto; margin-top: 8px; background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 999px; font-size: 13px; box-shadow: var(--shadow); }
+  #toast .item.err { background: var(--danger); color: #fff; }
+  footer { color: var(--ink-soft); font-size: 12px; padding: 8px 20px 28px; max-width: 1600px; margin: 0 auto; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <div class="brand">Papan Tiket <span>· t3-workflow</span></div>
+    <div class="counts" id="counts" aria-label="Ringkasan status"></div>
+    <div class="spacer"></div>
+    <div class="controls">
+      <label class="sr-only" for="q">Cari tiket</label>
+      <input id="q" type="search" placeholder="Cari judul, id, project…" autocomplete="off">
+      <label class="sr-only" for="project">Filter project</label>
+      <select id="project" class="filter"><option value="">Semua project</option></select>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="board" id="board" aria-label="Papan tiket"></div>
+  <p class="hint" style="color:var(--ink-soft);font-size:12px;margin-top:10px">
+    Tarik kartu ke kolom lain, atau pakai kontrol <strong>Pindahkan</strong> di kartu (setara pointer tunggal, sesuai WCAG 2.2 SC 2.5.7).
+    <kbd>Tab</kbd> untuk berpindah, <kbd>Enter</kbd> pada kontrol untuk mengubah status.
+  </p>
+  <div id="live" class="sr-only" aria-live="polite"></div>
+</main>
+<footer id="foot"></footer>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const board = document.getElementById('board');
+  const counts = document.getElementById('counts');
+  const live = document.getElementById('live');
+  const toastBox = document.getElementById('toast');
+  const q = document.getElementById('q');
+  const projectSel = document.getElementById('project');
+  const foot = document.getElementById('foot');
+  const LABELS = { backlog:'Backlog', ready:'Siap', 'in-progress':'Dikerjakan', testing:'Testing', review:'Review', done:'Selesai', blocked:'Terhambat' };
+  const ORDER = ['backlog','ready','in-progress','testing','review','done','blocked'];
+  let state = { tickets: [], transitions: {}, profiles: [], statuses: ORDER };
+
+  const say = (msg, isError=false) => {
+    live.textContent = msg;
+    const el = document.createElement('div');
+    el.className = 'item' + (isError ? ' err' : '');
+    el.textContent = msg;
+    toastBox.appendChild(el);
+    setTimeout(() => el.remove(), isError ? 6000 : 2600);
+  };
+
+  const visible = (t) => {
+    const text = (t.id + ' ' + t.title + ' ' + t.project + ' ' + t.model_profile).toLowerCase();
+    const needle = q.value.trim().toLowerCase();
+    if (needle && !text.includes(needle)) return false;
+    if (projectSel.value && t.project !== projectSel.value) return false;
+    return true;
+  };
+
+  function card(t) {
+    const el = document.createElement('article');
+    el.className = 'card';
+    el.dataset.id = t.id;
+    el.dataset.priority = String(t.priority);
+    el.draggable = true;
+    el.tabIndex = 0;
+    el.setAttribute('aria-roledescription', 'kartu tiket');
+    el.setAttribute('aria-label', `${t.id}, ${t.title}, status ${LABELS[t.status] || t.status}`);
+
+    const top = document.createElement('div');
+    top.className = 'card-top';
+    top.innerHTML = `<span class="id">${t.id}</span><span class="tag">p${t.priority}</span>`;
+    el.appendChild(top);
+
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = t.title;
+    el.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const proj = document.createElement('span');
+    proj.className = 'tag';
+    proj.textContent = t.project;
+    meta.appendChild(proj);
+    if (t.model_profile) {
+      const prof = document.createElement('span');
+      prof.className = 'tag profile';
+      prof.textContent = t.model_profile;
+      meta.appendChild(prof);
+    }
+    if (t.thread_id) {
+      const a = document.createElement('a');
+      a.className = 'thread';
+      a.href = '#';
+      a.textContent = 'thread';
+      a.title = t.thread_id;
+      a.addEventListener('click', (e) => { e.preventDefault(); say(`Thread: ${t.thread_id}`); });
+      meta.appendChild(a);
+    }
+    const report = document.createElement('a');
+    report.className = 'thread';
+    report.href = `/api/report/${t.id}`;
+    report.textContent = 'laporan';
+    meta.appendChild(report);
+    el.appendChild(meta);
+
+    // Alternatif single-pointer + keyboard untuk drag.
+    const move = document.createElement('div');
+    move.className = 'move';
+    const label = document.createElement('label');
+    label.htmlFor = `move-${t.id}`;
+    label.textContent = 'Pindahkan';
+    const sel = document.createElement('select');
+    sel.id = `move-${t.id}`;
+    const allowed = state.transitions[t.status] || [];
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'pilih…';
+    sel.appendChild(placeholder);
+    for (const status of allowed) {
+      const opt = document.createElement('option');
+      opt.value = status;
+      opt.textContent = LABELS[status] || status;
+      sel.appendChild(opt);
+    }
+    sel.addEventListener('change', () => {
+      if (!sel.value) return;
+      moveTicket(t.id, sel.value, false);
+      sel.value = '';
+    });
+    move.append(label, sel);
+    el.appendChild(move);
+
+    const force = document.createElement('details');
+    force.className = 'force';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Paksa pindah…';
+    force.appendChild(summary);
+    const row = document.createElement('div');
+    row.className = 'row';
+    for (const status of ORDER) {
+      if (status === t.status) continue;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = LABELS[status] || status;
+      b.setAttribute('aria-label', `Paksa ${t.id} ke ${LABELS[status] || status}`);
+      b.addEventListener('click', () => moveTicket(t.id, status, true));
+      row.appendChild(b);
+    }
+    force.appendChild(row);
+    el.appendChild(force);
+
+    el.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/ticket', t.id);
+      e.dataTransfer.effectAllowed = 'move';
+      el.classList.add('dragging');
+    });
+    el.addEventListener('dragend', () => el.classList.remove('dragging'));
+
+    return el;
+  }
+
+  function render() {
+    board.innerHTML = '';
+    for (const status of ORDER) {
+      const col = document.createElement('section');
+      col.className = 'col';
+      col.dataset.status = status;
+      const items = state.tickets.filter(t => t.status === status && visible(t));
+      const head = document.createElement('div');
+      head.className = 'col-head';
+      head.innerHTML = `<h2 id="h-${status}">${LABELS[status] || status}</h2><span class="n">${items.length}</span>`;
+      col.setAttribute('aria-labelledby', `h-${status}`);
+      col.appendChild(head);
+
+      col.addEventListener('dragover', (e) => { e.preventDefault(); col.dataset.drop = 'on'; });
+      col.addEventListener('dragleave', () => { delete col.dataset.drop; });
+      col.addEventListener('drop', (e) => {
+        e.preventDefault();
+        delete col.dataset.drop;
+        const id = e.dataTransfer.getData('text/ticket');
+        if (!id) return;
+        const ticket = state.tickets.find(t => t.id === id);
+        if (!ticket || ticket.status === status) return;
+        const allowed = state.transitions[ticket.status] || [];
+        if (!allowed.includes(status)) {
+          say(`${id}: ${LABELS[ticket.status]} → ${LABELS[status]} tidak diizinkan. Pakai "Paksa pindah…" jika memang mau.`, true);
+          return;
+        }
+        moveTicket(id, status, false);
+      });
+
+      if (!items.length) {
+        const empty = document.createElement('p');
+        empty.className = 'empty';
+        empty.textContent = 'kosong';
+        col.appendChild(empty);
+      }
+      for (const ticket of items) col.appendChild(card(ticket));
+      board.appendChild(col);
+    }
+    counts.innerHTML = ORDER
+      .filter(s => (state.summary || {})[s])
+      .map(s => `<span class="chip">${LABELS[s] || s}: ${state.summary[s]}</span>`)
+      .join('');
+  }
+
+  async function load() {
+    const res = await fetch('/api/tickets', { cache: 'no-store' });
+    const data = await res.json();
+    const projects = [...new Set(data.tickets.map(t => t.project))].sort();
+    const keep = projectSel.value;
+    projectSel.innerHTML = '<option value="">Semua project</option>' +
+      projects.map(p => `<option value="${p}">${p}</option>`).join('');
+    projectSel.value = projects.includes(keep) ? keep : '';
+    state = data;
+    render();
+    foot.textContent = `${data.tickets.length} tiket · profil tersedia: ${(data.profiles || []).join(', ') || '-'}`;
+  }
+
+  async function moveTicket(id, status, force) {
+    const before = state.tickets.find(t => t.id === id);
+    const optimistic = { ...before, status };
+    state.tickets = state.tickets.map(t => t.id === id ? optimistic : t);
+    render();
+    try {
+      const res = await fetch(`/api/tickets/${id}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, force })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'gagal memindahkan');
+      state.tickets = state.tickets.map(t => t.id === id ? data.ticket : t);
+      await load();
+      say(`${id} dipindah ke ${LABELS[status] || status}${force ? ' (paksa)' : ''}`);
+    } catch (err) {
+      state.tickets = state.tickets.map(t => t.id === id ? before : t);
+      render();
+      say(String(err.message || err), true);
+    }
+  }
+
+  q.addEventListener('input', render);
+  projectSel.addEventListener('change', render);
+  load().catch(err => say('gagal memuat: ' + err.message, true));
+  setInterval(() => load().catch(() => {}), 15000);
+})();
+</script>
+</body>
+</html>
