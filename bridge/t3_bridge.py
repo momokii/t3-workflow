@@ -538,6 +538,36 @@ def notify_approvals(config: dict, state: dict) -> int:
     return sent
 
 
+def notify_ticket_states(config: dict, state: dict) -> int:
+    """Kirim satu pesan saat tiket masuk review, selesai, atau terhambat."""
+    if TicketStore is None:
+        return 0
+    chats = config["telegram"]["allowChatIds"]
+    if not chats:
+        return 0
+    store = ticket_store(config)
+    try:
+        rows = store.list()
+    finally:
+        store.close()
+    known = dict(state.get("ticketStates") or {})
+    sent = 0
+    for ticket in rows:
+        previous = known.get(ticket["id"])
+        if previous == ticket["status"]:
+            continue
+        known[ticket["id"]] = ticket["status"]
+        if previous is None or ticket["status"] not in ("review", "done", "blocked"):
+            continue
+        note = f"\n{ticket['note']}" if ticket.get("note") else ""
+        link = f"\n{ticket['pr_url']}" if ticket.get("pr_url") else ""
+        reply(config, str(chats[0]), f"{ticket['id']} → {ticket['status']}: {ticket['title']}{note}{link}")
+        sent += 1
+    state["ticketStates"] = known
+    save_state(state)
+    return sent
+
+
 def poll_once(config: dict, state: dict) -> int:
     """Satu putaran getUpdates. Mengembalikan jumlah perintah yang dijawab."""
     payload = {
@@ -575,6 +605,7 @@ def poll_forever(config: dict) -> int:
     while True:
         try:
             notify_approvals(config, state)
+            notify_ticket_states(config, state)
             result = poll_once(config, state)
         except Stop:
             raise

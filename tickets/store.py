@@ -362,6 +362,19 @@ class TicketStore:
         ).fetchone()
         return dict(row) if row else None
 
+    def backup(self, out_dir: Path) -> Path:
+        """Salinan konsisten database memakai API backup sqlite3."""
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        target = out_dir / f"tickets-{stamp}.sqlite"
+        dest = sqlite3.connect(target)
+        try:
+            self.con.backup(dest)
+        finally:
+            dest.close()
+        return target
+
     def summary(self) -> dict:
         rows = self.con.execute("select status, count(*) as n from tickets group by status").fetchall()
         return {row["status"]: row["n"] for row in rows}

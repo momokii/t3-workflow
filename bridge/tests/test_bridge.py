@@ -120,6 +120,27 @@ class TicketCommandTests(unittest.TestCase):
         finally:
             store.close()
 
+    def test_ticket_state_notification_is_sent_once(self) -> None:
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
+        sent: list[str] = []
+        original = bridge.reply
+        bridge.reply = lambda config, chat, text: sent.append(text)
+        try:
+            state = {"ticketStates": {}}
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # seed, tanpa kirim
+            store = self.store_cls(self.db, self.wf_config)
+            store.move("T-0001", "ready", force=True)
+            store.close()
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # ready tidak dinotifikasi
+            store = self.store_cls(self.db, self.wf_config)
+            store.move("T-0001", "done", force=True)
+            store.close()
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 1)
+            self.assertIn("done", sent[0])
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # tidak dobel
+        finally:
+            bridge.reply = original
+
     def test_second_decision_is_reported_not_crashing(self) -> None:
         bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
         store = self.store_cls(self.db, self.wf_config)

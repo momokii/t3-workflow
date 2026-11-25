@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -74,6 +75,9 @@ def main() -> int:
     move.add_argument("--note", default="")
     move.add_argument("--force", action="store_true", help="lewati state machine (override manusia)")
 
+    backup = sub.add_parser("backup", help="salin database tiket dan laporan ke folder")
+    backup.add_argument("--out", default=str(Path.home() / ".local/state/t3-workflow/backups"))
+
     report = sub.add_parser("report", help="tulis laporan markdown untuk satu tiket")
     report.add_argument("ticket")
     report.add_argument("--out", default="", help="path tujuan; kosong = cetak ke stdout")
@@ -109,6 +113,14 @@ def main() -> int:
             print_ticket(store.get(args.ticket), store.events(args.ticket))
         elif args.command == "move":
             print_ticket(store.move(args.ticket, args.status, args.note, force=args.force))
+        elif args.command == "backup":
+            import shutil
+
+            target = store.backup(Path(args.out))
+            reports = Path(os.environ.get("T3_REPORTS_DIR", Path.home() / ".local/state/t3-workflow/reports"))
+            if reports.exists():
+                shutil.copytree(reports, target.parent / f"reports-{target.stem.split('-')[-1]}", dirs_exist_ok=True)
+            print(f"backup: {target}")
         elif args.command == "report":
             text = store.report(args.ticket)
             if args.out:
