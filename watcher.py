@@ -262,6 +262,41 @@ def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
     return f"{ticket['id']}: test gagal (rc={proc.returncode}) → in-progress"
 
 
+def active_tickets(store: TicketStore) -> list[dict]:
+    return store.list("in-progress")
+
+
+def enforce_budget(store: TicketStore, config: dict) -> list[str]:
+    """Tandai tiket yang melewati anggaran waktu, supaya tidak menggantung.
+
+    Anggarannya sengaja kasar: satu angka menit di config, bukan penghitung token,
+    karena watcher tidak melihat biaya provider. Tujuannya memutus loop yang macet,
+    bukan menagih pemakaian.
+    """
+    limit = int((config.get("limits") or {}).get("maxInProgressMinutes", 0) or 0)
+    if limit <= 0:
+        return []
+    from datetime import datetime, timezone
+
+    notes = []
+    for ticket in active_tickets(store):
+        stamp = ticket.get("claimed_at") or ticket.get("updated_at")
+        if not stamp:
+            continue
+        try:
+            started = datetime.fromisoformat(stamp)
+        except ValueError:
+            continue
+        minutes = (datetime.now(timezone.utc) - started).total_seconds() / 60
+        if minutes > limit:
+            store.move(
+                ticket["id"], "blocked",
+                f"anggaran waktu: {minutes:.0f} menit > {limit} menit", force=True,
+            )
+            notes.append(f"{ticket['id']} melewati anggaran ({minutes:.0f} menit) → blocked")
+    return notes
+
+
 def next_review(store: TicketStore) -> dict | None:
     rows = [ticket for ticket in store.list("review")]
     return rows[0] if rows else None
@@ -275,6 +310,9 @@ def next_testing(store: TicketStore) -> dict | None:
 def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: str = "watcher",
          runner=subprocess.run) -> str:
     """One unit of work: drain `testing` first, then start new work."""
+    for note in enforce_budget(store, config):
+        print(note, flush=True)
+
     review = next_review(store)
     if review is not None:
         if dry_run:
@@ -286,6 +324,10 @@ def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: s
         if dry_run:
             return f"[dry-run] {testing['id']} · jalankan test: {testing['test_cmd'] or '(kosong)'}"
         return run_test(store, testing, runner=runner)
+    limit = int((config.get("watcher") or {}).get("maxConcurrent", 1) or 1)
+    active = active_tickets(store)
+    if len(active) >= limit:
+        return f"{len(active)} tiket in-progress (batas {limit}) — tiket baru menunggu"
     return run_once(store, config, t3_cli, dry_run, worker, runner=runner)
 
 
