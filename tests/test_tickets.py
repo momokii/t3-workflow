@@ -103,7 +103,7 @@ class WatcherTests(unittest.TestCase):
         self.store.close()
 
     def test_dry_run_changes_nothing(self) -> None:
-        ticket = self.store.add("uji", "t3-workflow", model_profile="deep", status="ready")
+        ticket = self.store.add("uji", "/tmp/project", model_profile="deep", status="ready")
         message = watcher.run_once(self.store, CONFIG, "/bin/true", dry_run=True)
         self.assertIn("[dry-run]", message)
         self.assertIn("deep", message)
