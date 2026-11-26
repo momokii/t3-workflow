@@ -111,6 +111,19 @@
   details.force button { font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
   details.force button:hover { border-color: var(--accent); color: var(--accent); }
   .empty { color: var(--ink-soft); font-size: 12px; padding: 6px; }
+  .btn { font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
+  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); box-shadow: var(--shadow); }
+  dialog::backdrop { background: rgba(12, 14, 20, .45); }
+  dialog form { padding: 18px 18px 16px; display: grid; gap: 12px; }
+  dialog h3 { margin: 0; font-size: 16px; }
+  dialog label { display: grid; gap: 4px; font-size: 12px; color: var(--ink-soft); }
+  dialog input, dialog select, dialog textarea { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 9px; width: 100%; }
+  dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  dialog .check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); }
+  dialog .check input { width: auto; }
   #toast { position: fixed; inset-inline: 0; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
   #toast .item { pointer-events: auto; margin-top: 8px; background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 999px; font-size: 13px; box-shadow: var(--shadow); }
   #toast .item.err { background: var(--danger); color: #fff; }
@@ -125,6 +138,9 @@
     <div class="counts" id="counts" aria-label="Ringkasan status"></div>
     <div class="spacer"></div>
     <div class="controls">
+      <button class="btn primary" id="new-ticket" type="button">＋ Tiket</button>
+      <button class="btn" id="adopt-thread" type="button">Adopsi thread</button>
+      <button class="btn" id="new-project" type="button">Daftarkan project</button>
       <label class="sr-only" for="q">Cari tiket</label>
       <input id="q" type="search" placeholder="Cari judul, id, project…" autocomplete="off">
       <label class="sr-only" for="project">Filter project</label>
@@ -142,6 +158,39 @@
   <div id="live" class="sr-only" aria-live="polite"></div>
 </main>
 <footer id="foot"></footer>
+<dialog id="dlg-ticket" aria-labelledby="dlg-ticket-title">
+  <form method="dialog" id="form-ticket">
+    <h3 id="dlg-ticket-title">Tiket baru</h3>
+    <label>Judul <input name="title" required autocomplete="off"></label>
+    <label>Project <select name="project" required></select></label>
+    <label>Profil model <select name="profile"></select></label>
+    <label>Perintah test <input name="test_cmd" placeholder="python3 -m unittest" autocomplete="off"></label>
+    <label>Prioritas <select name="priority"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+    <label class="check"><input type="checkbox" name="requires_approval"> Butuh persetujuan sebelum dikerjakan</label>
+    <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Buat tiket</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-project" aria-labelledby="dlg-project-title">
+  <form method="dialog" id="form-project">
+    <h3 id="dlg-project-title">Daftarkan project</h3>
+    <p style="margin:0;color:var(--ink-soft);font-size:12px">Project T3 dibuat dengan <code>t3 project add</code>. Folder harus sudah ada.</p>
+    <label>Nama project <input name="title" required autocomplete="off"></label>
+    <label>Path absolut <input name="path" required placeholder="/home/kelanach/…" autocomplete="off"></label>
+    <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Daftarkan</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-adopt" aria-labelledby="dlg-adopt-title">
+  <form method="dialog" id="form-adopt">
+    <h3 id="dlg-adopt-title">Adopsi thread T3</h3>
+    <p style="margin:0;color:var(--ink-soft);font-size:12px">Thread yang sudah ada menjadi tiket <code>in-progress</code>, sehingga bisa dilanjutkan dari papan.</p>
+    <label>Thread <select name="thread_id" required></select></label>
+    <label>Profil model <select name="profile"></select></label>
+    <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Adopsi</button></div>
+  </form>
+</dialog>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -362,6 +411,41 @@
       .join('');
   }
 
+  async function api(path, options = {}) {
+    const headers = Object.assign({}, options.body ? { 'Content-Type': 'application/json' } : {},
+                                  TOKEN ? { 'X-Board-Token': TOKEN } : {});
+    const res = await fetch(path, Object.assign({}, options, { headers }));
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  function fillProfiles(select) {
+    select.innerHTML = (state.profiles || []).map(p => `<option value="${p}">${p}</option>`).join('')
+      || '<option value="">(default config)</option>';
+    if (state.defaultProfile) select.value = state.defaultProfile;
+  }
+
+  async function openTicketDialog() {
+    const data = await api('/api/projects');
+    const form = document.getElementById('form-ticket');
+    form.project.innerHTML = (data.projects || [])
+      .map(p => `<option value="${p.title}">${p.title}</option>`).join('');
+    if (projectSel.value) form.project.value = projectSel.value;
+    fillProfiles(form.profile);
+    document.getElementById('dlg-ticket').showModal();
+  }
+
+  async function openAdoptDialog() {
+    const data = await api('/api/threads');
+    const form = document.getElementById('form-adopt');
+    form.thread_id.innerHTML = (data.threads || []).slice(0, 40).map(t =>
+      `<option value="${t.thread_id}">${(t.project || '?')} · ${(t.title || '(tanpa judul)').slice(0, 48)} [${t.status || '?'}]</option>`
+    ).join('');
+    fillProfiles(form.profile);
+    document.getElementById('dlg-adopt').showModal();
+  }
+
   async function load() {
     const res = await fetch('/api/tickets', { cache: 'no-store' });
     const data = await res.json();
@@ -413,6 +497,73 @@
       say(String(err.message || err), true);
     }
   }
+
+  document.getElementById('new-ticket').addEventListener('click', () =>
+    openTicketDialog().catch(err => say(err.message, true)));
+  document.getElementById('new-project').addEventListener('click', () =>
+    document.getElementById('dlg-project').showModal());
+  document.getElementById('adopt-thread').addEventListener('click', () =>
+    openAdoptDialog().catch(err => say(err.message, true)));
+  document.querySelectorAll('[data-close]').forEach(btn =>
+    btn.addEventListener('click', () => btn.closest('dialog').close()));
+
+  document.getElementById('form-ticket').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const body = {
+      title: form.title.value,
+      project: form.project.value,
+      profile: form.profile.value,
+      test_cmd: form.test_cmd.value,
+      priority: Number(form.priority.value),
+      requires_approval: form.requires_approval.checked,
+    };
+    try {
+      const data = await api('/api/tickets', { method: 'POST', body: JSON.stringify(body) });
+      form.closest('dialog').close();
+      form.reset();
+      say(`${data.ticket.id} dibuat`);
+      await load();
+    } catch (err) { say(err.message, true); }
+  });
+
+  document.getElementById('form-project').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    try {
+      const data = await api('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify({ title: form.title.value, path: form.path.value }),
+      });
+      form.closest('dialog').close();
+      form.reset();
+      say(data.message || 'project terdaftar');
+    } catch (err) { say(err.message, true); }
+  });
+
+  document.getElementById('form-adopt').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const option = form.thread_id.selectedOptions[0];
+    const [project] = (option ? option.textContent : '? ·').split(' · ');
+    try {
+      const data = await api(`/api/threads/${encodeURIComponent(form.thread_id.value)}/adopt`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: option ? option.textContent.split(' · ')[1].replace(/\s*\[[^\]]*\]$/, '') : '',
+          project: project.trim(),
+          profile: form.profile.value,
+        }),
+      });
+      form.closest('dialog').close();
+      say(`${data.ticket.id} mengadopsi thread`);
+      await load();
+    } catch (err) { say(err.message, true); }
+  });
+
+  // untuk verifikasi visual: /#new membuka dialog tiket
+  if (location.hash === '#new') openTicketDialog().catch(() => {});
+  if (location.hash === '#adopt') openAdoptDialog().catch(() => {});
 
   q.addEventListener('input', render);
   projectSel.addEventListener('change', render);

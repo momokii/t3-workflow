@@ -7,6 +7,7 @@ import http.client
 import importlib.util
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -51,6 +52,21 @@ class BoardApiTests(unittest.TestCase):
         store.close()
         board.Handler.store_path = self.db
         board.Handler.config_path = self.config
+
+        # database T3 tiruan: dua project, satu thread
+        self.t3_db = self.tmp / "t3.sqlite"
+        con = sqlite3.connect(self.t3_db)
+        con.executescript(
+            "create table projection_projects (project_id text, title text, workspace_root text, deleted_at text);"
+            "create table orchestration_v2_projection_threads (thread_id text, project_id text, title text, created_at text);"
+            "create table orchestration_v2_projection_runs (run_id text, thread_id text, ordinal integer, status text);"
+        )
+        con.execute("insert into projection_projects values ('p1','t3-workflow','/tmp/p',null)")
+        con.execute("insert into orchestration_v2_projection_threads values ('th-1','p1','Thread lama','2026-11-01')")
+        con.execute("insert into orchestration_v2_projection_runs values ('r1','th-1',1,'completed')")
+        con.commit()
+        con.close()
+        board.Handler.t3_db_path = self.t3_db
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -138,6 +154,44 @@ class BoardApiTests(unittest.TestCase):
         second, raw = self.request("POST", path, {"approved": False}, token="rahasia")
         self.assertEqual(second.status, 409)
         self.assertIn("sudah", json.loads(raw)["error"])
+
+    def test_lists_t3_projects_and_threads(self) -> None:
+        response, raw = self.request("GET", "/api/projects")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(raw)["projects"][0]["title"], "t3-workflow")
+        response, raw = self.request("GET", "/api/threads")
+        data = json.loads(raw)
+        self.assertEqual(data["threads"][0]["thread_id"], "th-1")
+        self.assertEqual(data["threads"][0]["status"], "completed")
+
+    def test_create_ticket_from_board(self) -> None:
+        body = {"title": "dari papan", "project": "t3-workflow", "profile": "fast", "priority": 2}
+        response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(raw)["ticket"]["title"], "dari papan")
+        response, _ = self.request("POST", "/api/tickets", {"title": "x", "project": "p"})
+        self.assertEqual(response.status, 401)
+
+    def test_create_ticket_rejects_unknown_profile(self) -> None:
+        body = {"title": "x", "project": "t3-workflow", "profile": "tidak-ada"}
+        response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+        self.assertEqual(response.status, 409)
+        self.assertIn("profil", json.loads(raw)["error"])
+
+    def test_adopt_existing_thread(self) -> None:
+        body = {"title": "Thread lama", "project": "t3-workflow", "profile": "fast"}
+        response, raw = self.request("POST", "/api/threads/th-1/adopt", body, token="rahasia")
+        self.assertEqual(response.status, 200)
+        ticket = json.loads(raw)["ticket"]
+        self.assertEqual(ticket["thread_id"], "th-1")
+        self.assertEqual(ticket["status"], "in-progress")
+
+    def test_register_project_validates_path(self) -> None:
+        response, raw = self.request(
+            "POST", "/api/projects", {"title": "baru", "path": "/tidak/ada"}, token="rahasia"
+        )
+        self.assertEqual(response.status, 400)
+        self.assertIn("path", json.loads(raw)["error"])
 
     def test_page_is_served(self) -> None:
         response, raw = self.request("GET", "/")

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
+import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,9 +38,53 @@ from store import (  # noqa: E402
 STATIC = Path(__file__).resolve().parent / "static"
 
 
+T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
+
+
+def t3_projects(db_path: Path) -> list[dict]:
+    if not db_path.exists():
+        return []
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            "select project_id, title, workspace_root from projection_projects "
+            "where deleted_at is null order by lower(title)"
+        ).fetchall()
+    finally:
+        con.close()
+    return [dict(row) for row in rows]
+
+
+def t3_threads(db_path: Path, limit: int = 40) -> list[dict]:
+    """Thread T3 terbaru, supaya yang sudah ada bisa diadopsi jadi tiket."""
+    if not db_path.exists():
+        return []
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+    con.row_factory = sqlite3.Row
+    try:
+        rows = con.execute(
+            """
+            select t.thread_id, t.title, t.created_at,
+                   p.title as project, p.workspace_root,
+                   (select r.status from orchestration_v2_projection_runs r
+                     where r.thread_id = t.thread_id order by r.ordinal desc limit 1) as status
+            from orchestration_v2_projection_threads t
+            left join projection_projects p on p.project_id = t.project_id
+            order by t.created_at desc
+            limit ?
+            """,
+            (limit,),
+        ).fetchall()
+    finally:
+        con.close()
+    return [dict(row) for row in rows]
+
+
 class Handler(BaseHTTPRequestHandler):
     store_path = DB_PATH
     config_path = CONFIG_PATH
+    t3_db_path = T3_DB
     token = ""
     inject_token = True
     server_version = "t3-kanban/1.0"
@@ -58,6 +104,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _json(self, status: int, data) -> None:
         self._send(status, json.dumps(data, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+
+    def _payload(self) -> dict | None:
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            return json.loads(self.rfile.read(length) or b"{}")
+        except json.JSONDecodeError:
+            self._json(400, {"error": "body bukan JSON"})
+            return None
 
     def _authorised(self) -> bool:
         if not self.token:
@@ -100,11 +154,18 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json(404, {"error": "not found"})
             return
+        if path == "/api/projects":
+            self._json(200, {"projects": t3_projects(Path(self.t3_db_path))})
+            return
+        if path == "/api/threads":
+            self._json(200, {"threads": t3_threads(Path(self.t3_db_path))})
+            return
         if path == "/api/tickets":
             store = self._store()
             try:
                 config = load_config(Path(self.config_path))
                 profiles = sorted((config.get("models") or {}).keys())
+                default_profile = (config.get("defaults") or {}).get("profile", "")
                 pending = store.pending_approvals()
                 self._json(200, {
                     "tickets": store.list_public(),
@@ -112,6 +173,7 @@ class Handler(BaseHTTPRequestHandler):
                     "statuses": list(STATUSES),
                     "transitions": {key: sorted(value) for key, value in TRANSITIONS.items()},
                     "profiles": profiles,
+                    "defaultProfile": default_profile,
                     "summary": store.summary(),
                     "approvalCount": len(pending),
                 })
@@ -144,6 +206,83 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        if path == "/api/tickets":
+            if not self._authorised():
+                self._json(401, {"error": "token tidak valid"})
+                return
+            payload = self._payload()
+            if payload is None:
+                return
+            store = self._store()
+            try:
+                ticket = store.add(
+                    title=str(payload.get("title", "")),
+                    project=str(payload.get("project", "")),
+                    body=str(payload.get("body", "")),
+                    model_profile=str(payload.get("profile", "")),
+                    test_cmd=str(payload.get("test_cmd", "")),
+                    priority=int(payload.get("priority", 3) or 3),
+                    status=str(payload.get("status", "backlog")),
+                    requires_approval=bool(payload.get("requires_approval", False)),
+                )
+                self._json(200, {"ticket": ticket})
+            except (TicketError, ValueError) as exc:
+                self._json(409, {"error": str(exc)})
+            finally:
+                store.close()
+            return
+        if path.startswith("/api/threads/") and path.endswith("/adopt"):
+            if not self._authorised():
+                self._json(401, {"error": "token tidak valid"})
+                return
+            payload = self._payload()
+            if payload is None:
+                return
+            thread_id = path.split("/")[3]
+            store = self._store()
+            try:
+                ticket = store.add(
+                    title=str(payload.get("title") or f"Thread {thread_id[:8]}"),
+                    project=str(payload.get("project", "")),
+                    body=str(payload.get("body", "")),
+                    model_profile=str(payload.get("profile", "")),
+                    status="in-progress",
+                )
+                ticket = store.attach_thread(ticket["id"], thread_id, "diadopsi dari thread T3")
+                self._json(200, {"ticket": ticket})
+            except TicketError as exc:
+                self._json(409, {"error": str(exc)})
+            finally:
+                store.close()
+            return
+        if path == "/api/projects":
+            if not self._authorised():
+                self._json(401, {"error": "token tidak valid"})
+                return
+            payload = self._payload()
+            if payload is None:
+                return
+            title = str(payload.get("title", "")).strip()
+            folder = Path(str(payload.get("path", ""))).expanduser()
+            if not title or not folder.is_absolute() or not folder.is_dir():
+                self._json(400, {"error": "judul wajib, path harus absolut dan ada"})
+                return
+            config = load_config(Path(self.config_path))
+            cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+            try:
+                proc = subprocess.run(
+                    [cli, "project", "add", str(folder), "--title", title],
+                    capture_output=True, text=True, timeout=60,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+                return
+            if proc.returncode != 0:
+                self._json(409, {"error": (proc.stderr or proc.stdout or "gagal").strip()[:300]})
+                return
+            self._json(200, {"message": (proc.stdout or "project ditambahkan").strip()[:300],
+                             "projects": t3_projects(Path(self.t3_db_path))})
+            return
         if path.startswith("/api/approvals/") and path.endswith("/decide"):
             if not self._authorised():
                 self._json(401, {"error": "token tidak valid"})
@@ -201,11 +340,13 @@ def main() -> int:
     parser.add_argument("--token", default="", help="wajibkan header X-Board-Token untuk POST (fallback: env T3_BOARD_TOKEN)")
     parser.add_argument("--db", default=str(DB_PATH))
     parser.add_argument("--config", default=str(CONFIG_PATH))
+    parser.add_argument("--t3-db", default=str(T3_DB))
     args = parser.parse_args()
 
     Handler.store_path = Path(args.db)
     Handler.config_path = Path(args.config)
     Handler.token = args.token or __import__("os").environ.get("T3_BOARD_TOKEN", "")
+    Handler.t3_db_path = Path(args.t3_db)
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"kanban di http://{args.host}:{args.port}  (db={args.db})", flush=True)
