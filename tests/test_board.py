@@ -191,7 +191,24 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         ticket = json.loads(raw)["ticket"]
         self.assertEqual(ticket["thread_id"], "th-1")
-        self.assertEqual(ticket["status"], "in-progress")
+        self.assertEqual(ticket["status"], "ready")  # watcher akan melanjutkan thread ini
+
+    def test_create_ticket_accepts_body_and_attachment(self) -> None:
+        body = {
+            "title": "dengan lampiran", "project": "t3-workflow", "profile": "fast",
+            "body": "konteks panjang", "attachment_path": "/tmp/spec.pdf",
+        }
+        response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+        self.assertEqual(response.status, 200)
+        ticket = json.loads(raw)["ticket"]
+        self.assertEqual(ticket["body"], "konteks panjang")
+        self.assertEqual(ticket["attachment_path"], "/tmp/spec.pdf")
+
+    def test_tickets_expose_profile_details(self) -> None:
+        response, raw = self.request("GET", "/api/tickets")
+        details = json.loads(raw)["profileDetails"]
+        self.assertEqual(details[0]["name"], "fast")
+        self.assertEqual(details[0]["provider"], "pi")
 
     def test_register_project_validates_path(self) -> None:
         response, raw = self.request(

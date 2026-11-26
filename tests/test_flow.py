@@ -128,6 +128,91 @@ class TestStageTests(Base):
         self.assertEqual(self.store.get(testing["id"])["status"], "review")
 
 
+class ContinuationTests(Base):
+    """A ticket that carries a thread continues that thread instead of starting one."""
+
+    def test_ready_ticket_with_thread_sends_to_same_thread(self) -> None:
+        ticket = self.store.add("lanjut", "/tmp/p", model_profile="fast", status="ready")
+        self.store.attach_thread(ticket["id"], "mcp:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        calls: list[list[str]] = []
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, '{"ok":true}', "")
+
+        message = watcher.run_once(self.store, CONFIG, "t3", dry_run=False, runner=fake)
+        self.assertIn("melanjutkan thread", message)
+        self.assertEqual(calls[0][:3], ["t3", "thread", "send"])
+        self.assertEqual(calls[0][3], "mcp:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "in-progress")
+        kinds = [event["kind"] for event in self.store.events(ticket["id"])]
+        self.assertIn("continued", kinds)
+
+    def test_dry_run_preview_differs_for_continuation(self) -> None:
+        ticket = self.store.add("lanjut", "/tmp/p", model_profile="fast", status="ready")
+        self.store.attach_thread(ticket["id"], "mcp:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        message = watcher.run_once(self.store, CONFIG, "t3", dry_run=True)
+        self.assertIn("lanjutkan thread", message)
+        self.assertEqual(self.store.get(ticket["id"])["status"], "ready")
+
+    def test_prompt_carries_body_attachment_and_test(self) -> None:
+        ticket = self.store.add(
+            "judul", "/tmp/p", model_profile="fast", status="ready",
+            body="konteks penting", test_cmd="make check",
+        )
+        self.store.con.execute("update tickets set attachment_path=? where id=?", ("/tmp/spec.pdf", ticket["id"]))
+        self.store.con.commit()
+        prompt = watcher.build_prompt(self.store.get(ticket["id"]))
+        self.assertIn("konteks penting", prompt)
+        self.assertIn("/tmp/spec.pdf", prompt)
+        self.assertIn("make check", prompt)
+
+
+class SyncTests(Base):
+    def _ticket_with_thread(self, status: str) -> dict:
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+        self.store.attach_thread(ticket["id"], "mcp:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        return ticket
+
+    def test_completed_thread_moves_to_testing(self) -> None:
+        ticket = self._ticket_with_thread("in-progress")
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            return subprocess.CompletedProcess(command, 0, json.dumps({"thread": {"status": "completed"}}), "")
+
+        notes = watcher.sync_threads(self.store, CONFIG, runner=fake)
+        self.assertTrue(notes)
+        self.assertEqual(self.store.get(ticket["id"])["status"], "testing")
+
+    def test_running_thread_is_left_alone(self) -> None:
+        ticket = self._ticket_with_thread("in-progress")
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            return subprocess.CompletedProcess(command, 0, json.dumps({"thread": {"status": "running"}}), "")
+
+        self.assertEqual(watcher.sync_threads(self.store, CONFIG, runner=fake), [])
+        self.assertEqual(self.store.get(ticket["id"])["status"], "in-progress")
+
+    def test_failed_thread_blocks_ticket(self) -> None:
+        ticket = self._ticket_with_thread("in-progress")
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            return subprocess.CompletedProcess(command, 0, json.dumps({"thread": {"status": "failed"}}), "")
+
+        watcher.sync_threads(self.store, CONFIG, runner=fake)
+        self.assertEqual(self.store.get(ticket["id"])["status"], "blocked")
+
+    def test_ticket_without_thread_is_ignored(self) -> None:
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            raise AssertionError("tidak boleh memanggil t3 untuk tiket tanpa thread")
+
+        self.assertEqual(watcher.sync_threads(self.store, CONFIG, runner=fake), [])
+        self.assertEqual(self.store.get(ticket["id"])["status"], "in-progress")
+
+
 class ApprovalGateTests(Base):
     def test_gate_requests_and_does_not_claim(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="ready", requires_approval=True)

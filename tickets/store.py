@@ -87,6 +87,7 @@ MIGRATIONS = [
     ("tickets", "report_path", "text not null default ''"),
     ("tickets", "requires_approval", "integer not null default 0"),
     ("tickets", "pr_body_path", "text not null default ''"),
+    ("tickets", "attachment_path", "text not null default ''"),
 ]
 
 
@@ -168,6 +169,7 @@ class TicketStore:
         priority: int = 3,
         status: str = "backlog",
         requires_approval: bool = False,
+        attachment_path: str = "",
     ) -> dict:
         if not title.strip():
             raise TicketError("judul tiket kosong")
@@ -181,9 +183,10 @@ class TicketStore:
         ticket_id = self._next_id()
         stamp = now()
         self.con.execute(
-            "insert into tickets (id,title,body,status,priority,project,model_profile,test_cmd,created_at,updated_at,requires_approval)"
-            " values (?,?,?,?,?,?,?,?,?,?,?)",
-            (ticket_id, title.strip(), body, status, priority, project, model_profile, test_cmd, stamp, stamp, 1 if requires_approval else 0),
+            "insert into tickets (id,title,body,status,priority,project,model_profile,test_cmd,created_at,updated_at,requires_approval,attachment_path)"
+            " values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (ticket_id, title.strip(), body, status, priority, project, model_profile, test_cmd,
+             stamp, stamp, 1 if requires_approval else 0, attachment_path),
         )
         self._event(ticket_id, "created", f"status={status} profile={model_profile or '-'}")
         self.con.commit()
@@ -361,6 +364,10 @@ class TicketStore:
             (ticket_id,),
         ).fetchone()
         return row["status"] if row else "none"
+
+    def record_event(self, ticket_id: str, kind: str, detail: str = "") -> None:
+        self._event(ticket_id, kind, detail)
+        self.con.commit()
 
     def attach_thread(self, ticket_id: str, thread_id: str, note: str = "") -> dict:
         self.con.execute(

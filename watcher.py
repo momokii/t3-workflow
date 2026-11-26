@@ -70,24 +70,56 @@ def project_path(project: str, t3_db: Path = T3_DB) -> str:
 
 def build_prompt(ticket: dict) -> str:
     parts = [ticket["title"], "", ticket["body"] or "(tanpa deskripsi)"]
+    if ticket.get("attachment_path"):
+        parts += ["", f"Lampiran (baca dari path ini bila perlu): {ticket['attachment_path']}"]
     if ticket["test_cmd"]:
         parts += ["", "Perintah test yang harus lulus:", ticket["test_cmd"]]
-    parts += ["", f"Tiket: {ticket['id']} · project: {ticket['project']}"]
+    parts += [
+        "",
+        f"Tiket: {ticket['id']} · project: {ticket['project']}",
+        "Kerjakan tiket ini sampai tuntas dan laporkan hasilnya. Status tiket diurus watcher; "
+        "kamu tidak perlu memindahkannya.",
+    ]
     return "\n".join(parts).strip()
 
 
-def plan(ticket: dict, config: dict, t3_cli: str) -> tuple[list[str], str, dict]:
-    profile = resolve_profile(config, ticket["model_profile"])
-    path = project_path(ticket["project"])
-    title = ticket["title"][:70]
-    command = [
-        t3_cli, "thread", "start", path, "-",
-        "--title", title,
-        "--provider", profile["provider"],
-        "--model", profile["model"],
-        "--json",
-    ]
-    return command, build_prompt(ticket), profile
+def thread_status(config: dict, thread_id: str, runner=None) -> str:
+    """Thread status as T3 reports it: running, completed, failed, …"""
+    cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+    try:
+        proc = (runner or subprocess.run)(
+            [cli, "thread", "show", thread_id, "--json", "--messages", "1"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    if proc.returncode != 0:
+        return "unknown"
+    try:
+        return str((json.loads(proc.stdout).get("thread") or {}).get("status") or "unknown")
+    except json.JSONDecodeError:
+        return "unknown"
+
+
+def sync_threads(store: TicketStore, config: dict, runner=None) -> list[str]:
+    """Move tickets whose thread already stopped to testing or blocked.
+
+    This is what makes thread adoption real: the work happens in the same thread and
+    the watcher advances the ticket from the thread's status, not from a guess.
+    """
+    notes: list[str] = []
+    for ticket in store.list("in-progress"):
+        thread_id = ticket.get("thread_id")
+        if not thread_id:
+            continue
+        status = thread_status(config, thread_id, runner=runner)
+        if status in ("completed", "idle"):
+            store.move(ticket["id"], "testing", f"thread selesai ({status})")
+            notes.append(f"{ticket['id']} → testing (thread {status})")
+        elif status in ("failed", "cancelled", "interrupted"):
+            store.move(ticket["id"], "blocked", f"thread {status}")
+            notes.append(f"{ticket['id']} → blocked (thread {status})")
+    return notes
 
 
 def approval_gate(store: TicketStore, ticket: dict) -> str | None:
@@ -123,15 +155,45 @@ def run_once(
     gate = approval_gate(store, ticket)
     if gate:
         return gate
-    command, prompt, profile = plan(ticket, config, t3_cli)
+    prompt = build_prompt(ticket)
+    profile = resolve_profile(config, ticket["model_profile"])
     if dry_run:
+        if ticket.get("thread_id"):
+            return (
+                f"[dry-run] {ticket['id']} · lanjutkan thread {ticket['thread_id']} "
+                f"(profil {profile['name']})"
+            )
+        preview = [
+            t3_cli, "thread", "start", project_path(ticket["project"]), "-",
+            "--title", ticket["title"][:70], "--provider", profile["provider"],
+            "--model", profile["model"], "--json",
+        ]
         return (
-            f"[dry-run] {ticket['id']} · profil {profile['name']} ({profile['provider']} / {profile['model']})\n"
-            f"  {' '.join(command[:5])} … --provider {profile['provider']} --model {profile['model']}\n"
+            f"[dry-run] {ticket['id']} · profil {profile['name']} "
+            f"({profile['provider']} / {profile['model']})\n"
+            f"  {' '.join(preview[:5])} …\n"
             f"  prompt: {prompt.splitlines()[0][:70]}"
         )
 
     store.claim(ticket["id"], worker)
+
+    if ticket.get("thread_id"):
+        # Tiket membawa thread: lanjutkan thread itu, jangan buat yang baru.
+        command = [t3_cli, "thread", "send", ticket["thread_id"], "-", "--json"]
+        try:
+            proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            store.move(ticket["id"], "blocked", f"thread send gagal: {type(exc).__name__}")
+            raise TicketError(f"gagal melanjutkan thread: {exc}") from exc
+        if proc.returncode != 0:
+            store.move(ticket["id"], "blocked", f"thread send rc={proc.returncode}")
+            raise TicketError(f"thread send gagal (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:200]}")
+        store.record_event(ticket["id"], "continued", f"thread {ticket['thread_id']}")
+        return f"{ticket['id']} → melanjutkan thread {ticket['thread_id']} (profil {profile['name']})"
+
+    command = [t3_cli, "thread", "start", project_path(ticket["project"]), "-",
+               "--title", ticket["title"][:70],
+               "--provider", profile["provider"], "--model", profile["model"], "--json"]
     try:
         proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -320,6 +382,10 @@ def next_testing(store: TicketStore) -> dict | None:
 def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: str = "watcher",
          runner=subprocess.run) -> str:
     """One unit of work: drain `testing` first, then start new work."""
+    if not dry_run:
+        for note in sync_threads(store, config):
+            print(note, flush=True)
+
     for note in enforce_budget(store, config):
         print(note, flush=True)
 

@@ -173,7 +173,13 @@ class Handler(BaseHTTPRequestHandler):
             store = self._store()
             try:
                 config = load_config(Path(self.config_path))
-                profiles = sorted((config.get("models") or {}).keys())
+                models = config.get("models") or {}
+                profiles = sorted(models.keys())
+                profile_details = [
+                    {"name": name, "provider": models[name].get("provider", ""),
+                     "model": models[name].get("model", "")}
+                    for name in profiles
+                ]
                 default_profile = (config.get("defaults") or {}).get("profile", "")
                 pending = store.pending_approvals()
                 self._json(200, {
@@ -183,6 +189,7 @@ class Handler(BaseHTTPRequestHandler):
                     "transitions": {key: sorted(value) for key, value in TRANSITIONS.items()},
                     "profiles": profiles,
                     "defaultProfile": default_profile,
+                    "profileDetails": profile_details,
                     "summary": store.summary(),
                     "approvalCount": len(pending),
                 })
@@ -233,6 +240,7 @@ class Handler(BaseHTTPRequestHandler):
                     priority=int(payload.get("priority", 3) or 3),
                     status=str(payload.get("status", "backlog")),
                     requires_approval=bool(payload.get("requires_approval", False)),
+                    attachment_path=str(payload.get("attachment_path", "")),
                 )
                 self._json(200, {"ticket": ticket})
             except (TicketError, ValueError) as exc:
@@ -255,9 +263,14 @@ class Handler(BaseHTTPRequestHandler):
                     project=str(payload.get("project", "")),
                     body=str(payload.get("body", "")),
                     model_profile=str(payload.get("profile", "")),
-                    status="in-progress",
+                    test_cmd=str(payload.get("test_cmd", "")),
+                    attachment_path=str(payload.get("attachment_path", "")),
+                    status="ready",
                 )
-                ticket = store.attach_thread(ticket["id"], thread_id, "diadopsi dari thread T3")
+                ticket = store.attach_thread(
+                    ticket["id"], thread_id,
+                    "diadopsi dari thread T3 — watcher melanjutkan thread yang sama",
+                )
                 self._json(200, {"ticket": ticket})
             except TicketError as exc:
                 self._json(409, {"error": str(exc)})
