@@ -115,7 +115,7 @@
   .btn:hover { border-color: var(--accent); color: var(--accent); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
-  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); box-shadow: var(--shadow); }
+  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); max-height: 88vh; overflow: auto; box-shadow: var(--shadow); }
   dialog::backdrop { background: rgba(12, 14, 20, .45); }
   dialog form { padding: 18px 18px 16px; display: grid; gap: 12px; }
   dialog h3 { margin: 0; font-size: 16px; }
@@ -123,6 +123,8 @@
   dialog input, dialog select, dialog textarea { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 9px; width: 100%; }
   dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   dialog .check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); }
+  dialog .hint { font-size: 11px; color: var(--ink-soft); margin: -2px 0 0; }
+  dialog textarea { min-height: 76px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   dialog .check input { width: auto; }
   #toast { position: fixed; inset-inline: 0; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
   #toast .item { pointer-events: auto; margin-top: 8px; background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 999px; font-size: 13px; box-shadow: var(--shadow); }
@@ -164,9 +166,22 @@
     <label>Judul <input name="title" required autocomplete="off"></label>
     <label>Project <select name="project" required></select></label>
     <label>Profil model <select name="profile"></select></label>
-    <label>Perintah test <input name="test_cmd" placeholder="python3 -m unittest" autocomplete="off"></label>
-    <label>Prioritas <select name="priority"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
-    <label class="check"><input type="checkbox" name="requires_approval"> Butuh persetujuan sebelum dikerjakan</label>
+    <p class="hint" id="profile-hint">Profil menentukan provider dan model yang dipakai watcher. Hanya config yang mengubahnya.</p>
+    <label>Konteks / spesifikasi <textarea name="body" placeholder="Konteks, kriteria selesai, tautan, atau catatan penting…"></textarea></label>
+    <label>Lampiran (path di mesin ini) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
+    <p class="hint">Lampiran tidak diunggah; path-nya diteruskan ke agent agar bisa dibaca langsung.</p>
+    <label>Perintah test <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
+    <p class="hint">Wajib bisa dijalankan dari folder project. Exit code 0 = lulus; selain itu tiket kembali dikerjakan.</p>
+    <label>Prioritas <select name="priority">
+      <option value="1">1 — Urgent (kerjakan lebih dulu)</option>
+      <option value="2">2 — Tinggi</option>
+      <option value="3" selected>3 — Normal</option>
+      <option value="4">4 — Rendah</option>
+      <option value="5">5 — Kapan-kapan</option>
+    </select></label>
+    <p class="hint">Watcher selalu mengambil prioritas terkecil lebih dulu, lalu yang paling lama menunggu.</p>
+    <label class="check"><input type="checkbox" name="requires_approval"> Butuh persetujuan saya sebelum dikerjakan</label>
+    <p class="hint">Centang bila tiket menyentuh hal sensitif; watcher akan menunggu /approve sebelum memulai.</p>
     <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Buat tiket</button></div>
   </form>
 </dialog>
@@ -184,9 +199,11 @@
 <dialog id="dlg-adopt" aria-labelledby="dlg-adopt-title">
   <form method="dialog" id="form-adopt">
     <h3 id="dlg-adopt-title">Adopsi thread T3</h3>
-    <p style="margin:0;color:var(--ink-soft);font-size:12px">Thread yang sudah ada menjadi tiket <code>in-progress</code>, sehingga bisa dilanjutkan dari papan.</p>
+    <p style="margin:0;color:var(--ink-soft);font-size:12px">Tiket ini <strong>melanjutkan thread yang sama</strong>: watcher mengirim instruksi tiket ke thread itu, menunggu sampai thread selesai, lalu membawanya ke testing. Tidak ada thread baru yang dibuat.</p>
     <label>Thread <select name="thread_id" required></select></label>
     <label>Profil model <select name="profile"></select></label>
+    <label>Konteks tambahan <textarea name="body" placeholder="Apa yang harus diselesaikan pada thread ini?"></textarea></label>
+    <label>Perintah test <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
     <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Adopsi</button></div>
   </form>
 </dialog>
@@ -421,8 +438,11 @@
   }
 
   function fillProfiles(select) {
-    select.innerHTML = (state.profiles || []).map(p => `<option value="${p}">${p}</option>`).join('')
-      || '<option value="">(default config)</option>';
+    const details = state.profileDetails || [];
+    select.innerHTML = details.length
+      ? details.map(p => `<option value="${p.name}">${p.name} — ${p.provider} · ${p.model}</option>`).join('')
+      : (state.profiles || []).map(p => `<option value="${p}">${p}</option>`).join('') ||
+        '<option value="">(default config)</option>';
     if (state.defaultProfile) select.value = state.defaultProfile;
   }
 
@@ -514,6 +534,8 @@
       title: form.title.value,
       project: form.project.value,
       profile: form.profile.value,
+      body: form.body.value,
+      attachment_path: form.attachment_path.value,
       test_cmd: form.test_cmd.value,
       priority: Number(form.priority.value),
       requires_approval: form.requires_approval.checked,
@@ -553,6 +575,8 @@
           title: option ? option.textContent.split(' · ')[1].replace(/\s*\[[^\]]*\]$/, '') : '',
           project: project.trim(),
           profile: form.profile.value,
+          body: form.body.value,
+          test_cmd: form.test_cmd.value,
         }),
       });
       form.closest('dialog').close();
