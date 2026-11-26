@@ -165,8 +165,11 @@
     <h3 id="dlg-ticket-title">Tiket baru</h3>
     <label>Judul <input name="title" required autocomplete="off"></label>
     <label>Project <select name="project" required></select></label>
-    <label>Profil model <select name="profile"></select></label>
-    <p class="hint" id="profile-hint">Profil menentukan provider dan model yang dipakai watcher. Hanya config yang mengubahnya.</p>
+    <label>Preset (opsional) <select name="profile"></select></label>
+    <p class="hint">Preset mengisi harness dan model sekaligus. Kosongkan untuk memilih manual di bawah.</p>
+    <label>Harness <select name="provider" required></select></label>
+    <label>Model <select name="model" required></select></label>
+    <p class="hint" id="model-hint">Daftar ini berasal dari cache T3 — hanya harness yang aktif yang bisa dipilih.</p>
     <label>Konteks / spesifikasi <textarea name="body" placeholder="Konteks, kriteria selesai, tautan, atau catatan penting…"></textarea></label>
     <label>Lampiran (path di mesin ini) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
     <p class="hint">Lampiran tidak diunggah; path-nya diteruskan ke agent agar bisa dibaca langsung.</p>
@@ -201,7 +204,8 @@
     <h3 id="dlg-adopt-title">Adopsi thread T3</h3>
     <p style="margin:0;color:var(--ink-soft);font-size:12px">Tiket ini <strong>melanjutkan thread yang sama</strong>: watcher mengirim instruksi tiket ke thread itu, menunggu sampai thread selesai, lalu membawanya ke testing. Tidak ada thread baru yang dibuat.</p>
     <label>Thread <select name="thread_id" required></select></label>
-    <label>Profil model <select name="profile"></select></label>
+    <label>Preset (informasi) <select name="profile"></select></label>
+    <p class="hint">Model mengikuti thread yang sudah ada; nilai ini hanya dicatat pada tiket.</p>
     <label>Konteks tambahan <textarea name="body" placeholder="Apa yang harus diselesaikan pada thread ini?"></textarea></label>
     <label>Perintah test <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
     <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Adopsi</button></div>
@@ -221,7 +225,7 @@
   const foot = document.getElementById('foot');
   const LABELS = { backlog:'Backlog', ready:'Siap', 'in-progress':'Dikerjakan', testing:'Testing', review:'Review', done:'Selesai', blocked:'Terhambat' };
   const ORDER = ['backlog','ready','in-progress','testing','review','done','blocked'];
-  let state = { tickets: [], transitions: {}, profiles: [], statuses: ORDER };
+  let state = { tickets: [], transitions: {}, profiles: [], statuses: ORDER, catalog: null };
   const TOKEN = (document.querySelector('meta[name="board-token"]') || {}).content || '';
 
   const say = (msg, isError=false) => {
@@ -271,7 +275,13 @@
     proj.className = 'tag';
     proj.textContent = t.project;
     meta.appendChild(proj);
-    if (t.model_profile) {
+    if (t.provider && t.model) {
+      const choice = document.createElement('span');
+      choice.className = 'tag profile';
+      choice.textContent = `${t.provider} · ${t.model.split('/').pop()}`;
+      choice.title = `${t.provider} / ${t.model}`;
+      meta.appendChild(choice);
+    } else if (t.model_profile) {
       const prof = document.createElement('span');
       prof.className = 'tag profile';
       prof.textContent = t.model_profile;
@@ -437,6 +447,56 @@
     return data;
   }
 
+  async function ensureCatalog() {
+    if (!state.catalog) state.catalog = await api('/api/catalog');
+    return state.catalog;
+  }
+
+  function enabledProviders() {
+    return ((state.catalog && state.catalog.providers) || []).filter(p => p.enabled && p.installed);
+  }
+
+  function fillPresets(select, withEmpty = true) {
+    const presets = (state.catalog && state.catalog.presets) || [];
+    select.innerHTML = (withEmpty ? '<option value="">— manual —</option>' : '') +
+      presets.map(p => `<option value="${p.name}">${p.name} — ${p.provider} · ${p.model}</option>`).join('');
+  }
+
+  function fillHarness(select) {
+    const providers = enabledProviders();
+    select.innerHTML = providers
+      .map(p => `<option value="${p.instanceId}">${p.displayName} (${p.instanceId})</option>`).join('');
+    if (!providers.length) select.innerHTML = '<option value="">(tidak ada harness aktif)</option>';
+  }
+
+  function fillModels(form, preferred) {
+    const provider = enabledProviders().find(p => p.instanceId === form.provider.value);
+    const models = (provider && provider.models) || [];
+    form.model.innerHTML = models
+      .map(m => `<option value="${m.slug}">${m.name} — ${m.slug}</option>`).join('');
+    if (!models.length) {
+      form.model.innerHTML = '<option value="">(tidak ada model)</option>';
+      return;
+    }
+    const pick = preferred && models.some(m => m.slug === preferred)
+      ? preferred
+      : (models.find(m => m.isDefault) || models[0]).slug;
+    form.model.value = pick;
+    describeModel();
+  }
+
+  function describeModel() {
+    const form = document.getElementById('form-ticket');
+    const hint = document.getElementById('model-hint');
+    const provider = enabledProviders().find(p => p.instanceId === form.provider.value);
+    const model = provider && provider.models.find(m => m.slug === form.model.value);
+    if (!model) { hint.textContent = 'Pilih harness dan model.'; return; }
+    const options = (model.options || []).map(o => `${o.label}: ${o.values.map(v => v.id).join('/')}`);
+    hint.textContent = options.length
+      ? `Opsi model — ${options.join(' · ')}. Opsi mengikuti default project; CLI belum punya flag untuk mengubahnya per tiket.`
+      : 'Model ini tidak punya opsi tambahan.';
+  }
+
   function fillProfiles(select) {
     const details = state.profileDetails || [];
     select.innerHTML = details.length
@@ -451,8 +511,14 @@
     const form = document.getElementById('form-ticket');
     form.project.innerHTML = (data.projects || [])
       .map(p => `<option value="${p.title}">${p.title}</option>`).join('');
+    await ensureCatalog();
+    fillPresets(form.profile);
+    fillHarness(form.provider);
+    const presets = (state.catalog && state.catalog.presets) || [];
+    const preferred = presets.find(p => p.name === (state.catalog.defaultProfile || ""));
+    if (preferred) form.provider.value = preferred.provider;
+    fillModels(form, preferred ? preferred.model : "");
     if (projectSel.value) form.project.value = projectSel.value;
-    fillProfiles(form.profile);
     document.getElementById('dlg-ticket').showModal();
   }
 
@@ -462,7 +528,8 @@
     form.thread_id.innerHTML = (data.threads || []).slice(0, 40).map(t =>
       `<option value="${t.thread_id}">${(t.project || '?')} · ${(t.title || '(tanpa judul)').slice(0, 48)} [${t.status || '?'}]</option>`
     ).join('');
-    fillProfiles(form.profile);
+    await ensureCatalog();
+    fillPresets(form.profile);
     document.getElementById('dlg-adopt').showModal();
   }
 
@@ -524,6 +591,16 @@
     document.getElementById('dlg-project').showModal());
   document.getElementById('adopt-thread').addEventListener('click', () =>
     openAdoptDialog().catch(err => say(err.message, true)));
+  const ticketForm = document.getElementById('form-ticket');
+  ticketForm.profile.addEventListener('change', () => {
+    const preset = ((state.catalog && state.catalog.presets) || []).find(p => p.name === ticketForm.profile.value);
+    if (!preset) return;
+    ticketForm.provider.value = preset.provider;
+    fillModels(ticketForm, preset.model);
+  });
+  ticketForm.provider.addEventListener('change', () => fillModels(ticketForm));
+  ticketForm.model.addEventListener('change', describeModel);
+
   document.querySelectorAll('[data-close]').forEach(btn =>
     btn.addEventListener('click', () => btn.closest('dialog').close()));
 
@@ -534,6 +611,8 @@
       title: form.title.value,
       project: form.project.value,
       profile: form.profile.value,
+      provider: form.provider.value,
+      model: form.model.value,
       body: form.body.value,
       attachment_path: form.attachment_path.value,
       test_cmd: form.test_cmd.value,
