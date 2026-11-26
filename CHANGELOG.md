@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-11-26
+
+### Fixed
+
+- The dry-run watcher test used a project title, so it needed the real T3 database and failed on
+  GitHub Actions. It now uses an absolute path, matching the other hermetic tests.
+- Documentation now describes the published remote, the CI badge, and the fact that a repository
+  without a remote cannot release.
+
 ## [Unreleased]
 
 ### Added
