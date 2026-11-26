@@ -84,17 +84,36 @@ path). The watcher creates an approval request instead of starting:
 
 ## 4. Recommendations
 
-### Choosing the model profile
+### Choosing the harness and the model
 
-| Profile | Provider / model | Use for |
+The board does not invent a list. It reads T3's own provider cache (`~/.t3/caches/<instanceId>.json`),
+so the dropdowns show exactly the harnesses and models T3 currently reports as installed and enabled:
+`pi` and `opencode` on this machine, with 38 and 141 models respectively. Disabled harnesses are
+listed nowhere in the pickers, and the API rejects them.
+
+There are two ways to choose:
+
+1. **Harness + model** — pick the harness (`pi`, `opencode`, …) and then a model from that harness.
+   This is stored on the ticket as `provider` + `model` and wins over everything else.
+2. **Preset** — a named pair from `~/.config/t3-workflow/config.json`. Choosing a preset fills the
+   harness and model for you; leaving it on *manual* keeps whatever you selected.
+
+Resolution order, from strongest to weakest: **ticket `provider`/`model` → ticket preset →
+`defaults.profile`**. A half-filled choice (a provider without a model) is rejected, and so is a
+model that the catalogue does not list for that harness.
+
+**Model options** (`thinking`, `variant`, `effort`, `agent`) are shown under the model picker for
+information. The `t3 thread start` CLI has no flag to set them, so the thread keeps the project
+default options; changing them per ticket is a T3 feature, not something this tool can fake.
+
+The bundled presets remain a convenience, not a limit:
+
+| Preset | Provider / model | Use for |
 |---|---|---|
 | `fast` | `pi` · deepseek-v4.1-flash | most work: code changes, tests, documentation |
 | `deep` | `pi` · qwen3.8-max | ambiguous problems, architecture, debugging that resists a quick pass |
 | `cheap` | `pi` · claude-haiku-5-5 | mechanical edits, renames, small fixes |
 | `build` | `opencode` · big-pickle | when you specifically want the other harness driving the thread |
-
-The profile is chosen by you, stored in config, and copied onto the ticket. The watcher never picks
-one. A ticket that names an unknown profile is rejected at creation.
 
 ### Priority
 
@@ -174,9 +193,10 @@ Not yet. Create a new one, or move it with **Force move** and add the note. Edit
 A checkbox only carries two levels. Five levels let the queue stay meaningful; the labels in the
 dialog spell out what each one means.
 
-**Why does the model dropdown show provider and model?**
-So the choice is not a mystery: `fast — pi · deepseek-v4.1-flash` tells you exactly which harness and
-model will run. The names come from the configuration, not from the UI.
+**Why are there two dropdowns instead of one?**
+A harness (provider instance) hosts many models, so the choice is two steps: pick the harness, then
+the model it offers. Both lists come from T3's cache, which is why a harness you disabled in T3 simply
+does not appear.
 
 **Can I let it run unattended?**
 Yes, within the limits: `watcher.maxConcurrent` keeps one ticket in flight, and

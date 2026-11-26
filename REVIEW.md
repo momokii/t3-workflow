@@ -126,3 +126,16 @@ Against `RESEARCH.md` §6 and the decisions recorded in §7.
 | The ticket dialog was taller than the viewport, hiding its buttons | judgement | fixed with `max-height` and internal scroll |
 | Priority, model profile and the approval checkbox had no explanation in the UI | spec | fixed: labels, provider/model in the profile options, and helper text |
 | Attachments | limitation | documented: a path is passed to the agent; `t3 thread send` is text only, so images cannot travel |
+
+---
+
+## Round 7 (model catalogue)
+
+| Axis | Finding | Status |
+|---|---|---|
+| Spec | The board only offered four hard-coded profiles, so a model T3 already knew about was unreachable without editing config | fixed: `tickets/catalog.py` reads `~/.t3/caches/*.json`; tickets carry `provider` + `model`; presets became shortcuts |
+| Spec | "Pick the harness" had no UI at all | fixed: harness select filters the model list; disabled harnesses never appear |
+| Standards | A model option (`thinking`, `variant`) looked configurable but the CLI has no flag for it | documented in the UI and `docs/architecture.md`; options are shown read-only |
+| Standards | An explicit provider without a model could reach the watcher and fail late | rejected at creation (`provider dan model harus diisi bersama`) |
+| Standards | The catalogue file can be stale or half-written | parsing tolerates unreadable files and missing fields; `checkedAt` is surfaced so staleness is visible |
+| Tests | Selection had no coverage | 10 catalogue tests plus 3 board tests for the endpoint and creation rules |

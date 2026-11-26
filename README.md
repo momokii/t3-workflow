@@ -140,8 +140,9 @@ journalctl --user -u t3-watcher -f
 
 ### From the board
 
-- **＋ Ticket** — title, project, model profile (labelled with provider and model), context, optional
-  attachment path, test command, priority (1 urgent … 5 later), optional approval gate.
+- **＋ Ticket** — title, project, **harness and model chosen from T3's live catalogue** (or a preset
+  that fills both), context, optional attachment path, test command, priority (1 urgent … 5 later),
+  optional approval gate.
 - **Register project** — writes through `t3 project add`; the path must be absolute and exist.
 - **Adopt thread** — turns an existing T3 thread into a `ready` ticket that keeps the thread; the
   watcher sends the ticket prompt into that same thread instead of starting a new one.
@@ -190,7 +191,8 @@ make dry-run       # one watcher step, no side effects
 
 | Key | Meaning |
 |---|---|
-| `models.<name>` | provider instance id + model slug, optionally `options`; only a human edits this file |
+| `models.<name>` | a preset: provider instance id + model slug; only a human edits this file |
+| *(per ticket)* | `provider` + `model` chosen from `GET /api/catalog`; they override the preset |
 | `defaults.profile` | profile used when a ticket does not name one |
 | `watcher.enabled` | `false` pauses the loop without touching systemd |
 | `watcher.intervalSeconds` | delay between loop steps |
@@ -324,4 +326,6 @@ docs/           architecture, API, operations
 6. **Attachments are paths, not uploads.** `t3 thread send` accepts text only, so an image cannot travel with a ticket; a path to a file on this machine can.
 7. **Telegram-only approvals.** WhatsApp was planned as a fallback and is not implemented.
 8. **No metrics.** There is a `/healthz` endpoint for the container healthcheck, and failures are reported by `OnFailure=` and by the bridge, but nothing exports metrics.
-9. **The Docker deployment uses host networking.** See [docs/docker.md](docs/docker.md) for the trade-off; the systemd units avoid it.
+9. **Model options are not applied per ticket.** The catalogue shows `thinking`/`variant`/`effort`,
+   but `t3 thread start` has no flag for them, so the thread uses the project defaults.
+10. **The Docker deployment uses host networking.** See [docs/docker.md](docs/docker.md) for the trade-off; the systemd units avoid it.

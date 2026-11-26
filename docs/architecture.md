@@ -144,6 +144,24 @@ sequenceDiagram
 
 The base branch is never pushed. `compare_url()` turns an HTTPS or SSH remote into a `…/compare/<base>...<branch>?expand=1` link; a local path yields no link.
 
+## How the harness and model are chosen
+
+```
+ticket.provider + ticket.model      validated against ~/.t3/caches/<instanceId>.json
+        ↓ if empty
+ticket.model_profile (a preset)     from ~/.config/t3-workflow/config.json
+        ↓ if empty
+config.defaults.profile
+```
+
+The catalogue is T3's own provider cache: the same file the T3 UI reads, refreshed by the server
+(`checkedAt`). A disabled harness or an unknown model is rejected when the ticket is created, so a
+ticket cannot carry a choice that would fail later in the watcher.
+
+Model options (`thinking`, `variant`, `effort`) are reported by the catalogue but **not applied**:
+`t3 thread start` accepts `--provider` and `--model` only. The thread therefore uses the project's
+default options. Applying per-ticket options would need a CLI flag that does not exist today.
+
 ## Concurrency and ordering
 
 - `step()` drains `review`, then `testing`, then `ready`; a waiting test never competes with a new thread.

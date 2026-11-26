@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Live model catalogue**: harnesses and models read from T3's provider cache, with per-ticket
+  `provider` + `model` selection that overrides presets, validated at creation (disabled harness,
+  unknown model and half-filled pairs are rejected). Presets remain as shortcuts; `GET /api/catalog`
+  exposes the catalogue to the board.
 - **Thread continuation**: a ticket that carries a `thread_id` is continued with `t3 thread send`
   instead of starting a second thread, and a sync stage advances the ticket from the thread's status.
 - Adopting a thread now creates a `ready` ticket that keeps the thread, instead of an `in-progress`

@@ -14,6 +14,7 @@ GET  /static/<file>                    logo, favicon, touch icon
 GET  /api/tickets                      tickets, approvals, profiles, counts
 GET  /api/tickets/<id>/events          the ticket's event history
 GET  /api/report/<id>                  the ticket's markdown report
+GET  /api/catalog                      harnesses, models, presets, defaults
 GET  /api/projects                     T3 projects
 GET  /api/threads                      recent T3 threads
 ```
@@ -70,6 +71,39 @@ curl -s http://127.0.0.1:8787/api/tickets | python3 -m json.tool
 
 `proof` is deliberately absent from this response — it can contain build logs or environment detail. Use `GET /api/report/<id>` or the CLI to read it.
 
+## GET /api/catalog
+
+Everything the model pickers need, read from `~/.t3/caches/<instanceId>.json`.
+
+```bash
+curl -s http://127.0.0.1:8787/api/catalog | python3 -m json.tool | head -30
+```
+
+```json
+{
+  "providers": [
+    {
+      "instanceId": "pi", "displayName": "Pi", "driver": "pi",
+      "enabled": true, "installed": true, "status": "ready",
+      "checkedAt": "2026-11-26T16:34:25.065Z",
+      "models": [
+        { "slug": "opencode-go/deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash 1017",
+          "subProvider": "opencode-go", "isDefault": false,
+          "options": [ { "id": "thinking", "label": "Thinking",
+                         "values": [ { "id": "low", "label": "Low" }, { "id": "high", "label": "High" } ] } ] }
+      ]
+    }
+  ],
+  "presets": [ { "name": "fast", "provider": "pi", "model": "opencode-go/deepseek-v4.1-flash" } ],
+  "defaultProfile": "fast",
+  "source": "/home/kelanach/.t3/caches",
+  "loadedAt": "2026-11-26T…"
+}
+```
+
+Providers that T3 reports as `enabled: false` are still listed (with their models) so the API can
+explain why a pick fails; the board only offers the enabled ones.
+
 ## POST /api/tickets
 
 ```bash
@@ -83,13 +117,56 @@ curl -s -X POST http://127.0.0.1:8787/api/tickets \
 |---|---|---|
 | `title` | yes | — |
 | `project` | yes | — |
-| `profile` | no | `defaults.profile` |
+| `profile` | no | `defaults.profile`; a preset name |
+| `provider` | no | harness instance id; must be enabled when sent |
+| `model` | no | model slug from that harness; must exist in the catalogue |
 | `test_cmd` | no | empty (the test stage will refuse to advance) |
 | `priority` | no | `3` |
 | `status` | no | `backlog` |
 | `requires_approval` | no | `false` |
 
-Returns `{"ticket": {…}}`. An unknown model profile returns `409` with `profil model '<name>' tidak ada di config`.
+Returns `{"ticket": {…}}`. Rejections with `409`:
+
+- unknown preset — `profil model '<name>' tidak ada di config`;
+- unknown or disabled harness — `provider '<id>' tidak dikenal` / `tidak aktif di T3`;
+- model missing from that harness — `model '<slug>' tidak ada di provider '<id>'`;
+- a provider without a model — `provider dan model harus diisi bersama`.
+
+An explicit `provider`/`model` pair takes precedence over `profile`; a ticket with neither falls back
+to `defaults.profile`.
+
+## GET /api/catalog
+
+Everything the model pickers need, read from `~/.t3/caches/<instanceId>.json`.
+
+```bash
+curl -s http://127.0.0.1:8787/api/catalog | python3 -m json.tool | head -30
+```
+
+```json
+{
+  "providers": [
+    {
+      "instanceId": "pi", "displayName": "Pi", "driver": "pi",
+      "enabled": true, "installed": true, "status": "ready",
+      "checkedAt": "2026-11-26T16:34:25.065Z",
+      "models": [
+        { "slug": "opencode-go/deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash 1017",
+          "subProvider": "opencode-go", "isDefault": false,
+          "options": [ { "id": "thinking", "label": "Thinking",
+                         "values": [ { "id": "low", "label": "Low" }, { "id": "high", "label": "High" } ] } ] }
+      ]
+    }
+  ],
+  "presets": [ { "name": "fast", "provider": "pi", "model": "opencode-go/deepseek-v4.1-flash" } ],
+  "defaultProfile": "fast",
+  "source": "/home/kelanach/.t3/caches",
+  "loadedAt": "2026-11-26T…"
+}
+```
+
+Providers that T3 reports as `enabled: false` are still listed (with their models) so the API can
+explain why a pick fails; the board only offers the enabled ones.
 
 ## POST /api/tickets/<id>/move
 
