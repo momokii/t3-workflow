@@ -132,7 +132,7 @@ Watcher output is one line per step (`22:49:14 tidak ada tiket berstatus ready`)
 ## Upgrade
 
 ```bash
-git pull                 # once a remote exists
+git pull                 # origin is https://github.com/momokii/t3-workflow.git
 make check               # compile + both suites
 systemctl --user restart t3-bridge t3-watcher t3-board
 ```

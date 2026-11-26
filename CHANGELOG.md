@@ -26,7 +26,7 @@ First release: the ticket → thread → test → release loop, with a board and
 
 ### Known limitations
 
-- The source repository has no remote; the release stage is implemented and tested against a temporary bare remote, and CI runs once a remote exists.
+- A repository without a remote cannot release; the stage fails loudly instead of skipping.
 - No pull-request creation through an API (requires `gh` or a GitHub token); a compare link and a PR body file are produced instead.
 - No deploy or rollback step.
 - Tickets cannot be edited or deleted after creation.

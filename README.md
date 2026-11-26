@@ -2,6 +2,8 @@
 
 <img src="board/static/logo.svg" alt="" width="56" height="56">
 
+[![check](https://github.com/momokii/t3-workflow/actions/workflows/check.yml/badge.svg)](https://github.com/momokii/t3-workflow/actions/workflows/check.yml)
+
 Ticket-driven automation for [T3 Code](https://github.com/): a ticket becomes an agent thread, the thread's work is tested with evidence, and a passing ticket is pushed as its own branch — with a local kanban board and a Telegram bridge to drive it from a phone.
 
 ```
@@ -289,7 +291,7 @@ docs/           architecture, API, operations
 
 ## Known limitations
 
-1. **No remote in the source it was built on.** The release stage pushes `origin`; a repository without a remote fails loudly. CI only runs once a remote exists.
+1. **A repository without a remote cannot release.** The stage fails loudly instead of skipping; CI runs on GitHub Actions for `main`.
 2. **No pull-request creation.** The push works; opening the PR needs `gh` or a token. The compare link and `T-xxxx.pr.md` are provided instead.
 3. **No deploy step.** The pipeline ends at a pushed branch; there is no deploy target or rollback path.
 4. **Wall-clock budget only.** No token accounting, no provider quota guard, no cost report.

@@ -89,3 +89,13 @@ Against `RESEARCH.md` §6 and the decisions recorded in §7.
 | Configuration coverage | all twelve config keys documented with defaults and meaning |
 | Runbook accuracy | the restore example used the `sqlite3` binary, which is not installed here; replaced with a Python one-liner and verified |
 | Restore drill | executed against a copy: snapshot listed T-0001, counts matched, production untouched |
+
+---
+
+## Round 4 (published)
+
+| Item | Result |
+|---|---|
+| Remote | `https://github.com/momokii/t3-workflow.git`, branch `main`, tag `v0.1.0` pushed |
+| CI | the first two runs failed; the cause was a test that needed the real T3 database. Reproduced with `HOME` pointed at an empty directory, fixed in `89e1ecd`, both suites green under that condition |
+| Files on the remote | workflow, deploy templates and docs confirmed via `raw.githubusercontent.com` |
