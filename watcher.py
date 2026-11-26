@@ -34,13 +34,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "tickets"))
 
+from catalog import CatalogError, load_catalog, resolve_ticket  # noqa: E402
 from store import (  # noqa: E402
     CONFIG_PATH,
     DB_PATH,
     TicketError,
     TicketStore,
     load_config,
-    resolve_profile,
 )
 
 T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
@@ -156,7 +156,18 @@ def run_once(
     if gate:
         return gate
     prompt = build_prompt(ticket)
-    profile = resolve_profile(config, ticket["model_profile"])
+    try:
+        selection = resolve_ticket(ticket, config)
+    except CatalogError as exc:
+        raise TicketError(str(exc)) from exc
+    source = selection["source"]
+    if source == "ticket":
+        label = "pilihan tiket"
+    elif source.startswith("profile:"):
+        label = f"preset {source.split(':', 1)[1]}"
+    else:
+        label = f"default {source.split(':', 1)[1]}"
+    profile = {"name": label, "provider": selection["provider"], "model": selection["model"]}
     if dry_run:
         if ticket.get("thread_id"):
             return (

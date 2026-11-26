@@ -68,6 +68,23 @@ class BoardApiTests(unittest.TestCase):
         con.close()
         board.Handler.t3_db_path = self.t3_db
 
+        # katalog model tiruan: satu provider aktif, satu nonaktif
+        self.catalog_dir = self.tmp / "caches"
+        self.catalog_dir.mkdir()
+        (self.catalog_dir / "pi.json").write_text(json.dumps({
+            "instanceId": "pi", "displayName": "Pi", "driver": "pi",
+            "enabled": True, "installed": True, "status": "ready",
+            "checkedAt": "2026-11-26T16:34:25.065Z",
+            "models": [{"slug": "opencode-go/deepseek-v4.1-flash", "name": "DeepSeek"},
+                       {"slug": "opencode-go/qwen3.8-max", "name": "Qwen"}],
+        }))
+        (self.catalog_dir / "claudeAgent.json").write_text(json.dumps({
+            "instanceId": "claudeAgent", "displayName": "Claude", "driver": "claudeAgent",
+            "enabled": False, "installed": False, "status": "disabled",
+            "models": [{"slug": "claude-opus-5-5", "name": "Opus"}],
+        }))
+        board.Handler.catalog_dir = self.catalog_dir
+
     @classmethod
     def tearDownClass(cls) -> None:
         cls.server.shutdown()
@@ -203,6 +220,33 @@ class BoardApiTests(unittest.TestCase):
         ticket = json.loads(raw)["ticket"]
         self.assertEqual(ticket["body"], "konteks panjang")
         self.assertEqual(ticket["attachment_path"], "/tmp/spec.pdf")
+
+    def test_catalog_lists_providers_with_models(self) -> None:
+        response, raw = self.request("GET", "/api/catalog")
+        self.assertEqual(response.status, 200)
+        data = json.loads(raw)
+        ids = {p["instanceId"]: p for p in data["providers"]}
+        self.assertTrue(ids["pi"]["enabled"])
+        self.assertFalse(ids["claudeAgent"]["enabled"])
+        self.assertEqual(len(ids["pi"]["models"]), 2)
+        self.assertEqual([p["name"] for p in data["presets"]], ["fast"])
+
+    def test_create_ticket_with_explicit_harness_and_model(self) -> None:
+        body = {"title": "pilih model", "project": "t3-workflow",
+                "provider": "pi", "model": "opencode-go/qwen3.8-max"}
+        response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+        self.assertEqual(response.status, 200)
+        ticket = json.loads(raw)["ticket"]
+        self.assertEqual(ticket["provider"], "pi")
+        self.assertEqual(ticket["model"], "opencode-go/qwen3.8-max")
+
+    def test_create_ticket_rejects_disabled_provider_and_unknown_model(self) -> None:
+        for provider, model in (("claudeAgent", "claude-opus-5-5"), ("pi", "tidak-ada"), ("pi", "")):
+            with self.subTest(provider=provider, model=model):
+                body = {"title": "x", "project": "t3-workflow", "provider": provider, "model": model}
+                response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+                self.assertEqual(response.status, 409)
+                self.assertIn("error", json.loads(raw))
 
     def test_tickets_expose_profile_details(self) -> None:
         response, raw = self.request("GET", "/api/tickets")

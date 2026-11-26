@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tickets"))
 
+from catalog import CatalogError, load_catalog, resolve_selection  # noqa: E402
 from store import (  # noqa: E402
     CONFIG_PATH,
     DB_PATH,
@@ -39,6 +40,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 
 
 T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
+CATALOG_DIR = Path.home() / ".t3/caches"
 
 
 def t3_projects(db_path: Path) -> list[dict]:
@@ -85,6 +87,7 @@ class Handler(BaseHTTPRequestHandler):
     store_path = DB_PATH
     config_path = CONFIG_PATH
     t3_db_path = T3_DB
+    catalog_dir = CATALOG_DIR
     token = ""
     inject_token = True
     server_version = "t3-kanban/1.0"
@@ -163,6 +166,10 @@ class Handler(BaseHTTPRequestHandler):
                 store.close()
             self._json(200, {"status": "ok", "tickets": tickets, "summary": summary})
             return
+        if path == "/api/catalog":
+            config = load_config(Path(self.config_path))
+            self._json(200, load_catalog(Path(self.catalog_dir), config=config))
+            return
         if path == "/api/projects":
             self._json(200, {"projects": t3_projects(Path(self.t3_db_path))})
             return
@@ -229,6 +236,17 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._payload()
             if payload is None:
                 return
+            provider = str(payload.get("provider", "")).strip()
+            model = str(payload.get("model", "")).strip()
+            if provider or model:
+                try:
+                    resolve_selection(
+                        load_catalog(Path(self.catalog_dir), config=load_config(Path(self.config_path))),
+                        provider, model,
+                    )
+                except CatalogError as exc:
+                    self._json(409, {"error": str(exc)})
+                    return
             store = self._store()
             try:
                 ticket = store.add(
@@ -241,6 +259,8 @@ class Handler(BaseHTTPRequestHandler):
                     status=str(payload.get("status", "backlog")),
                     requires_approval=bool(payload.get("requires_approval", False)),
                     attachment_path=str(payload.get("attachment_path", "")),
+                    provider=provider,
+                    model=model,
                 )
                 self._json(200, {"ticket": ticket})
             except (TicketError, ValueError) as exc:
@@ -265,6 +285,8 @@ class Handler(BaseHTTPRequestHandler):
                     model_profile=str(payload.get("profile", "")),
                     test_cmd=str(payload.get("test_cmd", "")),
                     attachment_path=str(payload.get("attachment_path", "")),
+                    provider=str(payload.get("provider", "")),
+                    model=str(payload.get("model", "")),
                     status="ready",
                 )
                 ticket = store.attach_thread(
@@ -285,6 +307,10 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 store.close()
             self._json(200, {"status": "ok", "tickets": tickets, "summary": summary})
+            return
+        if path == "/api/catalog":
+            config = load_config(Path(self.config_path))
+            self._json(200, load_catalog(Path(self.catalog_dir), config=config))
             return
         if path == "/api/projects":
             if not self._authorised():
@@ -372,12 +398,14 @@ def main() -> int:
     parser.add_argument("--db", default=str(DB_PATH))
     parser.add_argument("--config", default=str(CONFIG_PATH))
     parser.add_argument("--t3-db", default=str(T3_DB))
+    parser.add_argument("--catalog-dir", default=str(CATALOG_DIR))
     args = parser.parse_args()
 
     Handler.store_path = Path(args.db)
     Handler.config_path = Path(args.config)
     Handler.token = args.token or __import__("os").environ.get("T3_BOARD_TOKEN", "")
     Handler.t3_db_path = Path(args.t3_db)
+    Handler.catalog_dir = Path(args.catalog_dir)
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"kanban di http://{args.host}:{args.port}  (db={args.db})", flush=True)

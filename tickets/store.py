@@ -88,6 +88,8 @@ MIGRATIONS = [
     ("tickets", "requires_approval", "integer not null default 0"),
     ("tickets", "pr_body_path", "text not null default ''"),
     ("tickets", "attachment_path", "text not null default ''"),
+    ("tickets", "provider", "text not null default ''"),
+    ("tickets", "model", "text not null default ''"),
 ]
 
 
@@ -170,6 +172,8 @@ class TicketStore:
         status: str = "backlog",
         requires_approval: bool = False,
         attachment_path: str = "",
+        provider: str = "",
+        model: str = "",
     ) -> dict:
         if not title.strip():
             raise TicketError("judul tiket kosong")
@@ -183,10 +187,10 @@ class TicketStore:
         ticket_id = self._next_id()
         stamp = now()
         self.con.execute(
-            "insert into tickets (id,title,body,status,priority,project,model_profile,test_cmd,created_at,updated_at,requires_approval,attachment_path)"
-            " values (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "insert into tickets (id,title,body,status,priority,project,model_profile,test_cmd,created_at,updated_at,requires_approval,attachment_path,provider,model)"
+            " values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (ticket_id, title.strip(), body, status, priority, project, model_profile, test_cmd,
-             stamp, stamp, 1 if requires_approval else 0, attachment_path),
+             stamp, stamp, 1 if requires_approval else 0, attachment_path, provider, model),
         )
         self._event(ticket_id, "created", f"status={status} profile={model_profile or '-'}")
         self.con.commit()
