@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily t3-workflow ticket backup
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

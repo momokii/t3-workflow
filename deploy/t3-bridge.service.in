@@ -1,0 +1,16 @@
+[Unit]
+Description=t3-workflow Telegram bridge
+After=network-online.target
+OnFailure=t3-alert@%N.service
+
+[Service]
+Type=simple
+ExecStart=@PYTHON@ @REPO@/bridge/t3_bridge.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

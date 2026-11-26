@@ -1,0 +1,16 @@
+[Unit]
+Description=t3-workflow kanban board
+After=network.target
+OnFailure=t3-alert@%N.service
+
+[Service]
+Type=simple
+EnvironmentFile=-@HOME@/.config/t3-workflow/board.env
+ExecStart=@PYTHON@ @REPO@/board/server.py --host @HOST@ --port @PORT@
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,6 @@
+[Unit]
+Description=Telegram alert for a failed unit (%i)
+
+[Service]
+Type=oneshot
+ExecStart=@PYTHON@ @REPO@/scripts/alert.py %i

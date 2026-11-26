@@ -2,230 +2,221 @@
 
 <!-- markdownlint-disable MD013 -->
 
-Riset dan desain untuk membuat alur kerja harian (T3 Code + Pi + opencode-go + notifikasi Telegram) lebih seamless dan terautomasi, termasuk kemungkinan kanban dengan watcher agent.
+Research and design notes for making the daily loop — T3 Code, the Pi harness with an opencode-go subscription, and Telegram notifications — seamless and automated, including the ticket queue and watcher that were built from it.
 
-Ditulis 2026-11-25. Semua klaim bertanda sumber: `[cli]` dari output `--help` di mesin ini, `[t3]` dari perilaku tool T3 yang tersedia di harness, `[tg]` dari dokumentasi Bot API Telegram, `[gh]` dari dokumentasi GitHub, `[local]` dari pengukuran langsung, `[inference]` kesimpulan saya.
-
----
-
-## 1. Ringkasan eksekutif
-
-Tiga hal yang membuat "utopia" ini sebenarnya dekat:
-
-1. **T3 sudah punya semua primitif yang dibutuhkan.** `t3 thread list/start/send/show` bekerja dari CLI terhadap server yang berjalan `[cli]`, dan `thread send` secara eksplisit mengantre ke thread yang sedang sibuk: *"A busy thread gets it as its next turn; nothing is interrupted"* `[cli]`.
-2. **Kanal dua arah sudah ada.** Bot Telegram sudah terpasang, `getUpdates` mendukung long polling dengan `offset`/`timeout` `[tg]`, dan batas pengirimannya longgar untuk pemakaian pribadi: 1 pesan/detik per chat, 20/menit per grup, ±30/detik untuk broadcast `[tg]`.
-3. **Yang belum ada adalah lapisan penengah**: penerjemah perintah, penyimpan status tiket, penjadwal watcher, dan penjaga gerbang persetujuan. Itu pekerjaan yang bisa dibangun bertahap tanpa menyentuh kernel, tanpa mengubah T3.
-
-Yang **tidak** mungkin hari ini, dan perlu dinyatakan sejak awal: menjadikan deploy/push otomatis penuh tanpa manusia. Bukan karena teknis, tapi karena Anda sendiri punya aturan `DEV NEVER PUSH`, dan karena gerbang persetujuan adalah satu-satunya titik kendali bermakna `[inference]`.
+Written 2026-11-25, updated 2026-11-26. Every non-obvious claim carries a source marker: `[cli]` from `--help` output on this machine, `[t3]` from the T3 tool surface available in the harness, `[tg]` from the Telegram Bot API documentation, `[gh]` from GitHub's documentation, `[local]` from a direct measurement, `[inference]` for my own conclusion.
 
 ---
 
-## 2. Kondisi awal yang terukur
+## 1. Executive summary
 
-| Komponen | Fakta | Bukti |
+Three findings made the target tractable:
+
+1. **T3 already exposes the primitives.** `t3 thread list/start/send/show` work from the CLI against the running server `[cli]`, and `thread send` explicitly queues onto a busy thread: *"A busy thread gets it as its next turn; nothing is interrupted"* `[cli]`.
+2. **A two-way channel already exists.** The Telegram bot was installed, `getUpdates` supports long polling with `offset`/`timeout` `[tg]`, and the sending limits are generous for personal use: one message per second per chat, twenty per minute per group, about thirty per second for broadcasts `[tg]`.
+3. **The missing piece was the middle layer**: a command interpreter, a ticket store, a scheduler and an approval gate. All of it can be built without touching the kernel and without changing T3.
+
+What was deliberately left out: full autonomy over push and deploy. That is not a technical limit — it is a control decision, recorded in §7.
+
+---
+
+## 2. Measured starting point
+
+| Component | Fact | Evidence |
 |---|---|---|
-| T3 server | v0.1.9, listen `0.0.0.0:3773`, service `t3code.service` aktif | `[local]` |
-| CLI thread | `list`, `start`, `send`, `show`; `send` punya `--wait` dan `--json` | `[cli]` |
-| Kode keluar `--wait` | `1` bila run gagal, `2` bila menunggu jawaban | `[cli]` |
-| CLI project | hanya `add`, `remove`, `rename` — **tidak ada `list`** | `[cli]` |
-| Daftar project | tersedia di `statev2.sqlite` (dibaca read-only oleh notifier) | `[local]` |
-| Token akses | bearer session dengan scope (`orchestration:read/operate`, `filesystem:*`, dll.) | `[cli]` |
-| Notifier | `t3-wa-notify` aktif; Telegram `enabled`, chatId dan token tersimpan mode 600 | `[local]` |
-| Bot Telegram | `getMe` OK; belum ada webhook; update diambil via long polling | `[local]` + `[tg]` |
-| Kanban | belum ada | `[local]` |
+| T3 server | v0.1.9, listening on `0.0.0.0:3773`, `t3code.service` active | `[local]` |
+| Thread CLI | `list`, `start`, `send`, `show`; `send` has `--wait` and `--json` | `[cli]` |
+| `--wait` exit codes | `1` when the run fails, `2` when it waits for an answer | `[cli]` |
+| Project CLI | only `add`, `remove`, `rename` — **no `list`** | `[cli]` |
+| Project list | available in `statev2.sqlite` (`projection_projects`) | `[local]` |
+| Thread list | `orchestration_v2_projection_threads` plus the latest run status | `[local]` |
+| Access tokens | bearer sessions with scopes (`orchestration:read/operate`, `filesystem:*`, …) | `[cli]` |
+| Notifier | `t3-wa-notify` active; Telegram enabled, chat id and token stored with mode 600 | `[local]` |
+| Telegram bot | `getMe` OK; no webhook; updates pulled with long polling | `[local]`, `[tg]` |
+| Kanban | none at the time | `[local]` |
 
-Implikasi langsung: **bridge tidak perlu API baru.** Ia cukup memanggil CLI yang sudah ada, dan memakai kredensial Telegram yang sudah tersimpan.
+The immediate consequence: **the bridge needs no new API**. It calls the existing CLI and reuses the stored Telegram credentials.
 
 ---
 
-## 3. Ide 1 — Telegram dua arah ke thread yang sudah ada
+## 3. Idea 1 — two-way Telegram into existing threads
 
-### Yang mungkin, dengan bukti
-
-| Kemampuan | Mekanisme | Status |
+| Capability | Mechanism | Status |
 |---|---|---|
-| Lihat daftar project | baca `statev2.sqlite` (`projects`), sama seperti notifier | mungkin `[local]` |
-| Lihat daftar thread per project | `t3 thread list --project <path> --json` | mungkin `[cli]` |
-| Lihat konteks terakhir sebuah thread | `t3 thread show <id> --json --messages N` | mungkin `[cli]` |
-| Kirim pesan ke thread yang ada | `t3 thread send <id> -` (pesan dari stdin) | mungkin `[cli]` |
-| Membuat thread baru dari HP | `t3 thread start <project> - --title ... --provider ... --model ...` | mungkin `[cli]` |
-| Menunggu hasil lalu membalas | `--wait` + `--json`; kode keluar 2 = butuh jawaban | mungkin `[cli]` |
+| List projects | read `statev2.sqlite` | shipped |
+| List a project's threads | `t3 thread list --project <path> --json` | shipped |
+| Show a thread's recent context | `t3 thread show <id> --json --messages N` | shipped |
+| Send a message into a thread | `t3 thread send <id> -` (stdin) | shipped |
+| Start a thread from the phone | `t3 thread start <project> - --title … --provider … --model …` | shipped |
+| Wait for the result | `--wait` + `--json`; exit code 2 means "needs an answer" | available, not used by the bridge |
 
-### Batasan yang harus dihormati
+### Constraints that had to be respected
 
-1. **Thread yang sibuk tidak terinterupsi.** Pesan masuk menjadi turn berikutnya `[cli]`. Untuk "kirim sekarang juga", tidak ada jalan tanpa menghentikan run — dan itu fitur, bukan bug.
-2. **Membalas pertanyaan persetujuan bukan lewat `thread send`.** Persetujuan di T3 adalah objek `pending request`, bukan pesan biasa `[t3]`. CLI tidak punya subcommand untuk menjawabnya `[cli]`. Dua jalan: (a) manusia menjawab di UI, atau (b) sebuah *control thread* yang punya tool MCP menjawabnya. Bridge Telegram sebaiknya **memberi tahu** dan menyertakan tautan thread, bukan berpura-pura bisa menjawab.
-3. **Bot tidak bisa memulai percakapan.** Pengguna harus menekan Start lebih dulu; ini pernah terjadi di sesi sebelumnya `[local]`, dan sesuai aturan Bot API `[tg]`.
-4. **Satu mode update.** Long polling dan webhook saling eksklusif `[tg]`. Pilihan long polling lebih sederhana karena tidak butuh domain, TLS, atau port publik.
-5. **Update disimpan maksimal 24 jam** `[tg]`. Bridge yang mati lebih dari sehari kehilangan perintah lama — dan itu benar: perintah lama sebaiknya tidak dieksekusi terlambat `[inference]`.
+1. **A busy thread is not interrupted.** The message becomes the next turn `[cli]`. There is no "send now" without stopping the run, and that is a feature.
+2. **Answering an approval is not a `thread send`.** T3 models approvals as pending requests, not messages `[t3]`, and the CLI has no subcommand for them `[cli]`. The bridge therefore *notifies* and records a decision in its own store; the ticket store, not T3, owns the approval state. This is the one place where the tooling adds state instead of proxying it.
+3. **A bot cannot start a conversation.** The human must press Start once `[tg]`.
+4. **One update mode.** Long polling and webhooks are mutually exclusive `[tg]`. Polling needs no domain, TLS or public port.
+5. **Updates are kept for 24 hours** `[tg]`. A bridge down for longer loses old commands, which is the right behaviour: a stale command should not execute late.
 
-### Risiko keamanan
+### Security notes
 
-Bot Telegram adalah **input tidak tepercaya**. Siapa pun yang tahu username bot bisa mengirim pesan; yang menyelamatkan hanya allowlist `chat_id` `[tg]`. Karena perintah bridge bisa menyuruh agent menulis kode, allowlist itu wajib, bukan opsional. Tambahan: perintah destruktif (`push`, hapus) tetap ditolak di lapisan bridge, dan pesan dari Telegram tidak boleh diteruskan mentah-mentah sebagai instruksi sistem `[inference]`.
+The bot is **untrusted input**; only the `chat_id` allowlist stands between a stranger and the agent `[tg]`. Because the bridge can make an agent write code, the allowlist is mandatory. The bridge never interprets a message as a system instruction and never runs `push` or destructive commands on its own `[inference]`.
 
 ---
 
-## 4. Ide 2 — Kanban + watcher + testing + deploy
+## 4. Idea 2 — tickets, watchers, testing, release
 
-### Bentuk alur yang realistis
+### The shape that was built
 
 ```
-backlog → ready → in-progress → review/test → done
-             │          │            │
-             │          │            └─ watcher test: jalankan test suite, tulis bukti
-             │          └─ watcher dev: t3 thread start/send + model pilihan
-             └─ gerbang: hanya tiket dengan label ready yang diambil
+backlog → ready → in-progress → testing → review → done
+             │          │           │         │
+             │          │           │         └─ report written automatically
+             │          │           └─ test watcher: run test_cmd, store proof
+             │          └─ dev watcher: t3 thread start with the ticket's profile
+             └─ gate: only tickets a human moved to ready are taken
 ```
 
-### Di mana menyimpan tiket
+### Where tickets live
 
-| Opsi | Kelebihan | Kekurangan | Bukti |
+| Option | Strength | Cost | Evidence |
 |---|---|---|---|
-| **GitHub Issues** | sudah ada untuk repo `momokii/*`; label, sub-issue, dependency, Projects; API + webhook | butuh token dengan scope repo; satu sumber kebenaran tersebar di banyak repo | `[gh]` |
-| SQLite lokal + UI kecil | cepat, offline, kontrol penuh; cocok dengan pola `t3-wa-notify` | UI harus dibuat; tidak ada riwayat kolaboratif | `[inference]` |
-| Markdown di repo (`tickets/*.md`) | sederhana, terlihat di diff, mudah di-review | tanpa query/status machine; rawan konflik | `[inference]` |
+| GitHub Issues | labels, sub-issues, dependencies, Projects, API, webhooks | needs a token scoped to the repository; truth spread across repos | `[gh]` |
+| **SQLite (chosen)** | fast, offline, full control; same pattern as the notifier | the UI has to be written | `[inference]` |
+| Markdown files | visible in a diff | no query, no state machine | `[inference]` |
 
-Rekomendasi: **GitHub Issues sebagai sumber tiket**, karena statusnya sudah punya label dan API-nya stabil `[gh]`, sementara watcher tetap lokal. Kalau ingin tanpa ketergantungan jaringan, mulai dari SQLite dan migrasi nanti `[inference]`.
+The decision was SQLite first (see §7, decision 1); a GitHub mirror stays possible because the store is one module with a narrow API.
 
-### Watcher: tiga bentuk, dari paling aman
+### Watcher shapes, from safest
 
-| Bentuk | Cara kerja | Risiko | Catatan |
-|---|---|---|---|
-| **Poller** (systemd timer, tiap 1–5 menit) | baca tiket `ready` → `t3 thread start`/`send` → catat id thread ke tiket | rendah; mudah dihentikan | paling mudah diaudit `[inference]` |
-| **Agent watcher** (satu thread yang punya tool MCP) | thread itu yang memilih tiket, menjawab pending request, memindahkan status | sedang; butuh prompt yang ketat | satu-satunya cara menjawab persetujuan otomatis `[t3]` |
-| **Event-driven** (webhook GitHub → bridge) | reaksi instan saat label berubah | butuh endpoint publik + tanda tangan | lebih kompleks, belum perlu `[inference]` |
+| Shape | Mechanism | Risk |
+|---|---|---|
+| **Poller (chosen)** | read a `ready` ticket, start or test it, record the outcome | low; easy to stop |
+| Agent watcher | a thread with MCP tools picks tickets and answers approvals | medium; needs a strict prompt |
+| Event-driven | GitHub webhook triggers the bridge | needs a public endpoint and signature checks |
 
-### Gerbang yang tidak boleh dilewati
+### Gates that were kept
 
-1. **Model dipilih per tiket**, bukan per watcher: `t3 thread start --provider ... --model ...` `[cli]`. Ini juga memenuhi aturan "satu model per thread" saat delegasi `[local]`.
-2. **Test watcher tidak menilai kode sendiri.** Ia menjalankan perintah test yang sudah ditentukan di tiket dan menempelkan output. Penilaian "lulus/tidak" berbasis exit code, bukan opini model `[inference]`.
-3. **Push/deploy tetap di tangan manusia** sampai ada dua hal: (a) aturan repo mengizinkannya, (b) ada jalur rollback yang terbukti. Sampai itu ada, watcher berhenti di "siap di-push" dan mengirim bukti `[inference]`.
-4. **Persetujuan multi-kanal**: satu layanan persetujuan yang mengirim ke Telegram (dan WhatsApp bila hidup), menyimpan `request_id`, dan menerima balasan `approve/reject <id>` dari kanal mana pun. Balasan pertama menang; sisanya diabaikan `[inference]`.
+1. **Model per ticket, not per watcher** — the profile lives in config and only a human edits it `[cli]`.
+2. **The test stage does not judge code.** It runs the command and reports the exit code; no model opinion decides pass or fail `[inference]`.
+3. **Push is automatic, but only to a ticket branch** — the base branch is never pushed, and a ticket without passing proof is refused.
+4. **Approvals are one-shot.** The first decision wins across every channel; later ones are rejected `[inference]`.
 
-### Yang membuat ini gagal di praktik
+### Failure modes and their guards
 
-| Mode kegagalan | Pencegahan |
+| Failure | Guard |
 |---|---|
-| Dua watcher mengambil tiket yang sama | klaim atomik: label `in-progress` + timestamp, atau `UPDATE ... WHERE status='ready'` di SQLite `[inference]` |
-| Tiket "selesai" padahal test tidak jalan | definisi selesai per tiket wajib memuat perintah test dan bukti output `[inference]` |
-| Thread menumpuk karena tiap tiket membuat thread baru | satu thread per tiket untuk kerja terisolasi; satu thread per project untuk kerja berkelanjutan `[inference]` |
-| Biaya model meledak | batas per tiket (maks turn/waktu) dan pemilihan model eksplisit `[inference]` |
-| Bot dibanjiri notifikasi | gabungkan per project, kirim ringkasan per 5 menit, bukan per event `[tg]` (batas 1 pesan/detik per chat) |
+| Two workers take the same ticket | one conditional `UPDATE … WHERE status='ready'` |
+| "Done" without a test run | proof is required and checked before release |
+| Threads piling up | `watcher.maxConcurrent` plus a wall-clock budget |
+| Runaway cost | explicit model profile per ticket; wall-clock budget (token accounting is still missing) |
+| Notification flood | one message per state change; Telegram allows ~1/second per chat `[tg]` |
 
 ---
 
-## 5. Arsitektur yang diusulkan
+## 5. Architecture as built
 
 ```
-┌─────────────┐   long poll    ┌──────────────┐   subprocess   ┌────────────┐
-│  Telegram   │ ◄────────────► │  t3-bridge   │ ─────────────► │  t3 CLI    │
-│  (manusia)  │                │  (daemon)    │                │  (server)  │
-└─────────────┘                └──────┬───────┘                └────────────┘
-                                      │ baca/tulis
-                                      ▼
-                               ┌──────────────┐
-                               │ state.sqlite │  offset update, allowlist, audit log
-                               └──────────────┘
-
-Fase 2:
-┌──────────────┐   poll 1-5 m   ┌──────────────┐   t3 thread start/send
-│ GitHub Issues│ ─────────────► │  watcher-dev │ ──────────────────────► thread
-│  (tiket)     │ ◄───────────── │  (systemd)   │ ◄────── exit code + log
-└──────────────┘   label/comment└──────────────┘
+┌──────────┐  long poll  ┌──────────────┐  subprocess  ┌────────────┐
+│ Telegram │ ◄─────────► │  t3-bridge   │ ───────────► │   t3 CLI   │
+└──────────┘             └──────┬───────┘              └─────┬──────┘
+                                │ read/write                  │
+                                ▼                             ▼
+                         ┌──────────────┐             ┌──────────────┐
+                         │tickets.sqlite│             │ T3 server    │
+                         └──────┬───────┘             └──────┬───────┘
+                                │                            │ read-only
+┌──────────┐   HTTP (tailnet)   │                     ┌──────┴───────┐
+│ Browser  │ ◄────────────────► │  board/server.py ──►│ statev2.sqlite│
+└──────────┘                    │                     └──────────────┘
+                         ┌──────┴───────┐
+                         │  watcher.py  │ ──► t3 CLI (thread start), git (release)
+                         └──────────────┘
 ```
 
-Komponen dan tanggung jawab:
-
-| Komponen | Tanggung jawab | Tidak boleh |
+| Component | Owns | Never does |
 |---|---|---|
-| `t3-bridge` | terima perintah Telegram, validasi, panggil CLI, balas ringkas | menafsirkan pesan sebagai instruksi sistem, menjalankan push |
-| `state.sqlite` | offset update, allowlist chat, audit perintah | menyimpan token |
-| `watcher-dev` | ambil tiket `ready`, jalankan thread, catat id thread | menilai hasil test |
-| `watcher-test` | jalankan perintah test, tempel output, pindahkan status | mengubah kode |
-| `approval` | kirim permintaan ke kanal, tunggu balasan pertama, catat | menyetujui sendiri |
+| `tickets/store.py` | state machine, atomic claim, approvals, proofs, reports | call T3 or the network |
+| `watcher.py` | dev, test and release stages | invent a model; push the base branch |
+| `bridge/t3_bridge.py` | Telegram commands, audit, notices | answer a T3 approval request |
+| `board/` | HTTP API and the single-page board | write outside the store API |
+
+Details, data model and sequences: [docs/architecture.md](docs/architecture.md).
 
 ---
 
-## 6. Rencana bertahap dengan kriteria selesai
+## 6. Phases and completion criteria
 
-| Fase | Isi | Kriteria selesai | Status |
+| Phase | Scope | Completion criterion | Status |
 |---|---|---|---|
-| **1. Bridge baca** | `/help`, `/projects`, `/threads`, `/ctx` | perintah dijawab dari data nyata; tidak ada penulisan ke T3 | **selesai** — `bridge/t3_bridge.py`, diuji dengan T3 sungguhan |
-| **1b. Bridge tulis** | `/send`, `/new` | pesan benar-benar masuk ke thread tujuan; id thread divalidasi; audit tercatat | **selesai** — 17 test lulus, jalur tulis diuji sampai ke CLI nyata (kasus negatif) |
-| **2. Approval routing** | kirim permintaan persetujuan ke Telegram, balasan `approve/reject` | satu permintaan, satu balasan, idempoten; percobaan kedua diabaikan | **selesai** — bridge + papan + `decide_approval` idempoten |
-| **3. Tiket** | SQLite + CLI (`tickets/store.py`, `tickets/cli.py`), profil model di config | tiket bisa dibuat/dipindah, profil model divalidasi saat pembuatan | **selesai (dasar)** — 12 test |
-| **4. Watcher dev** | `watcher.py --once`, dry-run dulu | rencana perintah benar; klaim atomik; tiket gagal → `blocked` | **selesai untuk `--once` + dry-run**; loop & pemilihan otomatis menyusul |
-| **5. Watcher test** | jalankan test, tempel bukti, pindah status | status hanya berubah bila exit code 0 | **selesai** — `run_test`, bukti tersimpan, `t3-watcher.service` aktif |
-| **6. Rilis** | laporan markdown otomatis saat `done` | laporan memuat status, thread, bukti test, riwayat | **selesai sebagian** — laporan jalan; PR/push tetap manual (keputusan 3B) |
-| **7. Papan kanban** | `board/server.py` + `board/static/index.html` | drag-and-drop berfungsi; ada alternatif single-pointer (WCAG 2.2 SC 2.5.7); laporan per tiket bisa diunduh | **selesai** — 20 test API + verifikasi visual terang/gelap |
+| 1 | Bridge read: `/help`, `/projects`, `/threads`, `/ctx` | answers from real data, no writes | **done** |
+| 1b | Bridge write: `/send`, `/new` | message reaches the thread; id validated; audited | **done** |
+| 2 | Approval routing | one request, one decision, idempotent | **done** — bridge, board and store |
+| 3 | Tickets in SQLite + CLI | create and move, profile validated at creation | **done** |
+| 4 | Dev stage | correct command, atomic claim, failures land in `blocked` | **done**, loop included |
+| 5 | Test stage | status changes only on exit code 0; proof stored | **done** |
+| 6 | Release | branch, commit, push, compare link, PR body; report on `done` | **done except the PR API** |
+| 7 | Board | drag and drop plus a single-pointer alternative; reports downloadable | **done** |
+| 8 | Operations | alerts on unit failure, daily backups, CI, changelog, tag | **done** |
+
+Current evidence: `make check` runs 57 + 24 tests (two integration tests skipped unless `T3_INTEGRATION=1`), tag `v0.1.0`, three services plus a backup timer active.
 
 ---
 
-## 7. Keputusan yang sudah diambil (2026-11-25)
+## 7. Decisions taken (2026-11-25, revised 2026-11-26)
 
-| # | Keputusan | Alasan Anda | Konsekuensi teknis |
+| # | Decision | Reason | Consequence |
 |---|---|---|---|
-| 1 | **SQLite dulu**, GitHub Issues menyusul bila perlu | ingin database persisten yang proper | `tickets/store.py`; migrasi nanti cukup menambah sinkronisasi, bukan menulis ulang |
-| 2 | **Model dipilih manusia, persisten, watcher mengikuti** | pemilihan model hanya oleh Anda | tiket menyebut *profil*; profil hidup di `~/.config/t3-workflow/config.json`; profil asing ditolak saat tiket dibuat |
-| 3 | **Push setelah semuanya aman**, iterasi sampai aman | kualitas di atas kecepatan | watcher berhenti di "siap di-push"; gate test wajib lulus |
-| 4 | **Telegram saja** untuk persetujuan | sesuai rekomendasi | layanan approval idempoten, balasan pertama menang |
-| 5 | **Bridge diaktifkan** | agar bisa memerintah dari HP | `t3-bridge.service` enabled + active |
-| 6 | **Repo pilot: `t3-workflow`** | risiko nol untuk uji loop | tiket pilot T-0001 |
-| 7 | **Model + harness lewat config**, bukan ditulis manual tiap tiket | ingin pembagian model yang konsisten | 4 profil: `fast`, `deep`, `cheap`, `build` (provider `pi` dan `opencode`) |
+| 1 | SQLite first; GitHub Issues may follow | a persistent, proper database | one store module; a mirror can be added without a rewrite |
+| 2 | The human chooses the model; the watcher follows | model choice belongs to the owner | tickets name a profile; unknown profiles are rejected |
+| 3 | **Push automatically, on a ticket branch** (revised from "manual") | the owner wants the pipeline to finish the job | release pushes `ticket/T-xxxx-…`, never the base branch, and refuses unproven work |
+| 4 | Telegram only for approvals | simpler, one channel | one-shot decisions; WhatsApp remains a possible fallback |
+| 5 | Enable the bridge | command from the phone | `t3-bridge.service` enabled |
+| 6 | Pilot on `t3-workflow` | zero risk while proving the loop | ticket T-0001, closed end to end |
+| 7 | Model and harness from config | consistent distribution of work | four profiles: `fast`, `deep`, `cheap`, `build` (`pi`, `opencode`) |
 
-### Catatan implementasi UI (riset 2026-11-25)
+### UI rules that shaped the board
 
-| Sumber | Aturan yang diambil | Wujud di papan |
+| Source | Rule taken | Where it shows |
 |---|---|---|
-| WCAG 2.2 SC 2.5.7 (Level AA) | setiap aksi drag wajib punya alternatif pointer tunggal tanpa drag `[w3c]` | kontrol "Pindahkan" (select) di tiap kartu + tombol "Paksa pindah…" |
-| WCAG 2.1.1 / 2.4.7 | harus bisa keyboard, fokus terlihat `[w3c]` | kartu `tabindex=0`, `:focus-visible` 2px, select/button native |
-| NN/g drag-and-drop | signifier grabbable, feedback saat grab dan saat drop, alternatif untuk presisi `[nng]` | `cursor: grab`, kartu `dragging` memudar, kolom tujuan bergaris putus-putus, select sebagai alternatif presisi |
-| ARIA live | perubahan status diumumkan `[w3c]` | `aria-live="polite"` untuk toast dan pengumuman |
+| WCAG 2.2 SC 2.5.7 (AA) | any drag action needs a single-pointer alternative `[w3c]` | per-card **Move** control plus **Force move** |
+| WCAG 2.1.1 / 2.4.7 | keyboard operable, visible focus `[w3c]` | `tabindex=0` cards, `:focus-visible` outline |
+| NN/g drag-and-drop guidance | grabbable signifier, feedback on grab and drop `[nng]` | `cursor: grab`, faded card while dragging, dashed drop target |
+| ARIA live regions | announce state changes `[w3c]` | `aria-live="polite"` toast and announcements |
 
-### Bukti siklus penuh (2026-11-25)
+### End-to-end evidence (2026-11-25)
 
-T-0001 dijalankan ujung ke ujung pada repo ini: `backlog → ready → in-progress`
-(thread `mcp:72b322c1…`), `→ testing` (watcher menjalankan `python3 -m unittest discover -s tests`,
-rc=0), `→ review`, `→ done`. Laporan otomatis: `~/.local/state/t3-workflow/reports/T-0001.md`.
+Ticket T-0001 ran the whole path on this repository: `backlog → ready → in-progress` (thread `mcp:72b322c1…`), `→ testing` (the watcher ran `python3 -m unittest discover -s tests`, exit 0), `→ review`, `→ done`, with the report written to `~/.local/state/t3-workflow/reports/T-0001.md`.
 
-### Masih terbuka
+### Still open
 
-- **UI kanban**: CLI dulu; web UI menyusul di repo ini juga (lihat §9).
-- **Waktu migrasi ke GitHub Issues**: setelah loop terbukti di SQLite.
-- **Siapa yang memindahkan tiket `testing → review`**: watcher test (fase 5) atau Anda.
-
-## 9. Kanban: dibangun di repo ini, bukan project terpisah
-
-Keputusan: **satu repo** (`t3-workflow`). Alasannya `[inference]`:
-
-1. Tiket, watcher, dan bridge berbagi model data yang sama; memisahkan repo berarti memelihara kontrak antar-repo untuk hal yang masih berubah cepat.
-2. Ukurannya kecil: store + CLI sekarang ±350 baris, dan UI nanti cukup satu halaman yang membaca SQLite yang sama.
-3. Risiko operasional lebih rendah: satu service, satu config, satu tempat audit.
-
-Bentuk yang direncanakan, berurutan:
-
-| Tahap | Isi | Alasan urutan |
-|---|---|---|
-| Sekarang | CLI + SQLite (selesai) | membuktikan state machine dan klaim atomik lebih dulu |
-| Berikutnya | Halaman baca-saja (HTML dari SQLite) | memberi gambaran papan tanpa menambah jalur tulis baru |
-| Setelah itu | Papan drag-and-drop | butuh endpoint tulis + autentikasi; baru layak setelah alur stabil |
-| Opsional | Sinkronisasi GitHub Issues | dua arah menambah kompleksitas; tunggu kebutuhan nyata |
+- **PR creation through an API** — needs `gh` or a GitHub token; today the push is followed by a compare link and a PR body file.
+- **Deploy and rollback** — not defined; the pipeline ends at a pushed branch.
+- **Token accounting** — only wall-clock budgets exist.
+- **Ticket editing** — no edit or delete after creation.
 
 ---
 
-## 8. Verifikasi riset ini
+## 8. Why one repository
 
-| Klaim | Cara diperiksa | Hasil |
+The board, the watcher and the bridge share one data model and change together. Splitting them would mean maintaining a cross-repository contract for something still moving quickly, and would add a second service, config and audit trail. The whole surface is about 2,600 lines of standard-library Python, so a single repository stays readable.
+
+---
+
+## 9. Verification of this research
+
+| Claim | How it was checked | Result |
 |---|---|---|
-| CLI punya `thread send/start/list/show` | `t3 thread --help` | terlihat di output |
-| `send` mengantre, tidak menginterupsi | teks bantuan `t3 thread send --help` | dikutip apa adanya |
-| Kode keluar `--wait` 1/2 | teks bantuan `--wait` | dikutip apa adanya |
-| CLI tidak punya `project list` | `t3 project --help` | hanya add/remove/rename |
-| Bot bisa long polling, bukan webhook | `getUpdates` di mesin ini mengembalikan update; webhook kosong | `[local]` + `[tg]` |
-| Batas kirim Telegram | FAQ resmi | 1/detik per chat, 20/menit per grup, ±30/detik broadcast |
-| Update hilang setelah 24 jam | halaman Bot API | dikutip |
-| GitHub Issues punya label/sub-issue/dependency | docs GitHub | dikutip |
-| Token & chat id tersedia untuk dipakai ulang | config notifier | ada, mode 600 |
-| Nama tabel project | `projection_projects` di `statev2.sqlite` | dikonfirmasi; tabel `projects` tidak ada |
-| Bentuk JSON `thread show` | `{"thread": …, "messages": […]}` | dikonfirmasi; formatter awal salah membaca `items` dan sudah diperbaiki |
-| Bridge fase 1 berjalan | `--selftest`, `--once`, 17 test | 10 project terbaca; `/threads kelanach` menampilkan 2 thread; jalur tulis mencapai CLI |
+| The CLI has `thread send/start/list/show` | `t3 thread --help` | present |
+| `send` queues rather than interrupts | `t3 thread send --help` text | quoted verbatim |
+| `--wait` exit codes 1 and 2 | `--wait` help text | quoted verbatim |
+| No `project list` in the CLI | `t3 project --help` | only add/remove/rename |
+| Long polling works and no webhook is set | `getUpdates` returned updates; webhook info empty | `[local]` |
+| Telegram sending limits | official FAQ | 1/s per chat, 20/min per group, ~30/s broadcast |
+| Updates expire after 24 hours | Bot API page | quoted |
+| GitHub Issues support labels and dependencies | GitHub docs | quoted |
+| Project table name | `projection_projects` | confirmed; a `projects` table does not exist |
+| `thread show` JSON shape | `{"thread": …, "messages": […]}` | confirmed; the first formatter read `items` and was fixed |
+| Bridge works against the real server | `--selftest`, `--once`, suite | projects, threads and a negative write path verified |
+| Board sees T3 data | `/api/projects` and `/api/threads` | 11 projects, 40 recent threads |
+| `OnFailure` actually fires | a deliberately failing unit | the alert unit was started |

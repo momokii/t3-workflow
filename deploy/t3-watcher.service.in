@@ -1,0 +1,17 @@
+[Unit]
+Description=t3-workflow watcher (dev, test and release stages)
+After=network.target
+OnFailure=t3-alert@%N.service
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+ExecStart=@PYTHON@ @REPO@/watcher.py --loop
+Restart=on-failure
+RestartSec=15
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

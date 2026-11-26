@@ -1,0 +1,7 @@
+[Unit]
+Description=t3-workflow ticket backup
+OnFailure=t3-alert@%N.service
+
+[Service]
+Type=oneshot
+ExecStart=@PYTHON@ @REPO@/tickets/cli.py backup --keep 7

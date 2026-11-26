@@ -75,3 +75,17 @@ Against `RESEARCH.md` §6 and the decisions recorded in §7.
 | Backups were manual only | fixed: `t3-backup.timer` daily at 03:20 with `--keep 7` |
 | No CI, no changelog, no tags | fixed: `.github/workflows/check.yml`, `CHANGELOG.md`, tag `v0.1.0` |
 | No integration test against the real CLI | added, opt-in via `T3_INTEGRATION=1` so the default suite stays hermetic |
+
+---
+
+## Round 3 (documentation pass)
+
+| Item | Result |
+|---|---|
+| Languages | `README.md`, `RESEARCH.md` and `CHANGELOG.md` rewritten in English; `AGENTS.md` and `REVIEW.md` were already English |
+| New documents | `docs/architecture.md` (components, data model, sequences), `docs/api.md` (every endpoint with payloads and curl), `docs/operations.md` (runbook, restore drill, incidents) |
+| Route coverage | every `/api/…` route in `board/server.py` appears in `docs/api.md` |
+| Command coverage | every bridge command (`/projects` … `/reject`) appears in `README.md` |
+| Configuration coverage | all twelve config keys documented with defaults and meaning |
+| Runbook accuracy | the restore example used the `sqlite3` binary, which is not installed here; replaced with a Python one-liner and verified |
+| Restore drill | executed against a copy: snapshot listed T-0001, counts matched, production untouched |

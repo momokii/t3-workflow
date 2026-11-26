@@ -1,33 +1,32 @@
 # Changelog
 
-Format mengikuti [Keep a Changelog](https://keepachangelog.com/); versi mengikuti [SemVer](https://semver.org/lang/id/).
+All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] — 2026-11-26
-
-Rilis pertama dari alur kerja tiket → thread → test → rilis.
+## [Unreleased]
 
 ### Added
 
-- **Bridge Telegram** (`bridge/t3_bridge.py`): `/projects`, `/threads`, `/ctx`, `/send`, `/new`,
-  `/tickets`, `/ticket`, `/pending`, `/approve`, `/reject`, `/id`, `/help`. Long polling,
-  allowlist chat, audit JSONL. `/send` menerima id thread atau nama project yang hanya punya satu thread.
-- **Tiket SQLite** (`tickets/`): state machine `backlog → ready → in-progress → testing → review → done`
-  plus `blocked`, klaim atomik, override `--force` yang tercatat, laporan markdown otomatis saat selesai.
-- **Profil model** di `~/.config/t3-workflow/config.json`: `fast`, `deep`, `cheap`, `build`
-  (provider `pi` dan `opencode`); watcher tidak pernah memilih model sendiri.
-- **Watcher** (`watcher.py`): tahap dev (mulai thread), tahap test (jalankan `test_cmd`, simpan bukti,
-  `review` hanya bila exit code 0), tahap release (branch `ticket/T-xxxx-…`, commit, push, tautan compare,
-  badan PR), batas konkurensi dan anggaran waktu.
-- **Papan kanban** (`board/`): drag-and-drop plus kontrol pointer tunggal (WCAG 2.2 SC 2.5.7),
-  persetujuan, tiket baru, pendaftaran project, adopsi thread T3 yang sudah ada, responsif, mode gelap,
-  logo + favicon, laporan per tiket.
-- **Layanan**: `t3-bridge`, `t3-watcher`, `t3-board` (tailnet), `t3-backup.timer` harian dengan retensi 7,
-  serta `t3-alert@.service` untuk notifikasi kegagalan unit.
-- **Dokumentasi**: `README.md`, `RESEARCH.md`, `AGENTS.md`, `REVIEW.md`.
-- **Test**: 79 test (bridge, tiket, watcher, rilis, papan) + satu suite integrasi opt-in.
+- Documentation set: [docs/architecture.md](docs/architecture.md), [docs/api.md](docs/api.md), [docs/operations.md](docs/operations.md).
+- Board actions to create a ticket, register a T3 project, and adopt an existing T3 thread as a ticket.
+
+## [0.1.0] — 2026-11-26
+
+First release: the ticket → thread → test → release loop, with a board and a Telegram bridge.
+
+### Added
+
+- **Telegram bridge** (`bridge/t3_bridge.py`): `/projects`, `/threads`, `/ctx`, `/send`, `/new`, `/tickets`, `/ticket`, `/pending`, `/approve`, `/reject`, `/id`, `/help`. Long polling, chat allowlist, JSONL audit. `/send` and `/ctx` accept a thread id or a project name that has exactly one thread.
+- **Ticket store** (`tickets/`): state machine `backlog → ready → in-progress → testing → review → done` plus `blocked`, atomic claim, recorded `--force` override, approvals, proofs, markdown reports written on completion.
+- **Model profiles** in `~/.config/t3-workflow/config.json`: `fast`, `deep`, `cheap`, `build`, spanning the `pi` and `opencode` providers. The watcher reads a profile and never chooses a model itself.
+- **Watcher** (`watcher.py`): dev stage (start a thread), test stage (run `test_cmd`, store proof, advance only on exit code 0), release stage (branch `ticket/T-xxxx-…`, commit, push, compare link, PR body file), a concurrency limit and a wall-clock budget.
+- **Kanban board** (`board/`): drag and drop plus a single-pointer move control (WCAG 2.2 SC 2.5.7), approvals with approve/reject, ticket creation, project registration, thread adoption, responsive layout, dark mode, logo and favicon, per-ticket reports.
+- **Services**: `t3-bridge`, `t3-watcher`, `t3-board`, `t3-backup.timer` (daily, retention 7), `t3-alert@.service` for `OnFailure`.
+- **Tests**: 57 workflow/board tests plus 24 bridge tests, and one integration suite that is skipped unless `T3_INTEGRATION=1`.
+- **Tooling**: `make test`, `make check`, GitHub Actions workflow, tag `v0.1.0`.
 
 ### Known limitations
 
-- Repo belum punya remote; release stage sudah diimplementasikan dan diuji dengan remote bare lokal.
-- PR belum dibuat via API (butuh `gh` atau token GitHub); tersedia tautan compare dan berkas badan PR.
-- Deploy dan rollback belum ada.
+- The source repository has no remote; the release stage is implemented and tested against a temporary bare remote, and CI runs once a remote exists.
+- No pull-request creation through an API (requires `gh` or a GitHub token); a compare link and a PR body file are produced instead.
+- No deploy or rollback step.
+- Tickets cannot be edited or deleted after creation.
