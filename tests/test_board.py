@@ -155,6 +155,13 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(second.status, 409)
         self.assertIn("sudah", json.loads(raw)["error"])
 
+    def test_healthz_reports_ticket_count(self) -> None:
+        response, raw = self.request("GET", "/healthz")
+        self.assertEqual(response.status, 200)
+        data = json.loads(raw)
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["tickets"], 2)
+
     def test_lists_t3_projects_and_threads(self) -> None:
         response, raw = self.request("GET", "/api/projects")
         self.assertEqual(response.status, 200)

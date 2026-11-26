@@ -1,0 +1,11 @@
+.git
+.github
+**/__pycache__
+**/*.pyc
+tests
+bridge/tests
+reports
+backups
+*.log
+*.sqlite
+.env

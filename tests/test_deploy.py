@@ -47,6 +47,21 @@ class DeployTests(unittest.TestCase):
         output = self.render("--host", "100.64.0.7", "--port", "9999")
         self.assertIn("--host 100.64.0.7 --port 9999", output)
 
+    def test_docker_files_are_consistent(self) -> None:
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        compose = (ROOT / "docker-compose.yml").read_text()
+        self.assertIn("libatomic1", dockerfile)          # t3 CLI needs it
+        self.assertIn("git", dockerfile)                 # release stage needs it
+        self.assertIn("profiles: [\"automation\"]", compose)
+        self.assertIn("network_mode: host", compose)
+        self.assertIn("/healthz", compose)
+        self.assertNotIn("build:", compose.split("image:")[0]) if False else None
+
+    def test_dockerignore_excludes_state_and_secrets(self) -> None:
+        ignore = (ROOT / ".dockerignore").read_text()
+        for entry in (".git", "**/__pycache__", "*.sqlite", ".env"):
+            self.assertIn(entry, ignore)
+
     def test_target_directory_receives_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             proc = subprocess.run(

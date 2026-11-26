@@ -1,0 +1,64 @@
+# Full deployment: the board plus the two workers, sharing the host user's T3 data.
+#
+#   cp deploy/docker/.env.example .env      # then edit
+#   docker compose up -d --build board
+#   docker compose --profile automation up -d --build
+#
+# `network_mode: host` is deliberate: the T3 CLI reaches the server on 127.0.0.1,
+# and T3 identifies projects by their real absolute path, so the project tree must
+# be mounted at the same path inside the container.
+
+x-common: &common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: t3-workflow:local
+  user: "${T3_UID:-1000}:${T3_GID:-1000}"
+  env_file:
+    - ${HOME}/.config/t3-workflow/board.env
+  environment:
+    HOME: ${HOME}
+    PYTHONUNBUFFERED: "1"
+  volumes:
+    - ${HOME}/.t3:${HOME}/.t3
+    - ${HOME}/.local/bin:${HOME}/.local/bin:ro
+    - ${HOME}/.local/state/t3-workflow:${HOME}/.local/state/t3-workflow
+    - ${HOME}/.config/t3-workflow:${HOME}/.config/t3-workflow:ro
+    - ${HOME}/.config/t3-wa-notify:${HOME}/.config/t3-wa-notify:ro
+    - ${PROJECTS_ROOT:-${HOME}/Public}:${PROJECTS_ROOT:-${HOME}/Public}
+    - ${HOME}/.ssh:${HOME}/.ssh:ro
+  restart: unless-stopped
+
+services:
+  board:
+    <<: *common
+    container_name: t3-board
+    network_mode: host
+    command:
+      - python3
+      - board/server.py
+      - --host
+      - ${T3_BOARD_HOST:-127.0.0.1}
+      - --port
+      - ${T3_BOARD_PORT:-8787}
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://${T3_BOARD_HOST:-127.0.0.1}:${T3_BOARD_PORT:-8787}/healthz', timeout=3)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  bridge:
+    <<: *common
+    container_name: t3-bridge
+    network_mode: host
+    profiles: ["automation"]
+    command: ["python3", "bridge/t3_bridge.py"]
+
+  watcher:
+    <<: *common
+    container_name: t3-watcher
+    network_mode: host
+    profiles: ["automation"]
+    working_dir: /app
+    command: ["python3", "watcher.py", "--loop"]

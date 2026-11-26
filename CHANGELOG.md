@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- Container deployment: `Dockerfile`, `docker-compose.yml` (board by default, `bridge` and `watcher`
+  under the `automation` profile), `deploy/docker/.env.example`, `deploy/docker/smoke.sh`, and
+  [docs/docker.md](docs/docker.md).
+- `GET /healthz` on the board, used by the container healthcheck.
 - Documentation set: [docs/architecture.md](docs/architecture.md), [docs/api.md](docs/api.md), [docs/operations.md](docs/operations.md).
 - Board actions to create a ticket, register a T3 project, and adopt an existing T3 thread as a ticket.
 

@@ -99,3 +99,16 @@ Against `RESEARCH.md` §6 and the decisions recorded in §7.
 | Remote | `https://github.com/momokii/t3-workflow.git`, branch `main`, tag `v0.1.0` pushed |
 | CI | the first two runs failed; the cause was a test that needed the real T3 database. Reproduced with `HOME` pointed at an empty directory, fixed in `89e1ecd`, both suites green under that condition |
 | Files on the remote | workflow, deploy templates and docs confirmed via `raw.githubusercontent.com` |
+
+---
+
+## Round 5 (container deployment)
+
+| Axis | Finding | Status |
+|---|---|---|
+| Standards | `working_dir: ${PWD}` in compose resolved to the host path, which does not exist in the image | fixed: `/app` |
+| Standards | `.env` was not ignored, and it holds local paths | fixed: `.env` and `deploy/docker/.env` added to `.dockerignore` and `.gitignore` |
+| Standards | the healthcheck and the service bind must agree on host and port | documented; both read `T3_BOARD_HOST`/`T3_BOARD_PORT` |
+| Spec | "deployable via Docker end to end" | board, bridge and watcher all ran in containers; board served real data and enforced the token; workers produced their normal one-shot output |
+| Spec | secrets must not enter the image | `.dockerignore` excludes `.env`, SQLite files, logs; token arrives through `env_file` |
+| Gap | host networking is a real trade-off, not a detail | documented in `docs/docker.md`, including how to switch between compose and systemd |

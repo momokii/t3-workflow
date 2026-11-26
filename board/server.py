@@ -154,6 +154,15 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json(404, {"error": "not found"})
             return
+        if path == "/healthz":
+            store = self._store()
+            try:
+                summary = store.summary()
+                tickets = len(store.list())
+            finally:
+                store.close()
+            self._json(200, {"status": "ok", "tickets": tickets, "summary": summary})
+            return
         if path == "/api/projects":
             self._json(200, {"projects": t3_projects(Path(self.t3_db_path))})
             return
@@ -254,6 +263,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(409, {"error": str(exc)})
             finally:
                 store.close()
+            return
+        if path == "/healthz":
+            store = self._store()
+            try:
+                summary = store.summary()
+                tickets = len(store.list())
+            finally:
+                store.close()
+            self._json(200, {"status": "ok", "tickets": tickets, "summary": summary})
             return
         if path == "/api/projects":
             if not self._authorised():

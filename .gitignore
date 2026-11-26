@@ -11,3 +11,6 @@ state.json
 .DS_Store
 .idea/
 .vscode/
+# local deployment settings and secrets
+.env
+deploy/docker/.env

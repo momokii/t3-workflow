@@ -72,6 +72,22 @@ python3 board/server.py --host 127.0.0.1 --port 8787
 
 The Telegram bridge needs a bot token and at least one allowlisted chat id; see [Configuration](#configuration). Without them the bridge exits with a clear message and the rest still works.
 
+## Run it in Docker
+
+The board and both workers ship as one image with a compose file:
+
+```bash
+cp deploy/docker/.env.example .env     # HOME, PROJECTS_ROOT, T3_BOARD_HOST
+docker compose up -d --build board     # board on http://$T3_BOARD_HOST:$T3_BOARD_PORT
+docker compose --profile automation up -d --build   # + bridge + watcher
+deploy/docker/smoke.sh                 # health, endpoints, token enforcement
+```
+
+The containers use the host network and mount the host's T3 data and project paths, because T3
+identifies a project by its absolute path and the CLI reaches its server on loopback. Read
+[docs/docker.md](docs/docker.md) before switching: run either the compose services or the systemd
+units, not both.
+
 ## Services
 
 Installed as `systemd --user` units. The repository ships the templates and a renderer, so a fresh checkout can reproduce the exact units:
@@ -267,7 +283,9 @@ T3_INTEGRATION=1 python3 -m unittest tests.test_integration_t3 -v
 
 ```
 board/          kanban HTTP server and single-page UI (no build step)
-deploy/         systemd unit templates and install.sh
+deploy/         systemd unit templates, install.sh, docker/ (smoke test, .env example)
+Dockerfile      python:3.12-slim plus git, openssh-client, libatomic1 (for the T3 CLI)
+docker-compose.yml  board by default, bridge and watcher under the "automation" profile
 bridge/         Telegram ⇄ T3 bridge, example config, tests
 scripts/        alert.py for systemd OnFailure
 tickets/        SQLite store and CLI
@@ -284,6 +302,7 @@ docs/           architecture, API, operations
 | [docs/architecture.md](docs/architecture.md) | components, data model, state machine, sequences |
 | [docs/api.md](docs/api.md) | board HTTP API with payloads and curl examples |
 | [docs/operations.md](docs/operations.md) | runbook: services, backup/restore, incidents, troubleshooting |
+| [docs/docker.md](docs/docker.md) | container deployment: mounts, host networking, verification, troubleshooting |
 | [RESEARCH.md](RESEARCH.md) | why the design looks like this, with the measured facts behind it |
 | [REVIEW.md](REVIEW.md) | two-axis review (standards and spec) over the whole repository |
 | [AGENTS.md](AGENTS.md) | invariants an agent must keep when changing this code |
@@ -297,4 +316,5 @@ docs/           architecture, API, operations
 4. **Wall-clock budget only.** No token accounting, no provider quota guard, no cost report.
 5. **Tickets cannot be edited or deleted** once created; a wrong profile or test command means a new ticket.
 6. **Telegram-only approvals.** WhatsApp was planned as a fallback and is not implemented.
-7. **No health endpoint or metrics.** Failures are reported by `OnFailure=` and by the bridge, not by a monitoring system.
+7. **No metrics.** There is a `/healthz` endpoint for the container healthcheck, and failures are reported by `OnFailure=` and by the bridge, but nothing exports metrics.
+8. **The Docker deployment uses host networking.** See [docs/docker.md](docs/docker.md) for the trade-off; the systemd units avoid it.
