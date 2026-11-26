@@ -22,6 +22,8 @@ Otomasi alur kerja T3 Code: bridge Telegram dua arah, dan rencana kanban + watch
 | `/threads <project>` | thread terbaru di project itu |
 | `/ctx <thread> [n]` | judul, status, model, tautan, dan n pesan terakhir |
 | `/send <thread> <teks>` | kirim pesan; thread sibuk menerimanya sebagai turn berikutnya |
+| `/tickets [status]`, `/ticket <project> <teks>` | daftar tiket, buat tiket baru |
+| `/pending`, `/approve <id>`, `/reject <id>` | persetujuan |
 | `/new <project> <teks>` | mulai thread baru, judul dari baris pertama |
 
 ## Menjalankan
@@ -89,6 +91,8 @@ dan hanya dibaca oleh watcher — watcher tidak pernah memilih model sendiri.
 | `t3-bridge.service` | Telegram ⇄ T3 | long polling |
 | `t3-watcher.service` | dev + test stage | tiap `watcher.intervalSeconds` (120 s) |
 | `t3-board.service` | papan kanban | `100.124.184.116:8787` |
+| `t3-backup.timer` | backup harian 03:20, retensi 7 | `~/.local/state/t3-workflow/backups` |
+| `t3-alert@.service` | notifikasi Telegram saat unit gagal | dipanggil lewat `OnFailure=` |
 
 Menjeda tanpa mematikan service: set `watcher.enabled=false` di
 `~/.config/t3-workflow/config.json`, lalu `systemctl --user restart t3-watcher`.
@@ -171,6 +175,21 @@ python3 tickets/cli.py backup --out ~/.local/state/t3-workflow/backups
 - `limits.maxInProgressMinutes` — tiket yang melewatinya dipindah ke `blocked` beserta
   menit terukurnya, supaya slot tidak tertahan thread yang macet. `0` mematikan.
 - Notifikasi: bridge mengirim satu pesan saat tiket masuk `review`, `done`, atau `blocked`.
+
+## Integrasi T3 di papan
+
+- `/api/projects` dan `/api/threads` membaca `statev2.sqlite` milik T3, jadi project dan thread yang
+  sudah ada langsung terlihat.
+- **Daftarkan project** memanggil `t3 project add <path> --title <nama>`; path wajib absolut dan ada.
+- **Adopsi thread** membuat tiket `in-progress` yang menunjuk thread lama, sehingga pekerjaan yang
+  sudah berjalan bisa dilanjutkan dari papan.
+
+## CI dan rilis
+
+- `.github/workflows/check.yml` menjalankan `make check` pada push dan pull request
+  (aktif otomatis begitu repo punya remote).
+- `CHANGELOG.md` + tag `v0.1.0`.
+- Test integrasi T3 bersifat opt-in: `T3_INTEGRATION=1 python3 -m unittest tests.test_integration_t3`.
 
 ## Status audit
 

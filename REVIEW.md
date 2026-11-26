@@ -62,3 +62,16 @@ Against `RESEARCH.md` §6 and the decisions recorded in §7.
 - **Standards**: 9 findings — 4 hard violations (all fixed), 5 judgement calls (2 with concrete mitigations queued: shell allowlist, partial unique index).
 - **Spec**: 4 gaps — 2 real (PR API, deploy), 1 environmental blocker (no remote), 1 deferred by decision.
 - Worst standards issue was the silent `force=True`; worst spec issue is that "rilis" still ends at a branch, not a pull request.
+
+---
+
+## Round 2 (after the board integration work)
+
+| Finding | Status |
+|---|---|
+| Board showed only tickets, so 263 existing threads and 11 projects were invisible | fixed: `/api/projects`, `/api/threads`, adopt, and a new-ticket form |
+| No way to register a project from the board | fixed: `/api/projects` runs `t3 project add` after validating an absolute existing path |
+| `OnFailure=` was written in `[Service]` instead of `[Unit]`, so no alert ever fired | fixed: `OnFailure=t3-alert@%N.service`, verified by a deliberately failing unit |
+| Backups were manual only | fixed: `t3-backup.timer` daily at 03:20 with `--keep 7` |
+| No CI, no changelog, no tags | fixed: `.github/workflows/check.yml`, `CHANGELOG.md`, tag `v0.1.0` |
+| No integration test against the real CLI | added, opt-in via `T3_INTEGRATION=1` so the default suite stays hermetic |
