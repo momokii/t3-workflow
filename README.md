@@ -140,6 +140,9 @@ python3 tickets/cli.py backup [--out DIR] [--keep 7]
 
 python3 watcher.py --once [--dry-run]
 python3 watcher.py --loop [--interval 120]
+
+make selftest      # bridge config check + model profiles
+make dry-run       # one watcher step, no side effects
 ```
 
 ## Configuration
