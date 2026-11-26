@@ -8,6 +8,8 @@ Ticket-driven automation for [T3 Code](https://github.com/): a ticket becomes an
 
 ```
 backlog ──► ready ──► in-progress ──► testing ──► review ──► done
+                     (continue the     (watcher        (branch
+                      linked thread     runs tests)      + push)
                           │              │           │          │
                     t3 thread     test command   branch +    markdown
                        start      + exit code      push       report
@@ -138,9 +140,11 @@ journalctl --user -u t3-watcher -f
 
 ### From the board
 
-- **＋ Ticket** — title, project, model profile, test command, priority, optional approval gate.
+- **＋ Ticket** — title, project, model profile (labelled with provider and model), context, optional
+  attachment path, test command, priority (1 urgent … 5 later), optional approval gate.
 - **Register project** — writes through `t3 project add`; the path must be absolute and exist.
-- **Adopt thread** — turns an existing T3 thread into an `in-progress` ticket.
+- **Adopt thread** — turns an existing T3 thread into a `ready` ticket that keeps the thread; the
+  watcher sends the ticket prompt into that same thread instead of starting a new one.
 - Drag a card between columns, or use the card's **Move** control (a single-pointer alternative required by WCAG 2.2 SC 2.5.7). **Force move** bypasses the state machine and is recorded as a `forced` event.
 - **Report** downloads the ticket's markdown report.
 
@@ -211,7 +215,8 @@ backlog → ready → in-progress → testing → review → done
 
 | Stage | Trigger | What happens |
 |---|---|---|
-| dev | ticket in `ready`, slot free, approval satisfied | claim atomically, `t3 thread start` with the profile's provider and model, store the thread id |
+| dev | ticket in `ready`, slot free, approval satisfied | claim atomically; if the ticket carries a thread, `t3 thread send` continues **that** thread, otherwise `t3 thread start` creates one; store the thread id |
+| sync | every loop | a ticket in `in-progress` whose thread reports `completed`/`idle` moves to `testing`; `failed`/`cancelled` moves to `blocked` |
 | test | ticket in `testing` | run the ticket's `test_cmd` in the project directory; store exit code and output tail as proof; `review` on 0, back to `in-progress` otherwise |
 | release | ticket in `review` with a passing proof | create `ticket/T-xxxx-<slug>`, commit, push, store branch and compare link, write the PR body, finish the ticket and write the report |
 
@@ -300,6 +305,7 @@ docs/           architecture, API, operations
 |---|---|
 | [README.md](README.md) | this file: usage and configuration |
 | [docs/architecture.md](docs/architecture.md) | components, data model, state machine, sequences |
+| [docs/usage.md](docs/usage.md) | how to use it, which workflow to pick, model and priority guidance, FAQ |
 | [docs/api.md](docs/api.md) | board HTTP API with payloads and curl examples |
 | [docs/operations.md](docs/operations.md) | runbook: services, backup/restore, incidents, troubleshooting |
 | [docs/docker.md](docs/docker.md) | container deployment: mounts, host networking, verification, troubleshooting |
@@ -315,6 +321,7 @@ docs/           architecture, API, operations
 3. **No deploy step.** The pipeline ends at a pushed branch; there is no deploy target or rollback path.
 4. **Wall-clock budget only.** No token accounting, no provider quota guard, no cost report.
 5. **Tickets cannot be edited or deleted** once created; a wrong profile or test command means a new ticket.
-6. **Telegram-only approvals.** WhatsApp was planned as a fallback and is not implemented.
-7. **No metrics.** There is a `/healthz` endpoint for the container healthcheck, and failures are reported by `OnFailure=` and by the bridge, but nothing exports metrics.
-8. **The Docker deployment uses host networking.** See [docs/docker.md](docs/docker.md) for the trade-off; the systemd units avoid it.
+6. **Attachments are paths, not uploads.** `t3 thread send` accepts text only, so an image cannot travel with a ticket; a path to a file on this machine can.
+7. **Telegram-only approvals.** WhatsApp was planned as a fallback and is not implemented.
+8. **No metrics.** There is a `/healthz` endpoint for the container healthcheck, and failures are reported by `OnFailure=` and by the bridge, but nothing exports metrics.
+9. **The Docker deployment uses host networking.** See [docs/docker.md](docs/docker.md) for the trade-off; the systemd units avoid it.

@@ -112,3 +112,17 @@ Against `RESEARCH.md` §6 and the decisions recorded in §7.
 | Spec | "deployable via Docker end to end" | board, bridge and watcher all ran in containers; board served real data and enforced the token; workers produced their normal one-shot output |
 | Spec | secrets must not enter the image | `.dockerignore` excludes `.env`, SQLite files, logs; token arrives through `env_file` |
 | Gap | host networking is a real trade-off, not a detail | documented in `docs/docker.md`, including how to switch between compose and systemd |
+
+---
+
+## Round 6 (thread continuation)
+
+| Finding | Severity | Status |
+|---|---|---|
+| Adoption created an `in-progress` ticket that the watcher never touched: no prompt was sent, nothing read the thread status, so the ticket could only sit there until the budget moved it to `blocked` | hard, spec | fixed: `thread_id` now means "continue this thread"; adopt creates a `ready` ticket; a sync stage advances from thread status |
+| The dev stage always called `thread start`, so an adopted ticket would have duplicated the thread had it ever run | hard | fixed: branch on `thread_id` |
+| Dry-run still referenced the removed `command` variable | hard | fixed with a per-path preview |
+| Removing the dead `plan()` helper with a regex also removed the two new helpers | hard, process | caught by the suite; functions restored, `make check` green |
+| The ticket dialog was taller than the viewport, hiding its buttons | judgement | fixed with `max-height` and internal scroll |
+| Priority, model profile and the approval checkbox had no explanation in the UI | spec | fixed: labels, provider/model in the profile options, and helper text |
+| Attachments | limitation | documented: a path is passed to the agent; `t3 thread send` is text only, so images cannot travel |

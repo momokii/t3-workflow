@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Thread continuation**: a ticket that carries a `thread_id` is continued with `t3 thread send`
+  instead of starting a second thread, and a sync stage advances the ticket from the thread's status.
+- Adopting a thread now creates a `ready` ticket that keeps the thread, instead of an `in-progress`
+  ticket the watcher never touched.
+- Ticket context (`body`) and an optional attachment path, carried into the prompt.
+- Profile details (provider and model) in the board, priority labels with an explanation, and helper
+  text for the test command and the approval checkbox.
+- [docs/usage.md](docs/usage.md): workflows, model and priority guidance, FAQ.
 - Container deployment: `Dockerfile`, `docker-compose.yml` (board by default, `bridge` and `watcher`
   under the `automation` profile), `deploy/docker/.env.example`, `deploy/docker/smoke.sh`, and
   [docs/docker.md](docs/docker.md).

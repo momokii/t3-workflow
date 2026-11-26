@@ -82,12 +82,30 @@ sequenceDiagram
     W->>S: next_ready()
     W->>S: approval_state() (when the ticket requires it)
     W->>S: claim(id, worker)  %% UPDATE … WHERE status='ready'
-    W->>T: thread start <project> - --provider … --model … --json
-    T-->>W: {"threadId": …}
-    W->>S: attach_thread(id, threadId)
+    alt ticket carries a thread_id (adopted or continued)
+        W->>T: thread send <threadId> - --json
+        W->>S: record_event(continued)
+    else
+        W->>T: thread start <project> - --provider … --model … --json
+        T-->>W: {"threadId": …}
+        W->>S: attach_thread(id, threadId)
+    end
 ```
 
 The claim is a single conditional `UPDATE`; a second worker gets `rowcount = 0` and reports the current status instead of starting a duplicate thread.
+
+### Sync stage
+
+Every loop starts by reconciling tickets with the threads they point at:
+
+| Thread status | Ticket move |
+|---|---|
+| `completed`, `idle` | `testing` — the agent's work is done, now prove it |
+| `failed`, `cancelled`, `interrupted` | `blocked` with the thread status in the note |
+| `running`, `waiting`, unknown | left alone |
+
+This is what makes adoption work: the agent finishes inside its own thread and the watcher advances
+the ticket from that status rather than from a guess.
 
 ### Test stage
 
