@@ -77,6 +77,7 @@ def main() -> int:
 
     backup = sub.add_parser("backup", help="salin database tiket dan laporan ke folder")
     backup.add_argument("--out", default=str(Path.home() / ".local/state/t3-workflow/backups"))
+    backup.add_argument("--keep", type=int, default=7, help="jumlah backup terbaru yang disimpan (0 = semua)")
 
     report = sub.add_parser("report", help="tulis laporan markdown untuk satu tiket")
     report.add_argument("ticket")
@@ -120,6 +121,18 @@ def main() -> int:
             reports = Path(os.environ.get("T3_REPORTS_DIR", Path.home() / ".local/state/t3-workflow/reports"))
             if reports.exists():
                 shutil.copytree(reports, target.parent / f"reports-{target.stem.split('-')[-1]}", dirs_exist_ok=True)
+            if args.keep > 0:
+                import re
+
+                stamp = re.search(r"(\d{8}-\d{6})", target.name)
+                if stamp:
+                    for old in sorted(Path(args.out).glob("tickets-*.sqlite"))[:-args.keep]:
+                        old.unlink(missing_ok=True)
+                        print(f"dipangkas: {old.name}")
+                    for old in sorted(Path(args.out).glob("reports-*"))[:-args.keep]:
+                        if old.is_dir():
+                            shutil.rmtree(old, ignore_errors=True)
+                            print(f"dipangkas: {old.name}")
             print(f"backup: {target}")
         elif args.command == "report":
             text = store.report(args.ticket)
