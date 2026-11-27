@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Write STATE.md: the measured state of this checkout, regenerated on demand.
+
+Hand-written numbers in a handoff go stale the moment the handoff is committed.
+This script exists so a handoff can point at a file that anyone can regenerate
+instead of trusting prose.
+
+    python3 scripts/snapshot.py                 # writes STATE.md
+    python3 scripts/snapshot.py --out /tmp/S.md  # elsewhere
+    python3 scripts/snapshot.py --no-services    # when systemd is not available
+
+It reads only local state: git, systemd (optional), the ticket database and the T3
+provider cache. It does not call the network and does not run the test suite.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tickets"))
+
+from catalog import load_catalog  # noqa: E402
+from store import DB_PATH, load_config  # noqa: E402
+
+UNITS = ("t3-bridge", "t3-watcher", "t3-board", "t3-backup.timer")
+
+
+def run(command: list[str], timeout: int = 20) -> str:
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=timeout, cwd=ROOT)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return (proc.stdout or "").strip() if proc.returncode == 0 else ""
+
+
+def git_block() -> list[str]:
+    head = run(["git", "rev-parse", "--short", "HEAD"]) or "unknown"
+    subject = run(["git", "log", "-1", "--pretty=%s"]) or ""
+    branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"]) or "unknown"
+    upstream = run(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]) or "(none)"
+    dirty = len([line for line in run(["git", "status", "--porcelain"]).splitlines() if line])
+    commits = run(["git", "rev-list", "--count", "HEAD"]) or "0"
+    tags = " ".join(run(["git", "tag"]).split())
+    recent = run(["git", "log", "-3", "--pretty=%h %s"]).splitlines()
+    lines = [
+        "## Git",
+        "",
+        f"- HEAD: `{head}` — {subject}",
+        f"- Branch: `{branch}` tracking `{upstream}`",
+        f"- Commits: {commits} · tags: {tags or '(none)'} · uncommitted files: {dirty}",
+        "",
+        "```",
+        *recent,
+        "```",
+    ]
+    return lines
+
+
+def services_block(enabled: bool) -> list[str]:
+    if not enabled:
+        return ["## Services", "", "_skipped (`--no-services`)_"]
+    lines = ["## Services", "", "| Unit | Active |", "|---|---|"]
+    for unit in UNITS:
+        state = run(["systemctl", "--user", "is-active", unit]) or "unknown"
+        lines.append(f"| `{unit}` | {state} |")
+    return lines
+
+
+def tickets_block(db_path: Path, config_path: Path) -> list[str]:
+    if not db_path.exists():
+        return ["## Tickets", "", f"_database not found: `{db_path}`_"]
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    con.row_factory = sqlite3.Row
+    try:
+        summary = {row["status"]: row["n"] for row in con.execute(
+            "select status, count(*) as n from tickets group by status")}
+        rows = con.execute(
+            "select id, status, priority, title from tickets order by id desc limit 5").fetchall()
+        pending = con.execute("select count(*) from approvals where status='pending'").fetchone()[0]
+    finally:
+        con.close()
+    lines = [
+        "## Tickets",
+        "",
+        f"- Database: `{db_path}`",
+        f"- By status: {json.dumps(summary, sort_keys=True)}",
+        f"- Pending approvals: {pending}",
+        "",
+        "| Ticket | Status | Priority | Title |",
+        "|---|---|---|---|",
+    ]
+    for row in rows:
+        lines.append(f"| `{row['id']}` | {row['status']} | {row['priority']} | {row['title'][:50]} |")
+    return lines
+
+
+def catalog_block(config_path: Path, catalog_dir: Path | None = None) -> list[str]:
+    try:
+        config = load_config(config_path)
+    except Exception as exc:  # noqa: BLE001
+        return ["## Model catalogue", "", f"_config unreadable: {type(exc).__name__}_"]
+    catalog = load_catalog(catalog_dir, config=config)
+    lines = ["## Model catalogue", "", "| Harness | Enabled | Models |", "|---|---|---|"]
+    for provider in catalog["providers"]:
+        lines.append(f"| `{provider['instanceId']}` | {provider['enabled']} | {len(provider['models'])} |")
+    presets = ", ".join(p["name"] for p in catalog["presets"]) or "(none)"
+    lines.append("")
+    lines.append(f"Presets: {presets} · default: `{catalog['defaultProfile'] or '(none)'}`")
+    return lines
+
+
+def docs_block() -> list[str]:
+    docs = sorted(p.name for p in (ROOT / "docs").glob("*.md"))
+    return ["## Documentation", "", ", ".join(f"`docs/{name}`" for name in docs) or "(none)"]
+
+
+def build(args) -> str:
+    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+    parts = [
+        "# State snapshot",
+        "",
+        "Generated by `scripts/snapshot.py` (`make snapshot`). Do not hand-edit: regenerate it.",
+        f"Generated at {stamp} from `{ROOT}`.",
+        "",
+        *git_block(),
+        "",
+        *services_block(not args.no_services),
+        "",
+        *tickets_block(Path(args.db), Path(args.config)),
+        "",
+        *catalog_block(Path(args.config), Path(args.catalog_dir)),
+        "",
+        *docs_block(),
+        "",
+        "Tests are not run here; run `make check` for the suites.",
+    ]
+    return "\n".join(parts) + "\n"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--out", default=str(ROOT / "STATE.md"))
+    parser.add_argument("--db", default=str(DB_PATH))
+    parser.add_argument("--config", default=str(Path.home() / ".config/t3-workflow/config.json"))
+    parser.add_argument("--catalog-dir", default=str(Path.home() / ".t3/caches"))
+    parser.add_argument("--no-services", action="store_true")
+    args = parser.parse_args()
+    target = Path(args.out)
+    target.write_text(build(args), encoding="utf-8")
+    print(f"wrote {target}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

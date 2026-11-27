@@ -1,4 +1,4 @@
-.PHONY: test check compile selftest dry-run
+.PHONY: test check compile selftest dry-run snapshot
 
 test:            ## jalankan semua test (bridge + tickets + watcher)
 	python3 -m unittest discover -s tests -v
@@ -14,6 +14,9 @@ compile:
 selftest:
 	python3 bridge/t3_bridge.py --selftest
 	python3 tickets/cli.py profiles
+
+snapshot:         ## tulis STATE.md dari keadaan terukur
+	python3 scripts/snapshot.py
 
 dry-run:
 	python3 watcher.py --once --dry-run

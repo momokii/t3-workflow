@@ -15,6 +15,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- `make snapshot` / `scripts/snapshot.py`: writes `STATE.md` with the measured git state, service
+  states, ticket summary, model catalogue and documentation list, so a handoff or review can point at
+  a regenerable file instead of prose numbers.
 - **Live model catalogue**: harnesses and models read from T3's provider cache, with per-ticket
   `provider` + `model` selection that overrides presets, validated at creation (disabled harness,
   unknown model and half-filled pairs are rejected). Presets remain as shortcuts; `GET /api/catalog`

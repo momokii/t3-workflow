@@ -164,6 +164,7 @@ python3 tickets/cli.py backup [--out DIR] [--keep 7]
 python3 watcher.py --once [--dry-run]
 python3 watcher.py --loop [--interval 120]
 
+make snapshot      # regenerate STATE.md (git, services, tickets, catalogue)
 make selftest      # bridge config check + model profiles
 make dry-run       # one watcher step, no side effects
 ```
@@ -273,6 +274,7 @@ Full runbook — pause, rotate the board token, restore a backup, read a failure
 ```bash
 make test     # both suites
 make check    # compile everything, then run both suites
+make snapshot # write STATE.md: a measured snapshot for handoffs and reviews
 ```
 
 | Suite | Covers |

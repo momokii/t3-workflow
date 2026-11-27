@@ -139,3 +139,13 @@ Against `RESEARCH.md` §6 and the decisions recorded in §7.
 | Standards | An explicit provider without a model could reach the watcher and fail late | rejected at creation (`provider dan model harus diisi bersama`) |
 | Standards | The catalogue file can be stale or half-written | parsing tolerates unreadable files and missing fields; `checkedAt` is surfaced so staleness is visible |
 | Tests | Selection had no coverage | 10 catalogue tests plus 3 board tests for the endpoint and creation rules |
+
+---
+
+## Round 8 (handoff durability)
+
+| Finding | Evidence | Status |
+|---|---|---|
+| A hand-written state table is stale immediately: `HANDOFF.md` recorded HEAD `7865eeb`, and committing the handoff itself moved HEAD to `54b24c8` | `git log` vs the file, minutes apart | fixed: `make snapshot` writes `STATE.md`; the handoff now points at it and labels its own numbers as "at writing" |
+| Prose numbers can silently disagree with the repository | above | fixed by the same generator; its output is git-ignored so it cannot pretend to be source |
+| The generator itself could drift | new code | 3 tests assert the sections, that the current HEAD appears, and that the file says it must not be hand-edited |

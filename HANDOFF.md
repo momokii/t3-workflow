@@ -16,13 +16,23 @@ services, a kanban board, a Telegram bridge, a Docker deployment and the systemd
 ticket ─► thread (agent works) ─► sync on thread status ─► test (exit code) ─► branch + push ─► report
 ```
 
-## 2. Current state (measured 2026-11-26)
+## 2. Current state
+
+Hand-written state goes stale the moment the handoff is committed. Regenerate it instead:
+
+```bash
+make snapshot      # writes STATE.md: git, services, tickets, catalogue, docs
+cat STATE.md
+```
+
+`STATE.md` is generated and git-ignored. The values below were measured when this file was written;
+treat them as a hint and let `STATE.md` and §9 tell you the truth.
 
 | Item | Value |
 |---|---|
 | Remote | `https://github.com/momokii/t3-workflow.git`, `main` tracking `origin/main` |
-| HEAD | `7865eeb` — `docs: document the live catalogue and how harness and model are resolved` |
-| Commits / tags | 36 / `v0.1.0`, `v0.1.1`; working tree clean |
+| HEAD (at writing) | `7865eeb`; this file's own commit comes after it — run `make snapshot` |
+| Commits / tags (at writing) | 36 / `v0.1.0`, `v0.1.1`; working tree clean |
 | CI | GitHub Actions `check` on `7865eeb`: **success** |
 | Tests | 111 total: 87 in `tests/` (2 integration skipped) + 24 in `bridge/tests/` |
 | Services | `t3-bridge`, `t3-watcher`, `t3-board`, `t3-backup.timer` — all active (systemd user) |
@@ -123,6 +133,7 @@ Do not start #3 without a target from the owner, and do not start #4 without a t
 ```bash
 cd /home/kelanach/Public/main-linux-kelanach/code-berkah-titipan-tuhan/code/personal_prjct/t3-workflow
 git log --oneline -1 && git status --porcelain
+make snapshot && sed -n '1,20p' STATE.md
 make check
 systemctl --user is-active t3-bridge t3-watcher t3-board
 curl -s http://100.124.184.116:8787/healthz
