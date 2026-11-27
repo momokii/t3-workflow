@@ -159,7 +159,7 @@ Details, data model and sequences: [docs/architecture.md](docs/architecture.md).
 | 7 | Board | drag and drop plus a single-pointer alternative; reports downloadable | **done** |
 | 8 | Operations | alerts on unit failure, daily backups, CI, changelog, tag | **done** |
 
-Current evidence: `make check` runs 57 + 24 tests (two integration tests skipped unless `T3_INTEGRATION=1`), tag `v0.1.0`, three services plus a backup timer active.
+Current evidence: `make check` runs both suites green (two integration tests are skipped unless `T3_INTEGRATION=1`; the counts come from the command, not from this page), tags `v0.1.0` and `v0.1.1`, three services plus a backup timer active.
 
 ---
 
