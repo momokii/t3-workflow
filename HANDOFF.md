@@ -31,10 +31,10 @@ treat them as a hint and let `STATE.md` and §9 tell you the truth.
 | Item | Value |
 |---|---|
 | Remote | `https://github.com/momokii/t3-workflow.git`, `main` tracking `origin/main` |
-| HEAD (at writing) | `7865eeb`; this file's own commit comes after it — run `make snapshot` |
-| Commits / tags (at writing) | 36 / `v0.1.0`, `v0.1.1`; working tree clean |
+| HEAD (at writing) | `7865eeb`, deliberately not updated: `make snapshot` is the source |
+| Tags | `v0.1.0`, `v0.1.1` |
 | CI | GitHub Actions `check` on `7865eeb`: **success** |
-| Tests | 111 total: 87 in `tests/` (2 integration skipped) + 24 in `bridge/tests/` |
+| Tests | `make check` green; the counts come from the command, not from this table |
 | Services | `t3-bridge`, `t3-watcher`, `t3-board`, `t3-backup.timer` — all active (systemd user) |
 | Board | `http://100.124.184.116:8787` (tailnet only), token in `~/.config/t3-workflow/board.env` |
 | Tickets | `T-0001` done, `T-0002` done (thread-continuation E2E), `T-0003` backlog (explicit model demo) |
@@ -89,7 +89,7 @@ started. The sync stage moves a ticket to `testing` when T3 reports the thread `
 4. **Board UI.** Ticket dialog: preset, harness, model, context, attachment path, test command,
    labelled priorities, approval explanation; dialog scrolls. Adopt dialog states that the same thread
    is continued. Profile details come from the catalogue.
-5. **Verification:** 111 tests green, board `/healthz` and `/api/*` exercised over the tailnet, Docker
+5. **Verification:** both suites green (`make check`), board `/healthz` and `/api/*` exercised over the tailnet, Docker
    image built and run (board healthy, workers one-shot, host services untouched), CI green.
 
 ## 6. Rules for this thread
@@ -142,7 +142,7 @@ python3 tickets/cli.py list
 curl -s http://100.124.184.116:8787/api/catalog | python3 -c "import json,sys;print([(p['instanceId'],len(p['models'])) for p in json.load(sys.stdin)['providers'] if p['enabled']])"
 ```
 
-Expected: clean tree, 111 tests green (2 skipped), three services active, `{"status":"ok",…}`,
+Expected: clean tree, both suites green, three services active, `{"status":"ok",…}`,
 three tickets, `[('opencode', 141), ('pi', 38)]`.
 
 ## 10. Copy-paste prompt
