@@ -15,6 +15,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Independent review before release.** A ticket in `review` now starts a second thread in a fresh
+  context (same harness and model by default, `verification.profile` to override) that receives the
+  ticket, the test proof, `git status` and `git diff HEAD`, and must end with `VERDICT: ACCEPT` or
+  `VERDICT: REJECT`. Rejections send the findings into the dev thread and cost one attempt (default 2);
+  a missing verdict, a failed reviewer, a timeout or a project that changed mid-review blocks the ticket.
+  The tree fingerprint is what keeps a verdict tied to the code it judged, because T3 0.1.9 has no
+  read-only runtime mode (`docs/readonly-verifier.md`). Nine ticket columns, five event kinds and an
+  "Independent review" section in the report; `verify_findings` is hidden from `GET /api/tickets`.
+
+### Changed
+
 - **Guide page** at `/guide`, linked from the board header: the lifecycle and who moves a ticket, what the
   test command is for and how its exit code decides, the model resolution order, priorities, approvals,
   adoption, limits, Telegram commands, where the data lives and the gaps that remain. The ticket dialog

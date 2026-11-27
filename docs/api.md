@@ -84,7 +84,7 @@ curl -s http://127.0.0.1:8787/api/tickets | python3 -m json.tool
 }
 ```
 
-`proof` is deliberately absent from this response — it can contain build logs or environment detail. Use `GET /api/report/<id>` or the CLI to read it.
+`proof` is deliberately absent from this response — it can contain build logs or environment detail. `verify_findings` is absent for the same reason; a ticket exposes only `verify_verdict` and `verify_attempt`, so a card can show the outcome without leaking the review. Use `GET /api/report/<id>` or the CLI to read the rest.
 
 ## GET /api/catalog
 

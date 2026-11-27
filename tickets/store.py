@@ -90,6 +90,16 @@ MIGRATIONS = [
     ("tickets", "attachment_path", "text not null default ''"),
     ("tickets", "provider", "text not null default ''"),
     ("tickets", "model", "text not null default ''"),
+    ("tickets", "verify_thread_id", "text not null default ''"),
+    ("tickets", "verify_run_id", "text not null default ''"),
+    ("tickets", "verify_provider", "text not null default ''"),
+    ("tickets", "verify_model", "text not null default ''"),
+    ("tickets", "verify_attempt", "integer not null default 0"),
+    ("tickets", "verify_verdict", "text not null default ''"),
+    ("tickets", "verify_findings", "text not null default ''"),
+    ("tickets", "verify_started_at", "text not null default ''"),
+    ("tickets", "verify_finished_at", "text not null default ''"),
+    ("tickets", "verify_baseline", "text not null default ''"),
 ]
 
 
@@ -258,6 +268,7 @@ class TicketStore:
         rows = self.list(status)
         for row in rows:
             row.pop("proof", None)
+            row.pop("verify_findings", None)  # reviewer prose is not for a list endpoint
         return rows
 
     def write_report(self, ticket_id: str) -> str:
@@ -301,6 +312,45 @@ class TicketStore:
             "update tickets set proof=?, updated_at=? where id=?", (proof, stamp, ticket_id)
         )
         self._event(ticket_id, "proof", "pass" if ok else "fail")
+        self.con.commit()
+        return self.get(ticket_id)
+
+    # -------------------------------------------------------- verification
+
+    def attach_verifier(
+        self, ticket_id: str, thread_id: str, run_id: str, provider: str, model: str, baseline: str
+    ) -> dict:
+        """Record a started review: one attempt, a thread, and the tree it is judging."""
+        ticket = self.get(ticket_id)
+        attempt = int(ticket.get("verify_attempt") or 0) + 1
+        self.con.execute(
+            "update tickets set verify_thread_id=?, verify_run_id=?, verify_provider=?, verify_model=?,"
+            " verify_attempt=?, verify_verdict='', verify_findings='', verify_started_at=?,"
+            " verify_finished_at='', verify_baseline=?, updated_at=? where id=?",
+            (thread_id, run_id, provider, model, attempt, now(), baseline, now(), ticket_id),
+        )
+        self._event(ticket_id, "verify-started", f"attempt {attempt} · {provider}/{model} · run {run_id}")
+        self.con.commit()
+        return self.get(ticket_id)
+
+    def record_verdict(self, ticket_id: str, verdict: str, findings: str = "") -> dict:
+        self.con.execute(
+            "update tickets set verify_verdict=?, verify_findings=?, verify_finished_at=?, updated_at=?"
+            " where id=?",
+            (verdict, findings[:8000], now(), now(), ticket_id),
+        )
+        self._event(ticket_id, f"verify-{verdict.lower()}", findings[:200])
+        self.con.commit()
+        return self.get(ticket_id)
+
+    def clear_verifier(self, ticket_id: str) -> dict:
+        """Forget the thread of an attempt, keeping the attempt counter for the retry budget."""
+        self.con.execute(
+            "update tickets set verify_thread_id='', verify_run_id='', verify_verdict='',"
+            " verify_findings='', verify_started_at='', verify_finished_at='', verify_baseline='',"
+            " updated_at=? where id=?",
+            (now(), ticket_id),
+        )
         self.con.commit()
         return self.get(ticket_id)
 
@@ -454,6 +504,24 @@ class TicketStore:
         lines += ["", "## Evidence and notes", "", ticket["note"] or "_no evidence note yet_"]
         if ticket.get("proof"):
             lines += ["", "### Test evidence", "", "```", ticket["proof"], "```"]
+        verdict = (ticket.get("verify_verdict") or "").strip()
+        if verdict or ticket.get("verify_attempt"):
+            lines += ["", "## Independent review", ""]
+            lines.append(f"- **Verdict**: `{verdict or 'not decided'}`")
+            if ticket.get("verify_provider") or ticket.get("verify_model"):
+                lines.append(
+                    f"- **Reviewer**: {ticket.get('verify_provider') or '?'} / "
+                    f"{ticket.get('verify_model') or '?'}"
+                )
+            if ticket.get("verify_thread_id"):
+                lines.append(f"- **Review thread**: `{ticket['verify_thread_id']}`")
+            lines.append(f"- **Attempt**: {ticket.get('verify_attempt') or 0}")
+            if ticket.get("verify_started_at"):
+                lines.append(f"- **Started**: {ticket['verify_started_at']}")
+            if ticket.get("verify_finished_at"):
+                lines.append(f"- **Finished**: {ticket['verify_finished_at']}")
+            if ticket.get("verify_findings"):
+                lines += ["", "### Findings", "", ticket["verify_findings"]]
         lines += ["", "## History", "", "| Time | Event | Detail |", "|---|---|---|"]
         for event in events:
             lines.append(f"| {event['at'][:19]} | {event['kind']} | {event['detail'].replace('|', '/')} |")

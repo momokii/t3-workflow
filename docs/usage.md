@@ -83,6 +83,44 @@ path). The watcher creates an approval request instead of starting:
 - the first decision wins; a second one is rejected;
 - `reject` moves the ticket to `blocked`, `approve` lets the watcher proceed.
 
+### What happens in `review` (independent review)
+
+Before a ticket is pushed, a second thread judges the work in a fresh context. It is started by the
+watcher, runs in the same project folder, and by default uses the ticket's own harness and model; set
+`verification.profile` to a preset (for example `deep`) if you want a different model for reviews.
+
+The reviewer receives the ticket, the recorded test proof, `git status` and `git diff HEAD` — not a
+summary written by the dev model — and must end its reply with exactly one line:
+
+```
+VERDICT: ACCEPT
+```
+
+or
+
+```
+VERDICT: REJECT
+```
+
+| Outcome | Ticket |
+|---|---|
+| `VERDICT: ACCEPT` | release runs: branch pushed, report written, `done` |
+| `VERDICT: REJECT`, attempts left | findings are sent into the dev thread and the ticket goes back to `in-progress` |
+| `VERDICT: REJECT` at `verification.maxAttempts` | `blocked`, findings in the note and the report |
+| no verdict line | `blocked` — a reply that does not decide is not an acceptance |
+| reviewer failed, asked a question, or exceeded `verification.timeoutMinutes` | `blocked` |
+| the project folder changed while the reviewer was reading it | `blocked` — the verdict no longer belongs to that tree |
+
+Defaults live in `~/.config/t3-workflow/config.json`:
+
+```json
+"verification": { "enabled": true, "profile": "", "maxAttempts": 2,
+                  "timeoutMinutes": 20, "maxDiffBytes": 60000 }
+```
+
+`enabled: false` restores the old flow, where `review` releases directly. `maxDiffBytes` caps the diff
+that goes into the prompt; a larger change is truncated in the prompt and says so.
+
 ## 4. Recommendations
 
 ### Choosing the harness and the model

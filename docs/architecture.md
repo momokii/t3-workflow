@@ -47,10 +47,14 @@ T3 remains the owner of projects, threads and runs. This repository reads `state
 | `claimed_at`, `claimed_by` | text | set by the atomic claim |
 | `proof` | text | exit status plus output tail from the test stage |
 | `report_path`, `pr_body_path` | text | files written on completion |
+| `verify_thread_id`, `verify_run_id` | text | the reviewer thread and run of the current attempt |
+| `verify_provider`, `verify_model`, `verify_attempt` | text, integer | who reviews, and how many attempts were used |
+| `verify_verdict`, `verify_findings` | text | `ACCEPT`/`REJECT`/`FAILED`/`TIMEOUT`, and the reviewer's words |
+| `verify_started_at`, `verify_finished_at`, `verify_baseline` | text | budget, and the tree fingerprint the verdict belongs to |
 | `note` | text | last human or stage note |
 | `created_at`, `updated_at` | text | ISO-8601 UTC |
 
-`events` — append-only history: `created`, `moved`, `forced`, `claimed`, `thread`, `proof`, `approval-requested`, `approval-decided`, `branch`, `report`, `pr-body`.
+`events` — append-only history: `created`, `moved`, `forced`, `claimed`, `thread`, `continued`, `proof`, `approval-requested`, `approval-decided`, `branch`, `report`, `pr-body`, `verify-started`, `verify-accept`, `verify-reject`, `verify-failed`, `verify-timeout`.
 
 `approvals` — `approval_id`, `ticket_id`, `question`, `status` (`pending`/`approved`/`rejected`), `created_at`, `decided_at`, `decided_by`, `note`.
 
@@ -125,6 +129,56 @@ sequenceDiagram
 ```
 
 A ticket without `test_cmd` cannot advance: the stage records that fact and sends it back to `in-progress`.
+
+### Verification stage
+
+`review` is where the work is judged before it is pushed. The stage starts a second thread — a fresh
+context — and only a `VERDICT: ACCEPT` line lets `release()` run. It is not a new status: `review`
+already exits to exactly `done`, `in-progress` or `blocked`.
+
+```mermaid
+sequenceDiagram
+    participant W as watcher
+    participant S as store
+    participant G as git
+    participant T as t3 CLI
+    W->>G: git status --porcelain=v1 -uall ; git diff HEAD ; fingerprint
+    W->>T: thread start <project> - --provider … --model … --json
+    T-->>W: {"threadId": …, "runId": …}
+    W->>S: attach_verifier(threadId, runId, provider, model, baseline)
+    Note over S: ticket stays in review, verify_attempt += 1
+    W->>T: thread show <reviewer> --json --messages 5
+    alt last line is VERDICT: ACCEPT
+        W->>S: record_verdict(ACCEPT)
+        W->>G: release: branch + commit + push
+    else VERDICT: REJECT and attempts left
+        W->>T: thread send <dev thread> - (the findings)
+        W->>S: record_verdict(REJECT) ; clear_verifier ; move(in-progress)
+    else REJECT at max, no verdict, failure or timeout
+        W->>S: move(blocked) with the reason in the note
+    end
+```
+
+What the reviewer gets is built from the repository, not from the dev model's prose: the ticket row,
+the recorded `proof`, `git status`, and `git diff HEAD`, capped by `verification.maxDiffBytes`. The
+prompt tells it not to edit and to end with exactly one line, `VERDICT: ACCEPT` or `VERDICT: REJECT`.
+
+Enforcement, in the order it happens:
+
+| Check | Source | Consequence |
+|---|---|---|
+| A verdict exists and is the last line | `parse_verdict()` | otherwise `blocked`, never a silent accept |
+| The project tree did not move during the review | `verify_baseline` fingerprint vs. now | `blocked`, the verdict is not evidence |
+| The reviewer finished | `thread show` → `completed`/`idle` | `running` waits, `failed`/`cancelled` blocks |
+| The review is inside its budget | `verify_started_at` + `verification.timeoutMinutes` | `blocked` |
+| Attempts are bounded | `verify_attempt` vs. `verification.maxAttempts` | `blocked` with the last findings |
+
+The reviewer's model is the owner's choice: by default the ticket's own selection (same harness, same
+model, fresh context), or `verification.profile` when a different preset is wanted. `verification.enabled`
+false restores the old behaviour: `review` releases directly.
+
+A read-only runtime mode does not exist in T3 0.1.9, so "the reviewer cannot write" is enforced by the
+fingerprint check rather than by a sandbox; see `docs/readonly-verifier.md` for the measurements.
 
 ### Release stage
 

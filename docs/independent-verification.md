@@ -1,5 +1,15 @@
 # Independent verification stage — research and proposal
 
+> **Implementation status (2026-11-27).** The stage exists in `watcher.py` and `tickets/store.py`.
+> It follows this document's shape — all inside `review`, bounded attempts, evidence in columns and
+> events — with three decisions taken by the owner afterwards: the reviewer by default uses the
+> ticket's own harness and model in a fresh context (no separate profile), it runs in the project
+> folder rather than a worktree, and there is no read-only launch (T3 0.1.9 has none; the guard is a
+> tree fingerprint, see `docs/readonly-verifier.md`). The nine proposed columns became ten with
+> `verify_baseline`, and the event names are `verify-started`, `verify-accept`, `verify-reject`,
+> `verify-failed`, `verify-timeout`.
+
+
 Research notes for adding a *fresh reviewer*: after the dev thread finishes and the host test stage
 passes, a second thread driven by a **different** model re-checks the work in a fresh context, and the
 ticket only reaches `done` when that reviewer accepts. On rejection the ticket returns to the dev

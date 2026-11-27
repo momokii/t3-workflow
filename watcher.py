@@ -23,8 +23,10 @@ Model selection is never invented here: the profile comes from the ticket or fro
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone
 import sqlite3
 import subprocess
@@ -41,6 +43,7 @@ from store import (  # noqa: E402
     TicketError,
     TicketStore,
     load_config,
+    resolve_profile,
 )
 
 T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
@@ -315,6 +318,258 @@ def release(store: TicketStore, ticket: dict, config: dict) -> str:
     return f"{ticket['id']}: pushed branch {branch} to {remote}{suffix}"
 
 
+# -------------------------------------------------------- verification stage
+
+VERIFICATION_DEFAULTS = {
+    "enabled": True,
+    "profile": "",
+    "maxAttempts": 2,
+    "timeoutMinutes": 20,
+    "maxDiffBytes": 60000,
+}
+VERDICT_RE = re.compile(r"^VERDICT:\s*(ACCEPT|REJECT)$", re.IGNORECASE)
+
+
+def verification_settings(config: dict) -> dict:
+    settings = dict(VERIFICATION_DEFAULTS)
+    settings.update(config.get("verification") or {})
+    return settings
+
+
+def project_fingerprint(path: str) -> str:
+    """A cheap identity of what the reviewer is looking at: HEAD plus the dirty tree.
+
+    Verification runs in the project folder, so the reviewer can see exactly the work the
+    release stage will commit. The price is that it could also change that work; comparing
+    this fingerprint before and after is how the verdict stays evidence.
+    """
+    code, head = _git(["rev-parse", "HEAD"], path)
+    code_status, status = _git(["status", "--porcelain=v1", "-uall"], path)
+    payload = f"{head if code == 0 else ''}\n{status if code_status == 0 else ''}"
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _capped(text: str, limit: int) -> str:
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n… truncated ({len(text) - limit} more characters)"
+
+
+def build_verifier_prompt(ticket: dict, status: str, diff: str, max_diff: int) -> str:
+    """Everything the reviewer needs, and nothing a model had to summarise first."""
+    parts = [
+        f"You are reviewing another agent's work on ticket {ticket['id']}. You are the reviewer:",
+        "do not edit files and do not run commands that write. Judge the change, not the author.",
+        "",
+        f"Title: {ticket['title']}",
+        "",
+        "Ticket context:",
+        ticket["body"] or "(none given)",
+    ]
+    if ticket["test_cmd"]:
+        parts += ["", f"Test command: {ticket['test_cmd']}"]
+    if ticket.get("proof"):
+        parts += ["", "Recorded test result, produced by the host after the agent finished:", ticket["proof"]]
+    else:
+        parts += ["", "Recorded test result: none"]
+    parts += [
+        "",
+        "Working tree, `git status --porcelain=v1 -uall`:",
+        status.strip() or "(clean)",
+        "",
+        "Diff against HEAD, `git diff HEAD`:",
+        _capped(diff, int(max_diff)) or "(empty)",
+        "",
+        "Decide whether this change satisfies the ticket and its recorded test evidence.",
+        "Give concise findings with file:line when something is wrong.",
+        "End your reply with exactly one line, nothing after it:",
+        "VERDICT: ACCEPT",
+        "or",
+        "VERDICT: REJECT",
+    ]
+    return "\n".join(parts).strip()
+
+
+def parse_verdict(text: str) -> tuple[str, str]:
+    """The verdict is the last non-empty line; everything else is findings."""
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return "", ""
+    match = VERDICT_RE.match(lines[-1])
+    if not match:
+        return "", ""
+    findings = "\n".join(line for line in lines if not VERDICT_RE.match(line)).strip()
+    return match.group(1).upper(), findings
+
+
+def thread_show(config: dict, thread_id: str, messages: int = 5, runner=subprocess.run) -> dict:
+    cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+    try:
+        proc = runner(
+            [cli, "thread", "show", thread_id, "--json", "--messages", str(messages)],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {}
+
+
+def verifier_reply(config: dict, thread_id: str, runner=subprocess.run) -> str:
+    data = thread_show(config, thread_id, runner=runner)
+    items = data.get("messages") or data.get("items") or []
+    for item in reversed(items):
+        text = (item.get("text") or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _verify_timed_out(ticket: dict, minutes: int) -> bool:
+    stamp = ticket.get("verify_started_at") or ""
+    if not stamp:
+        return False
+    try:
+        started = datetime.fromisoformat(stamp)
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - started).total_seconds() > max(1, int(minutes)) * 60
+
+
+def start_verification(store: TicketStore, ticket: dict, config: dict, t3_cli: str, settings: dict,
+                       runner=subprocess.run) -> str:
+    # The owner's default is a reviewer that is a fresh context but the same harness and
+    # model; `verification.profile` can name another preset when that changes.
+    if settings.get("profile"):
+        selection = resolve_profile(config, settings["profile"])
+    elif ticket.get("provider") and ticket.get("model"):
+        try:
+            selection = resolve_ticket(ticket, config)  # validate an explicit pair
+        except CatalogError as exc:
+            raise TicketError(str(exc)) from exc
+    else:
+        selection = resolve_profile(config, ticket.get("model_profile"))
+    path = project_path(ticket["project"])
+    _, status = _git(["status", "--porcelain=v1", "-uall"], path)
+    _, diff = _git(["diff", "HEAD"], path)
+    prompt = build_verifier_prompt(ticket, status, diff, settings["maxDiffBytes"])
+    baseline = project_fingerprint(path)
+    command = [
+        t3_cli, "thread", "start", path, "-",
+        "--title", f"Review {ticket['id']}: {ticket['title'][:50]}",
+        "--provider", selection["provider"], "--model", selection["model"], "--json",
+    ]
+    try:
+        proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        store.move(ticket["id"], "blocked", f"review start failed: {type(exc).__name__}")
+        raise TicketError(f"failed to start the reviewer: {exc}") from exc
+    if proc.returncode != 0:
+        store.move(ticket["id"], "blocked", f"review start rc={proc.returncode}")
+        raise TicketError(
+            f"reviewer start failed (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:300]}"
+        )
+    try:
+        payload = json.loads(proc.stdout)
+        thread_id = payload["threadId"]
+    except (json.JSONDecodeError, KeyError) as exc:
+        store.move(ticket["id"], "blocked", "review start output is not JSON")
+        raise TicketError(f"reviewer output has no threadId: {(proc.stdout or '')[:200]}") from exc
+    updated = store.attach_verifier(
+        ticket["id"], thread_id, str(payload.get("runId") or ""),
+        selection["provider"], selection["model"], baseline,
+    )
+    return (
+        f"{ticket['id']}: review started (attempt {updated['verify_attempt']}, "
+        f"{selection['provider']}/{selection['model']})"
+    )
+
+
+def verification_step(store: TicketStore, ticket: dict, config: dict, t3_cli: str,
+                      runner=subprocess.run) -> str | None:
+    """Advance review. Returns a message when it handled the ticket, None when release may run."""
+    settings = verification_settings(config)
+    if not settings["enabled"]:
+        return None
+    ticket_id = ticket["id"]
+    thread_id = (ticket.get("verify_thread_id") or "").strip()
+    attempt = int(ticket.get("verify_attempt") or 0)
+    max_attempts = max(1, int(settings["maxAttempts"]))
+
+    if not thread_id:
+        if attempt >= max_attempts:
+            store.move(ticket_id, "blocked", f"review: {attempt} attempts used, no verdict")
+            return f"{ticket_id}: review attempts exhausted → blocked"
+        return start_verification(store, ticket, config, t3_cli, settings, runner=runner)
+
+    if _verify_timed_out(ticket, int(settings["timeoutMinutes"])):
+        store.record_verdict(ticket_id, "TIMEOUT", f"no verdict within {settings['timeoutMinutes']} minutes")
+        store.move(ticket_id, "blocked", "review: reviewer timed out")
+        return f"{ticket_id}: review timed out → blocked"
+
+    status = thread_status(config, thread_id, runner=runner)
+    if status in ("preparing", "queued", "starting", "running", "unknown"):
+        return f"{ticket_id}: waiting for the reviewer ({status})"
+    if status == "waiting":
+        store.record_verdict(ticket_id, "FAILED", "the reviewer asked a question and needs an answer in T3")
+        store.move(ticket_id, "blocked", "review: reviewer is waiting for an answer")
+        return f"{ticket_id}: reviewer needs input → blocked"
+    if status in ("failed", "cancelled", "interrupted", "rolled_back"):
+        store.record_verdict(ticket_id, "FAILED", f"review thread status: {status}")
+        store.move(ticket_id, "blocked", f"review: reviewer {status}")
+        return f"{ticket_id}: reviewer {status} → blocked"
+
+    path = project_path(ticket["project"])
+    if ticket.get("verify_baseline") and project_fingerprint(path) != ticket["verify_baseline"]:
+        store.record_verdict(ticket_id, "FAILED", "the project changed while the reviewer was reading it")
+        store.move(ticket_id, "blocked", "review: project changed during verification")
+        return f"{ticket_id}: project changed during review → blocked"
+
+    verdict, findings = parse_verdict(verifier_reply(config, thread_id, runner=runner))
+    if verdict == "ACCEPT":
+        store.record_verdict(ticket_id, "ACCEPT", findings)
+        return None  # release may proceed; it is still the only path to `done`
+    if verdict == "REJECT":
+        store.record_verdict(ticket_id, "REJECT", findings or "no findings given")
+        dev_thread = (ticket.get("thread_id") or "").strip()
+        if attempt < max_attempts and dev_thread:
+            cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+            message = (
+                f"Your work on {ticket_id} was rejected by an independent review "
+                f"(attempt {attempt}/{max_attempts}).\n\n{findings or '(no findings given)'}\n\n"
+                "Address the findings in this thread."
+            )
+            try:
+                proc = runner([cli, "thread", "send", dev_thread, "-", "--json"],
+                              input=message, capture_output=True, text=True, timeout=300)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                store.move(ticket_id, "blocked", f"findings could not be sent: {type(exc).__name__}")
+                raise TicketError(f"failed to send findings: {exc}") from exc
+            if proc.returncode != 0:
+                store.move(ticket_id, "blocked", f"findings could not be sent rc={proc.returncode}")
+                return f"{ticket_id}: findings could not be sent → blocked"
+            store.record_event(ticket_id, "continued", f"thread {dev_thread}")
+            store.clear_verifier(ticket_id)
+            store.move(
+                ticket_id, "in-progress",
+                f"review rejected (attempt {attempt}/{max_attempts}): {(findings or 'no findings')[:160]}",
+            )
+            return f"{ticket_id}: rejected → in-progress with findings"
+        store.move(
+            ticket_id, "blocked",
+            f"review rejected ({attempt}/{max_attempts}): {(findings or 'no findings')[:160]}",
+        )
+        return f"{ticket_id}: rejected → blocked"
+    store.record_verdict(ticket_id, "FAILED", "the reviewer did not end with a VERDICT line")
+    store.move(ticket_id, "blocked", "review: no verdict line in the reply")
+    return f"{ticket_id}: no verdict → blocked"
+
+
 # ---------------------------------------------------------------- test stage
 
 
@@ -402,8 +657,18 @@ def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: s
 
     review = next_review(store)
     if review is not None:
+        settings = verification_settings(config)
         if dry_run:
+            if settings["enabled"] and not (review.get("verify_verdict") or ""):
+                return (
+                    f"[dry-run] {review['id']} · start a review thread "
+                    f"(attempt {int(review.get('verify_attempt') or 0) + 1}/{settings['maxAttempts']}), "
+                    "then release on ACCEPT"
+                )
             return f"[dry-run] {review['id']} · release: push branch and finish the ticket"
+        handled = verification_step(store, review, config, t3_cli, runner=runner)
+        if handled is not None:
+            return handled
         return release(store, review, config)
 
     testing = next_testing(store)

@@ -101,6 +101,7 @@
       <li><a href="#test-command">Test command</a></li>
       <li><a href="#model">Harness, model and presets</a></li>
       <li><a href="#fields">What each ticket field does</a></li>
+      <li><a href="#review">Independent review</a></li>
       <li><a href="#priority">Priority</a></li>
       <li><a href="#approval">Approvals</a></li>
       <li><a href="#adopt">Creating versus adopting</a></li>
@@ -125,7 +126,7 @@
         <tr><td><code>ready</code></td><td>Queued; the watcher may claim it at any moment.</td><td>You, or adoption</td></tr>
         <tr><td><code>in-progress</code></td><td>A thread is working on it. Claimed atomically, so two watchers cannot take it.</td><td>Watcher</td></tr>
         <tr><td><code>testing</code></td><td>The thread finished; the host is running the test command.</td><td>Watcher (from the thread's status)</td></tr>
-        <tr><td><code>review</code></td><td>The test passed. Release checks the evidence.</td><td>Watcher (exit code 0)</td></tr>
+        <tr><td><code>review</code></td><td>The test passed and a fresh reviewer judges the work; the release runs only on <code>VERDICT: ACCEPT</code>.</td><td>Watcher</td></tr>
         <tr><td><code>done</code></td><td>Branch pushed and the report written.</td><td>Watcher (release)</td></tr>
         <tr><td><code>blocked</code></td><td>Something needs a person: a failed test, a failed thread, a rejected approval, a missed budget.</td><td>Watcher or you</td></tr>
       </tbody>
@@ -192,6 +193,32 @@ npm test -- --run</code></pre>
         <tr><td>Needs my approval</td><td>The watcher asks before it starts, and waits for an answer.</td></tr>
       </tbody>
     </table>
+  </section>
+
+  <section id="review">
+    <h2>Independent review</h2>
+    <p>Before anything is pushed, a <strong>second thread</strong> judges the work in a fresh context. The
+    watcher starts it, in the same project folder, with the ticket's own harness and model by default
+    (<code>verification.profile</code> names another preset if you want one). It receives the ticket, the
+    recorded test proof, <code>git status</code> and <code>git diff HEAD</code> — not a summary written by the
+    dev model — and must end its reply with exactly one line:</p>
+    <pre><code>VERDICT: ACCEPT</code>  or  <code>VERDICT: REJECT</code></pre>
+    <table>
+      <thead><tr><th>Outcome</th><th>Ticket</th></tr></thead>
+      <tbody>
+        <tr><td>ACCEPT</td><td>release runs: branch pushed, report written, <code>done</code>.</td></tr>
+        <tr><td>REJECT with attempts left</td><td>findings are sent into the dev thread; ticket returns to <code>in-progress</code>.</td></tr>
+        <tr><td>REJECT at <code>maxAttempts</code></td><td><code>blocked</code>, with the findings in the note and the report.</td></tr>
+        <tr><td>no verdict line, reviewer failed, asked a question, or timed out</td><td><code>blocked</code>. A reply that does not decide is never an acceptance.</td></tr>
+        <tr><td>project changed during the review</td><td><code>blocked</code>: the verdict no longer belongs to that tree.</td></tr>
+      </tbody>
+    </table>
+    <p>Defaults: <code>maxAttempts</code> 2, <code>timeoutMinutes</code> 20, <code>maxDiffBytes</code> 60000,
+    in <code>~/.config/t3-workflow/config.json</code> under <code>verification</code>.
+    <code>enabled: false</code> restores the plain flow where <code>review</code> releases directly.</p>
+    <p class="note">T3 0.1.9 has no read-only runtime mode, so the reviewer runs with the project's normal
+    permissions. The guard is outside it: the watcher fingerprints the tree before and after and refuses a
+    verdict if the tree moved. The measurements are in <code>docs/readonly-verifier.md</code>.</p>
   </section>
 
   <section id="priority">
@@ -281,8 +308,6 @@ npm test -- --run</code></pre>
   <section id="gaps">
     <h2>What is not built yet</h2>
     <ul>
-      <li><strong>Independent review by a fresh model.</strong> The design and the measured facts are in
-      <code>docs/independent-verification.md</code>; the stage is not running yet.</li>
       <li><strong>Editing or deleting a ticket</strong> from the board or the CLI. Today a wrong ticket is moved
       with Force move, or recreated.</li>
       <li><strong>Per-ticket model options</strong> (thinking, variant, effort): no CLI flag exists.</li>
