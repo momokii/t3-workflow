@@ -33,7 +33,7 @@ treat them as a hint and let `STATE.md` and §9 tell you the truth.
 | Remote | `https://github.com/momokii/t3-workflow.git`, `main` tracking `origin/main` |
 | HEAD (at writing) | `7865eeb`, deliberately not updated: `make snapshot` is the source |
 | Tags | `v0.1.0`, `v0.1.1` |
-| CI | GitHub Actions `check` on `7865eeb`: **success** |
+| CI | GitHub Actions `check` green on `main`; confirm the current head in `STATE.md` or the Actions tab |
 | Tests | `make check` green; the counts come from the command, not from this table |
 | Services | `t3-bridge`, `t3-watcher`, `t3-board`, `t3-backup.timer` — all active (systemd user) |
 | Board | `http://100.124.184.116:8787` (tailnet only), token in `~/.config/t3-workflow/board.env` |
