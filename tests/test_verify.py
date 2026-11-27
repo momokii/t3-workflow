@@ -43,22 +43,36 @@ class FakeT3:
     """Answers the three CLI calls the stage makes; everything else is a test bug."""
 
     def __init__(self, status: str = "completed", reply: str = "VERDICT: ACCEPT",
-                 start_rc: int = 0, send_rc: int = 0) -> None:
+                 start_rc: int = 0, send_rc: int = 0, run_id: str | None = "run-1",
+                 reply_run: str = "run-1", run_count: int = 1) -> None:
         self.status = status
         self.reply = reply
         self.start_rc = start_rc
         self.send_rc = send_rc
+        self.run_id = run_id
+        self.reply_run = reply_run
+        self.run_count = run_count
         self.calls: list[tuple[list[str], str | None]] = []
 
     def __call__(self, command, input=None, capture_output=True, text=True, timeout=None):  # noqa: ARG002
         self.calls.append((command, input))
         name = command[1:3]
         if name == ["thread", "start"]:
-            return subprocess.CompletedProcess(
-                command, self.start_rc, json.dumps({"threadId": "rev-1", "runId": "run-1"}), ""
-            )
+            payload = {"threadId": "rev-1", "projectId": "p1", "runId": self.run_id}
+            return subprocess.CompletedProcess(command, self.start_rc, json.dumps(payload), "")
         if name == ["thread", "show"]:
-            body = {"thread": {"status": self.status}, "messages": [{"text": self.reply}]}
+            body = {
+                "thread": {
+                    "status": self.status,
+                    "latestRunId": self.reply_run,
+                    "activeRunId": None,
+                    "runCount": self.run_count,
+                },
+                "messages": [
+                    {"role": "user", "runId": self.reply_run, "text": "Review this work."},
+                    {"role": "assistant", "runId": self.reply_run, "text": self.reply},
+                ],
+            }
             return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
         if name == ["thread", "send"]:
             return subprocess.CompletedProcess(command, self.send_rc, '{"ok":true}', "")
@@ -109,7 +123,17 @@ class VerificationTests(unittest.TestCase):
 
     def test_prose_without_a_verdict_is_not_a_verdict(self) -> None:
         self.assertEqual(watcher.parse_verdict("looks fine to me, approve"), ("", ""))
-        self.assertEqual(watcher.parse_verdict("VERDICT: ACCEPT\nbut actually no"), ("", ""))
+        self.assertEqual(watcher.parse_verdict("the verdict: accept, I think"), ("", ""))
+
+    def test_markdown_emphasis_and_a_trailing_house_style_line_are_tolerated(self) -> None:
+        self.assertEqual(watcher.parse_verdict("ok\n**VERDICT: ACCEPT**")[0], "ACCEPT")
+        self.assertEqual(watcher.parse_verdict("- VERDICT: REJECT.")[0], "REJECT")
+        verdict, findings = watcher.parse_verdict("app.py:1 wrong\nVERDICT: REJECT\nSkills: none")
+        self.assertEqual(verdict, "REJECT")
+        self.assertEqual(findings, "app.py:1 wrong")
+
+    def test_contradicting_verdict_lines_are_refused(self) -> None:
+        self.assertEqual(watcher.parse_verdict("VERDICT: ACCEPT\nVERDICT: REJECT"), ("", ""))
 
     # ---------------------------------------------------------------- start
 
@@ -254,6 +278,67 @@ class VerificationTests(unittest.TestCase):
         row = self.store.list_public()[0]
         self.assertNotIn("verify_findings", row)
         self.assertEqual(row["verify_verdict"], "ACCEPT")
+
+
+    def test_a_verdict_from_a_later_run_is_refused(self) -> None:
+        self._attach()  # expects run-1
+        fake = FakeT3(reply="VERDICT: ACCEPT", reply_run="run-2")
+        watcher.verification_step(self.store, self.store.get(self.ticket["id"]), CONFIG, "/bin/true", runner=fake)
+        stored = self.store.get(self.ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("verified run", stored["note"])
+
+    def test_a_reviewer_thread_with_more_than_one_run_blocks(self) -> None:
+        self._attach()
+        fake = FakeT3(reply="VERDICT: ACCEPT", run_count=2)
+        watcher.verification_step(self.store, self.store.get(self.ticket["id"]), CONFIG, "/bin/true", runner=fake)
+        stored = self.store.get(self.ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("more than one run", stored["note"])
+
+    def test_only_the_assistant_message_counts(self) -> None:
+        self._attach()
+        fake = FakeT3(reply="VERDICT: ACCEPT")
+        # a user message carrying the token must not be mistaken for the verdict
+        fake.calls = []
+        original = fake.__call__
+
+        def call(command, input=None, **kwargs):
+            if command[1:3] == ["thread", "show"]:
+                body = {
+                    "thread": {"status": "completed", "latestRunId": "run-1", "runCount": 1},
+                    "messages": [
+                        {"role": "user", "runId": "run-1", "text": "VERDICT: ACCEPT"},
+                        {"role": "assistant", "runId": "run-1", "text": "still thinking about it"},
+                    ],
+                }
+                return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
+            return original(command, input=input, **kwargs)
+
+        watcher.verification_step(self.store, self.store.get(self.ticket["id"]), CONFIG, "/bin/true", runner=call)
+        stored = self.store.get(self.ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertEqual(stored["verify_verdict"], "FAILED")
+
+    def test_the_run_id_is_learned_when_the_launch_returns_none(self) -> None:
+        fake = FakeT3(run_id=None)
+        watcher.verification_step(self.store, self.store.get(self.ticket["id"]), CONFIG, "/bin/true", runner=fake)
+        self.assertEqual(self.store.get(self.ticket["id"])["verify_run_id"], "")
+        fake.reply_run = "run-9"
+        fake.status = "completed"
+        self.assertIsNone(
+            watcher.verification_step(self.store, self.store.get(self.ticket["id"]), CONFIG, "/bin/true", runner=fake)
+        )
+        self.assertEqual(self.store.get(self.ticket["id"])["verify_run_id"], "run-9")
+        self.assertEqual(self.store.get(self.ticket["id"])["verify_verdict"], "ACCEPT")
+
+    def test_an_unexpected_status_fails_closed(self) -> None:
+        self._attach()
+        fake = FakeT3(status="paused")
+        watcher.verification_step(self.store, self.store.get(self.ticket["id"]), CONFIG, "/bin/true", runner=fake)
+        stored = self.store.get(self.ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("unexpected reviewer status", stored["note"])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,9 @@
 > folder rather than a worktree, and there is no read-only launch (T3 0.1.9 has none; the guard is a
 > tree fingerprint, see `docs/readonly-verifier.md`). The nine proposed columns became ten with
 > `verify_baseline`, and the event names are `verify-started`, `verify-accept`, `verify-reject`,
-> `verify-failed`, `verify-timeout`.
+> `verify-failed`, `verify-timeout`. The run anchor this document assumed (message `runId` ==
+> `verify_run_id`) was not implemented at first; `docs/verification-assumptions.md` measured the gap
+> and it is enforced now, together with `runCount == 1` and an assistant-only reply.
 
 
 Research notes for adding a *fresh reviewer*: after the dev thread finishes and the host test stage

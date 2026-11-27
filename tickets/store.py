@@ -333,6 +333,15 @@ class TicketStore:
         self.con.commit()
         return self.get(ticket_id)
 
+    def attach_verify_run(self, ticket_id: str, run_id: str) -> dict:
+        """Store the run id the launch did not return; it anchors the verdict to a run."""
+        self.con.execute(
+            "update tickets set verify_run_id=?, updated_at=? where id=?", (run_id, now(), ticket_id)
+        )
+        self._event(ticket_id, "verify-run", run_id)
+        self.con.commit()
+        return self.get(ticket_id)
+
     def record_verdict(self, ticket_id: str, verdict: str, findings: str = "") -> dict:
         self.con.execute(
             "update tickets set verify_verdict=?, verify_findings=?, verify_finished_at=?, updated_at=?"

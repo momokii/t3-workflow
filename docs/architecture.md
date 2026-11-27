@@ -167,7 +167,11 @@ Enforcement, in the order it happens:
 
 | Check | Source | Consequence |
 |---|---|---|
-| A verdict exists and is the last line | `parse_verdict()` | otherwise `blocked`, never a silent accept |
+| A verdict exists | `parse_verdict()` | otherwise `blocked`, never a silent accept |
+| The verdict is the runner's own line, not prose | one line that consists of the token only, after dropping list markers and markdown emphasis; contradicting lines are refused | prose is never read as a decision; a trailing `Skills:` line does not hide it |
+| The verdict belongs to the verified run | reply message `runId` == `verify_run_id`, and `runCount == 1` | a stale or second run blocks the ticket |
+| The reply is the reviewer's, not the prompt's | message `role == "assistant"` | a user message carrying the token cannot decide |
+| The status is one this code knows | `thread show` → `completed`/`idle`; `failed`/`cancelled`/`interrupted`/`rolled_back` block; anything else blocks with its own note | a future status fails closed with the right reason |
 | The project tree did not move during the review | `verify_baseline` fingerprint vs. now | `blocked`, the verdict is not evidence |
 | The reviewer finished | `thread show` → `completed`/`idle` | `running` waits, `failed`/`cancelled` blocks |
 | The review is inside its budget | `verify_started_at` + `verification.timeoutMinutes` | `blocked` |

@@ -13,6 +13,19 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- **The review verdict is anchored to the run that produced it.** The stage stored `verify_run_id` and
+  never compared it, and it read the last message rather than the last assistant message. Measured
+  against real threads: `thread start --json` may return `runId: null`, `thread show` carries
+  `latestRunId`/`runCount`/per-message `runId`/`role`, and real replies decorate the verdict line
+  (17 % with markdown emphasis, 3 % with a `Skills:` line after it). The stage now reads one
+  `thread show`, learns the run id when the launch omits it, refuses a stale run (`latestRunId`
+  mismatch) or a second run (`runCount > 1`), ignores non-assistant text, and accepts a verdict line
+  that consists of the token after stripping list markers and emphasis — while refusing two
+  contradicting verdicts and any prose. An unknown thread status now blocks with its own note instead
+  of falling through to "no verdict line". See `docs/verification-assumptions.md`.
+
 ### Added
 
 - **The guide has screenshots and covers registering and adopting.** Three captures taken from a real

@@ -328,6 +328,8 @@ VERIFICATION_DEFAULTS = {
     "maxDiffBytes": 60000,
 }
 VERDICT_RE = re.compile(r"^VERDICT:\s*(ACCEPT|REJECT)$", re.IGNORECASE)
+VERDICT_TOKEN = re.compile(r"^[*_`\s]*VERDICT:\s*(ACCEPT|REJECT)[*_`\s]*[.!]?$", re.IGNORECASE)
+LIST_MARKER = re.compile(r"^(?:[-*+]>?\s+|\d+[.)]\s+)")
 
 
 def verification_settings(config: dict) -> dict:
@@ -392,15 +394,29 @@ def build_verifier_prompt(ticket: dict, status: str, diff: str, max_diff: int) -
 
 
 def parse_verdict(text: str) -> tuple[str, str]:
-    """The verdict is the last non-empty line; everything else is findings."""
+    """The verdict is the last line that *is* the token; everything else is findings.
+
+    Models decorate: `**VERDICT: ACCEPT**`, a list marker, a trailing period, or a house-style
+    line appended after the verdict (measured on real threads: 17 % emphasis, 3 % a trailing
+    `Skills:` line). Stripping those is not the same as guessing: a line still has to consist
+    of the token and nothing else, and two contradicting verdict lines are refused.
+    """
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
-    if not lines:
+    tokens: list[tuple[int, str]] = []
+    for position, line in enumerate(lines):
+        bare = LIST_MARKER.sub("", line).strip()
+        match = VERDICT_TOKEN.match(bare)
+        if match:
+            tokens.append((position, match.group(1).upper()))
+    if not tokens:
         return "", ""
-    match = VERDICT_RE.match(lines[-1])
-    if not match:
-        return "", ""
-    findings = "\n".join(line for line in lines if not VERDICT_RE.match(line)).strip()
-    return match.group(1).upper(), findings
+    if len({verdict for _, verdict in tokens}) > 1:
+        return "", ""  # contradictory: refuse rather than pick one
+    position, verdict = tokens[-1]
+    # Findings are what the reviewer wrote before the token; a house-style line after it
+    # (`Skills: …`) is not part of the verdict.
+    findings = "\n".join(lines[:position]).strip()
+    return verdict, findings
 
 
 def thread_show(config: dict, thread_id: str, messages: int = 5, runner=subprocess.run) -> dict:
@@ -420,13 +436,26 @@ def thread_show(config: dict, thread_id: str, messages: int = 5, runner=subproce
         return {}
 
 
-def verifier_reply(config: dict, thread_id: str, runner=subprocess.run) -> str:
-    data = thread_show(config, thread_id, runner=runner)
+def verifier_reply(data: dict, run_id: str = "") -> str:
+    """The last assistant message of the verified run, not merely the last message.
+
+    A thread can hold several runs, and one run several assistant messages. `thread show`
+    gives each message its `role` and `runId`, so the reply that counts is chosen by run,
+    never by position alone.
+    """
     items = data.get("messages") or data.get("items") or []
-    for item in reversed(items):
-        text = (item.get("text") or "").strip()
-        if text:
-            return text
+    candidates = [
+        item for item in items
+        if (item.get("role") or "").lower() == "assistant" and (item.get("text") or "").strip()
+    ]
+    if run_id:
+        matched = [item for item in candidates if str(item.get("runId") or "") == run_id]
+        if matched:
+            candidates = matched
+        else:
+            candidates = []  # no message of the verified run: nothing to judge
+    for item in reversed(candidates):
+        return (item.get("text") or "").strip()
     return ""
 
 
@@ -512,8 +541,13 @@ def verification_step(store: TicketStore, ticket: dict, config: dict, t3_cli: st
         store.move(ticket_id, "blocked", "review: reviewer timed out")
         return f"{ticket_id}: review timed out → blocked"
 
-    status = thread_status(config, thread_id, runner=runner)
-    if status in ("preparing", "queued", "starting", "running", "unknown"):
+    # One `thread show` answers status, run anchors and text, so the three cannot disagree.
+    data = thread_show(config, thread_id, messages=10, runner=runner)
+    anchor = data.get("thread") or {}
+    status = str(anchor.get("status") or "")
+    if not status:
+        return f"{ticket_id}: waiting for the reviewer (thread not readable yet)"
+    if status in ("preparing", "queued", "starting", "running"):
         return f"{ticket_id}: waiting for the reviewer ({status})"
     if status == "waiting":
         store.record_verdict(ticket_id, "FAILED", "the reviewer asked a question and needs an answer in T3")
@@ -523,6 +557,31 @@ def verification_step(store: TicketStore, ticket: dict, config: dict, t3_cli: st
         store.record_verdict(ticket_id, "FAILED", f"review thread status: {status}")
         store.move(ticket_id, "blocked", f"review: reviewer {status}")
         return f"{ticket_id}: reviewer {status} → blocked"
+    if status not in ("completed", "idle"):
+        # A status this code has never seen fails closed with its own note, instead of
+        # falling through to "no verdict line".
+        store.record_verdict(ticket_id, "FAILED", f"unexpected review thread status: {status}")
+        store.move(ticket_id, "blocked", f"review: unexpected reviewer status {status}")
+        return f"{ticket_id}: unexpected reviewer status {status} → blocked"
+
+    run_id = str(ticket.get("verify_run_id") or "")
+    latest_run = str(anchor.get("latestRunId") or "")
+    run_count = anchor.get("runCount")
+    if run_id and latest_run and latest_run != run_id:
+        store.record_verdict(
+            ticket_id, "FAILED", f"the verdict belongs to run {run_id}, not {latest_run}"
+        )
+        store.move(ticket_id, "blocked", "review: reviewer moved past the verified run")
+        return f"{ticket_id}: stale review run → blocked"
+    if not run_id and latest_run:
+        store.attach_verify_run(ticket_id, latest_run)  # the launch reported no run id
+        run_id = latest_run
+    if isinstance(run_count, int) and run_count > 1:
+        store.record_verdict(
+            ticket_id, "FAILED", f"the reviewer thread ran {run_count} times; the review is not fresh"
+        )
+        store.move(ticket_id, "blocked", "review: reviewer had more than one run")
+        return f"{ticket_id}: reviewer had {run_count} runs → blocked"
 
     path = project_path(ticket["project"])
     if ticket.get("verify_baseline") and project_fingerprint(path) != ticket["verify_baseline"]:
@@ -530,7 +589,7 @@ def verification_step(store: TicketStore, ticket: dict, config: dict, t3_cli: st
         store.move(ticket_id, "blocked", "review: project changed during verification")
         return f"{ticket_id}: project changed during review → blocked"
 
-    verdict, findings = parse_verdict(verifier_reply(config, thread_id, runner=runner))
+    verdict, findings = parse_verdict(verifier_reply(data, run_id))
     if verdict == "ACCEPT":
         store.record_verdict(ticket_id, "ACCEPT", findings)
         return None  # release may proceed; it is still the only path to `done`
