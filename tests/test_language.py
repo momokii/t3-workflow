@@ -50,6 +50,11 @@ INDONESIAN = (
 
 PATTERN = re.compile(r"\b(" + "|".join(INDONESIAN) + r")\b", re.IGNORECASE)
 
+# A bracketed uppercase token is a data marker (`[PASS]`, and the legacy one that live
+# ticket rows still carry), not prose. Markers are stripped before a line is scanned so a
+# document can quote the old value while the rest of it stays in English.
+MARKER = re.compile(r"\[[A-Z][A-Z0-9_-]{2,}\]")
+
 
 def candidate_files() -> list[Path]:
     try:
@@ -78,7 +83,7 @@ def offences() -> list[str]:
         except UnicodeDecodeError:  # a binary file with a text suffix
             continue
         for number, line in enumerate(lines, 1):
-            match = PATTERN.search(line)
+            match = PATTERN.search(MARKER.sub("", line))
             if match:
                 rel = path.relative_to(ROOT)
                 found.append(f"{rel}:{number}: '{match.group(0)}' in {line.strip()[:100]}")
@@ -98,6 +103,10 @@ class LanguageTests(unittest.TestCase):
         """The detector itself must work; a green suite is not proof of a working check."""
         self.assertTrue(PATTERN.search("tiket tidak ada di T3"))
         self.assertIsNone(PATTERN.search("the ticket is not in T3"))
+
+    def test_data_markers_are_not_prose(self) -> None:
+        self.assertIsNone(PATTERN.search(MARKER.sub("", "proof = `[LULUS] <iso>` (legacy)")))
+        self.assertTrue(PATTERN.search(MARKER.sub("", "[PASS] but tiket tidak ada")))
 
 
 if __name__ == "__main__":
