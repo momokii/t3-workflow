@@ -111,7 +111,8 @@
   details.force button { font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
   details.force button:hover { border-color: var(--accent); color: var(--accent); }
   .empty { color: var(--ink-soft); font-size: 12px; padding: 6px; }
-  .btn { font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .btn { font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+  .btn[disabled] { opacity: .55; cursor: not-allowed; }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
@@ -143,6 +144,7 @@
       <button class="btn primary" id="new-ticket" type="button">＋ Ticket</button>
       <button class="btn" id="adopt-thread" type="button">Adopt thread</button>
       <button class="btn" id="new-project" type="button">Register project</button>
+      <a class="btn" href="/guide">Guide</a>
       <label class="sr-only" for="q">Search tickets</label>
       <input id="q" type="search" placeholder="Search title, id, project…" autocomplete="off">
       <label class="sr-only" for="project">Filter by project</label>
@@ -163,6 +165,7 @@
 <dialog id="dlg-ticket" aria-labelledby="dlg-ticket-title">
   <form method="dialog" id="form-ticket">
     <h3 id="dlg-ticket-title">New ticket</h3>
+    <p class="hint" id="ticket-load" role="status"></p>
     <label>Title <input name="title" required autocomplete="off"></label>
     <label>Project <select name="project" required></select></label>
     <label>Preset (optional) <select name="profile"></select></label>
@@ -174,7 +177,7 @@
     <label>Attachment (path on this machine) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
     <p class="hint">The attachment is not uploaded; its path is passed to the agent so it can read it directly.</p>
     <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
-    <p class="hint">Must run from the project folder. Exit code 0 = pass; otherwise the ticket goes back to work.</p>
+    <p class="hint">Run by the watcher in the project folder after the agent finishes: exit code 0 is the proof, anything else sends the ticket back. <a href="/guide#test-command">Why this field exists</a>.</p>
     <label>Priority <select name="priority">
       <option value="1">1 — Urgent (do first)</option>
       <option value="2">2 — High</option>
@@ -201,7 +204,8 @@
 
 <dialog id="dlg-adopt" aria-labelledby="dlg-adopt-title">
   <form method="dialog" id="form-adopt">
-    <h3 id="dlg-adopt-title">Adopt thread T3</h3>
+    <h3 id="dlg-adopt-title">Adopt a T3 thread</h3>
+    <p class="hint" id="adopt-load" role="status"></p>
     <p style="margin:0;color:var(--ink-soft);font-size:12px">This ticket <strong>continues the same thread</strong>: the watcher sends the ticket instructions into that thread, waits for it to finish, then moves it to testing. No new thread is created.</p>
     <label>Thread <select name="thread_id" required></select></label>
     <label>Preset (informational) <select name="profile"></select></label>
@@ -447,8 +451,10 @@
     return data;
   }
 
-  async function ensureCatalog() {
-    if (!state.catalog) state.catalog = await api('/api/catalog');
+  async function ensureCatalog(force = false) {
+    const usable = state.catalog && (state.catalog.providers || []).some(p => p.enabled && p.installed);
+    if (!force && usable) return state.catalog;
+    state.catalog = await api('/api/catalog');
     return state.catalog;
   }
 
@@ -466,7 +472,7 @@
     const providers = enabledProviders();
     select.innerHTML = providers
       .map(p => `<option value="${p.instanceId}">${p.displayName} (${p.instanceId})</option>`).join('');
-    if (!providers.length) select.innerHTML = '<option value="">(no enabled harness)</option>';
+    if (!providers.length) select.innerHTML = '<option value="">(no enabled harness — check T3)</option>';
   }
 
   function fillModels(form, preferred) {
@@ -507,30 +513,70 @@
   }
 
   async function openTicketDialog() {
-    const data = await api('/api/projects');
+    const dlg = document.getElementById('dlg-ticket');
     const form = document.getElementById('form-ticket');
-    form.project.innerHTML = (data.projects || [])
-      .map(p => `<option value="${p.title}">${p.title}</option>`).join('');
-    await ensureCatalog();
-    fillPresets(form.profile);
-    fillHarness(form.provider);
-    const presets = (state.catalog && state.catalog.presets) || [];
-    const preferred = presets.find(p => p.name === (state.catalog.defaultProfile || ""));
-    if (preferred) form.provider.value = preferred.provider;
-    fillModels(form, preferred ? preferred.model : "");
-    if (projectSel.value) form.project.value = projectSel.value;
-    document.getElementById('dlg-ticket').showModal();
+    const note = document.getElementById('ticket-load');
+    const submit = form.querySelector('button[type="submit"]');
+    form.project.innerHTML = '<option value="">Loading projects…</option>';
+    form.provider.innerHTML = '<option value="">Loading harnesses…</option>';
+    form.model.innerHTML = '<option value="">…</option>';
+    note.textContent = 'Loading projects and the model catalogue…';
+    submit.disabled = true;
+    dlg.setAttribute('aria-busy', 'true');
+    dlg.showModal();  // open first: a slow T3 call must never look like a dead button
+    let ready = false;
+    try {
+      const [projects] = await Promise.all([api('/api/projects'), ensureCatalog(true)]);
+      const titles = (projects.projects || []).map(p => p.title);
+      form.project.innerHTML = titles.length
+        ? titles.map(title => `<option value="${title}">${title}</option>`).join('')
+        : '<option value="">(no T3 project — register one first)</option>';
+      fillPresets(form.profile);
+      fillHarness(form.provider);
+      const presets = (state.catalog && state.catalog.presets) || [];
+      const preferred = presets.find(p => p.name === (state.catalog.defaultProfile || ''));
+      if (preferred) form.provider.value = preferred.provider;
+      fillModels(form, preferred ? preferred.model : '');
+      if (projectSel.value) form.project.value = projectSel.value;
+      ready = enabledProviders().length > 0 && titles.length > 0;
+      note.textContent = ready
+        ? ''
+        : 'T3 reports no enabled harness. Check T3, then close and reopen this dialog.';
+    } catch (err) {
+      note.textContent = 'Could not load the dialog: ' + (err.message || err) + '. Close and try again.';
+    } finally {
+      submit.disabled = !ready;
+      dlg.removeAttribute('aria-busy');
+    }
   }
 
   async function openAdoptDialog() {
-    const data = await api('/api/threads');
+    const dlg = document.getElementById('dlg-adopt');
     const form = document.getElementById('form-adopt');
-    form.thread_id.innerHTML = (data.threads || []).slice(0, 40).map(t =>
-      `<option value="${t.thread_id}">${(t.project || '?')} · ${(t.title || '(untitled)').slice(0, 48)} [${t.status || '?'}]</option>`
-    ).join('');
-    await ensureCatalog();
-    fillPresets(form.profile);
-    document.getElementById('dlg-adopt').showModal();
+    const note = document.getElementById('adopt-load');
+    const submit = form.querySelector('button[type="submit"]');
+    form.thread_id.innerHTML = '<option value="">Loading threads…</option>';
+    note.textContent = 'Loading the recent T3 threads…';
+    submit.disabled = true;
+    dlg.setAttribute('aria-busy', 'true');
+    dlg.showModal();  // the thread list needs a T3 call; open the dialog first
+    let ready = false;
+    try {
+      const [data] = await Promise.all([api('/api/threads'), ensureCatalog()]);
+      const threads = data.threads || [];
+      form.thread_id.innerHTML = threads.slice(0, 40).map(t =>
+        `<option value="${t.thread_id}">${(t.project || '?')} · ${(t.title || '(untitled)').slice(0, 48)} [${t.status || '?'}]</option>`
+      ).join('');
+      fillPresets(form.profile);
+      ready = threads.length > 0;
+      if (!ready) form.thread_id.innerHTML = '<option value="">(no recent thread)</option>';
+      note.textContent = ready ? '' : 'T3 returned no recent thread.';
+    } catch (err) {
+      note.textContent = 'Could not load threads: ' + (err.message || err) + '. Close and try again.';
+    } finally {
+      submit.disabled = !ready;
+      dlg.removeAttribute('aria-busy');
+    }
   }
 
   async function load() {
@@ -541,8 +587,9 @@
     projectSel.innerHTML = '<option value="">All projects</option>' +
       projects.map(p => `<option value="${p}">${p}</option>`).join('');
     projectSel.value = projects.includes(keep) ? keep : '';
-    state = data;
+    state = Object.assign({}, data, { catalog: state.catalog });
     render();
+    ensureCatalog().catch(() => {});  // prefetch so the first dialog open has no wait
     foot.textContent = `${data.tickets.length} tickets · profiles available: ${(data.profiles || []).join(', ') || '-'}`;
   }
 

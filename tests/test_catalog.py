@@ -16,6 +16,7 @@ from catalog import (  # noqa: E402
     CatalogError,
     find_provider,
     load_catalog,
+    load_catalog_cached,
     resolve_selection,
     resolve_ticket,
     usable_providers,
@@ -135,3 +136,26 @@ class CatalogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class CatalogueCacheTests(unittest.TestCase):
+    """The board asks for the catalogue on every dialog open; reading the files each
+    time is wasted work, but a stale answer is worse. Cache on the directory's mtime."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="catalog-cache-"))
+        (self.tmp / "pi.json").write_text(json.dumps(
+            provider_doc("pi", True, [{"slug": "fast-model", "name": "Fast"}])))
+
+    def test_same_snapshot_is_served_from_cache(self) -> None:
+        first = load_catalog_cached(self.tmp, CONFIG)
+        second = load_catalog_cached(self.tmp, CONFIG)
+        self.assertIs(first, second)
+
+    def test_a_new_provider_file_invalidates_the_cache(self) -> None:
+        first = load_catalog_cached(self.tmp, CONFIG)
+        self.assertEqual([p["instanceId"] for p in first["providers"]], ["pi"])
+        (self.tmp / "opencode.json").write_text(json.dumps(
+            provider_doc("opencode", True, [{"slug": "build-model", "name": "Build"}])))
+        second = load_catalog_cached(self.tmp, CONFIG)
+        self.assertEqual(sorted(p["instanceId"] for p in second["providers"]), ["opencode", "pi"])

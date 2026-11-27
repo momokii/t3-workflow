@@ -111,6 +111,49 @@ def load_catalog(directory: Path | None = None, config: dict | None = None) -> d
     }
 
 
+_CACHE: dict[tuple, dict] = {}
+_CACHE_LIMIT = 8
+
+
+def _snapshot_key(directory: Path, config: dict | None) -> tuple:
+    """Cheap identity of the inputs: file names with mtime and size, plus the presets."""
+    files = []
+    try:
+        entries = sorted(directory.glob("*.json"))
+    except OSError:
+        entries = []
+    for path in entries:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        files.append((path.name, stat.st_mtime_ns, stat.st_size))
+    presets = json.dumps(
+        {key: (config or {}).get(key) for key in ("models", "defaults")}, sort_keys=True
+    )
+    return (str(directory), tuple(files), presets)
+
+
+def load_catalog_cached(directory: Path | None = None, config: dict | None = None) -> dict:
+    """The same payload as `load_catalog`, re-read only when its inputs change.
+
+    The board asks for the catalogue on every page load and every dialog open; re-reading
+    a few hundred kilobytes of JSON each time is waste, while a stale answer is worse. The
+    key is the directory's file list with mtime and size, so a provider probe that rewrites
+    a cache file invalidates it. The payload itself contains `loadedAt`, which therefore
+    means "when this snapshot was read", not "when you asked".
+    """
+    directory = Path(directory or CATALOG_DIR)
+    key = _snapshot_key(directory, config)
+    cached = _CACHE.get(key)
+    if cached is None:
+        cached = load_catalog(directory, config=config)
+        if len(_CACHE) >= _CACHE_LIMIT:
+            _CACHE.clear()
+        _CACHE[key] = cached
+    return cached
+
+
 def usable_providers(catalog: dict) -> list[dict]:
     return [p for p in catalog["providers"] if p["enabled"] and p["installed"]]
 

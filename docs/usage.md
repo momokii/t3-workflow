@@ -3,6 +3,7 @@
 How to use the system, which workflow to pick, and what the watcher will and will not do on your behalf.
 
 Read [README.md](../README.md) for installation and [docs/architecture.md](architecture.md) for the mechanics.
+The board also serves the same material as a page: open **Guide** in its header, or `/guide` directly.
 
 ## 1. The mental model
 

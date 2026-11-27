@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tickets"))
 
-from catalog import CatalogError, load_catalog, resolve_selection  # noqa: E402
+from catalog import CatalogError, load_catalog_cached, resolve_selection  # noqa: E402
 from store import (  # noqa: E402
     CONFIG_PATH,
     DB_PATH,
@@ -105,6 +105,19 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_static(self, name: str) -> None:
+        target = STATIC / name
+        if not target.is_file():
+            self._json(404, {"error": "not found"})
+            return
+        kind = (
+            "text/html; charset=utf-8" if name.endswith(".html")
+            else "image/svg+xml" if name.endswith(".svg")
+            else "image/png" if name.endswith(".png")
+            else "application/octet-stream"
+        )
+        self._send(200, target.read_bytes(), kind)
+
     def _json(self, status: int, data) -> None:
         self._send(status, json.dumps(data, ensure_ascii=False).encode(), "application/json; charset=utf-8")
 
@@ -143,19 +156,11 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._send(200, self._page(), "text/html; charset=utf-8")
             return
+        if path == "/guide":
+            self._send_static("guide.html")
+            return
         if path.startswith("/static/"):
-            name = Path(path).name  # basename only: no traversal
-            target = STATIC / name
-            if target.is_file():
-                kind = (
-                    "text/html; charset=utf-8" if name.endswith(".html")
-                    else "image/svg+xml" if name.endswith(".svg")
-                    else "image/png" if name.endswith(".png")
-                    else "application/octet-stream"
-                )
-                self._send(200, target.read_bytes(), kind)
-            else:
-                self._json(404, {"error": "not found"})
+            self._send_static(Path(path).name)  # basename only: no traversal
             return
         if path == "/healthz":
             store = self._store()
@@ -168,7 +173,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/catalog":
             config = load_config(Path(self.config_path))
-            self._json(200, load_catalog(Path(self.catalog_dir), config=config))
+            self._json(200, load_catalog_cached(Path(self.catalog_dir), config=config))
             return
         if path == "/api/projects":
             self._json(200, {"projects": t3_projects(Path(self.t3_db_path))})
@@ -241,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
             if provider or model:
                 try:
                     resolve_selection(
-                        load_catalog(Path(self.catalog_dir), config=load_config(Path(self.config_path))),
+                        load_catalog_cached(Path(self.catalog_dir), config=load_config(Path(self.config_path))),
                         provider, model,
                     )
                 except CatalogError as exc:
@@ -310,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/catalog":
             config = load_config(Path(self.config_path))
-            self._json(200, load_catalog(Path(self.catalog_dir), config=config))
+            self._json(200, load_catalog_cached(Path(self.catalog_dir), config=config))
             return
         if path == "/api/projects":
             if not self._authorised():

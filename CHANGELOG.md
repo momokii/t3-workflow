@@ -13,6 +13,24 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **Guide page** at `/guide`, linked from the board header: the lifecycle and who moves a ticket, what the
+  test command is for and how its exit code decides, the model resolution order, priorities, approvals,
+  adoption, limits, Telegram commands, where the data lives and the gaps that remain. The ticket dialog
+  links to its test-command section from the field itself.
+- `load_catalog_cached()`: the catalogue is re-read only when the cache files change (names, mtimes,
+  sizes) instead of on every request; `GET /api/catalog` and ticket creation share it.
+
+### Fixed
+
+- **New ticket and Adopt thread open immediately.** Both dialogs used to wait for their network calls
+  before appearing, so a slow T3 call looked like a dead button; they now open with a loading state,
+  disable submit until the data arrives, name the failure inside the dialog, and the catalogue is
+  prefetched after the board loads.
+- The board dropped its cached catalogue on every 15-second refresh, which could leave the pickers empty
+  until the next dialog open; the refresh now preserves it.
+
 ### Changed
 
 - **One language, English, everywhere a person reads text.** API errors, board labels and toasts,

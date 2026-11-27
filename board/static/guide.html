@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works · t3-workflow</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="apple-touch-icon" href="/static/logo-180.png">
+<meta name="theme-color" content="#4f46e5">
+<meta name="description" content="How the t3-workflow board turns a ticket into an agent thread, proves it with a test, and pushes a branch.">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef1f5;
+    --ink: #16181d;
+    --ink-soft: #5b6472;
+    --line: #dfe3ea;
+    --accent: #4f46e5;
+    --accent-ink: #ffffff;
+    --ok: #0f766e;
+    --warn: #b45309;
+    --danger: #b91c1c;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .06);
+    --focus: 2px solid #4f46e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --surface: #161a21;
+      --surface-2: #1d232c;
+      --ink: #e8ecf3;
+      --ink-soft: #9aa5b5;
+      --line: #2a323d;
+      --accent: #8b8cf9;
+      --accent-ink: #10131a;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif; }
+  header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1000px; margin: 0 auto; padding: 14px 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 650; font-size: 16px; }
+  .brand img { width: 26px; height: 26px; display: block; border-radius: 7px; }
+  .brand span { color: var(--ink-soft); font-weight: 450; }
+  .spacer { flex: 1 1 auto; }
+  .btn { font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:focus-visible, a:focus-visible { outline: var(--focus); outline-offset: 2px; }
+  main { max-width: 1000px; margin: 0 auto; padding: 26px 20px 64px; }
+  h1 { font-size: 26px; letter-spacing: -.01em; margin: 0 0 6px; }
+  .lede { color: var(--ink-soft); margin: 0 0 26px; max-width: 70ch; }
+  nav.toc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 26px; }
+  nav.toc h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); margin: 0 0 8px; }
+  nav.toc ol { margin: 0; padding-left: 18px; columns: 2; column-gap: 28px; }
+  @media (max-width: 660px) { nav.toc ol { columns: 1; } }
+  nav.toc a { color: var(--accent); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 14px; box-shadow: var(--shadow); }
+  section > h2 { font-size: 18px; margin: 0 0 10px; }
+  section > h3 { font-size: 15px; margin: 18px 0 6px; }
+  p, li { max-width: 78ch; }
+  code, kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; }
+  pre { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; overflow-x: auto; }
+  pre code { background: none; border: 0; padding: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0 4px; }
+  th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
+  .flow { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; overflow-x: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; }
+  .note { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; color: var(--ink-soft); }
+  .tag { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-soft); background: var(--surface-2); }
+  footer { max-width: 1000px; margin: 0 auto; padding: 0 20px 48px; color: var(--ink-soft); font-size: 12px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <div class="brand"><img src="/static/logo.svg" alt="" width="26" height="26">How it works <span>· t3-workflow</span></div>
+    <div class="spacer"></div>
+    <a class="btn" href="/">Back to the board</a>
+  </div>
+</header>
+
+<main>
+  <h1>How this board works</h1>
+  <p class="lede">One ticket is one unit of work: the watcher turns it into an agent thread, the host proves
+  the result with a test command, and a passing ticket is pushed as its own git branch. Nothing runs on a
+  server you do not own; every step is a script on this machine.</p>
+
+  <nav class="toc" aria-labelledby="toc-title">
+    <h2 id="toc-title">On this page</h2>
+    <ol>
+      <li><a href="#lifecycle">Ticket lifecycle</a></li>
+      <li><a href="#test-command">Test command</a></li>
+      <li><a href="#model">Harness, model and presets</a></li>
+      <li><a href="#fields">What each ticket field does</a></li>
+      <li><a href="#priority">Priority</a></li>
+      <li><a href="#approval">Approvals</a></li>
+      <li><a href="#adopt">Creating versus adopting</a></li>
+      <li><a href="#limits">Limits, failures and overrides</a></li>
+      <li><a href="#telegram">Driving it from Telegram</a></li>
+      <li><a href="#data">Where the data lives</a></li>
+      <li><a href="#gaps">What is not built yet</a></li>
+    </ol>
+  </nav>
+
+  <section id="lifecycle">
+    <h2>Ticket lifecycle</h2>
+    <p>The watcher moves a ticket through seven statuses. It only takes the transitions listed below; a move
+    outside them is refused by the store, not by the user interface.</p>
+    <div class="flow">backlog ─► ready ─► in-progress ─► testing ─► review ─► done
+   ▲         │            │            │          │
+   └─ blocked ◄────────────┴────────────┴──────────┘</div>
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th><th>Who moves it</th></tr></thead>
+      <tbody>
+        <tr><td><code>backlog</code></td><td>Written down, not queued yet.</td><td>You (to <code>ready</code>)</td></tr>
+        <tr><td><code>ready</code></td><td>Queued; the watcher may claim it at any moment.</td><td>You, or adoption</td></tr>
+        <tr><td><code>in-progress</code></td><td>A thread is working on it. Claimed atomically, so two watchers cannot take it.</td><td>Watcher</td></tr>
+        <tr><td><code>testing</code></td><td>The thread finished; the host is running the test command.</td><td>Watcher (from the thread's status)</td></tr>
+        <tr><td><code>review</code></td><td>The test passed. Release checks the evidence.</td><td>Watcher (exit code 0)</td></tr>
+        <tr><td><code>done</code></td><td>Branch pushed and the report written.</td><td>Watcher (release)</td></tr>
+        <tr><td><code>blocked</code></td><td>Something needs a person: a failed test, a failed thread, a rejected approval, a missed budget.</td><td>Watcher or you</td></tr>
+      </tbody>
+    </table>
+    <p class="note">A ticket in <code>blocked</code> does not retry by itself. Fix the cause, then move it back to
+    <code>ready</code>; the note and the event history keep the reason.</p>
+  </section>
+
+  <section id="test-command">
+    <h2>Test command</h2>
+    <p>This field is the definition of "done" that a model cannot talk its way out of. It is a shell command
+    the <strong>watcher</strong> runs on this machine, in the project folder, after the agent thread has
+    finished — not inside the thread. Only the exit code is judged:</p>
+    <table>
+      <thead><tr><th>Exit code</th><th>What happens</th></tr></thead>
+      <tbody>
+        <tr><td><code>0</code></td><td>The last 40 lines are stored as proof, and the ticket moves to <code>review</code>.</td></tr>
+        <tr><td>anything else</td><td>The ticket goes back to <code>in-progress</code> with the failing output in its note.</td></tr>
+        <tr><td>empty field</td><td>The ticket cannot advance: it is recorded as a skipped test and returned to <code>in-progress</code>.</td></tr>
+      </tbody>
+    </table>
+    <p>So the command has to be runnable from the project directory and end with a status:</p>
+    <pre><code>make check
+python3 -m unittest discover -s tests
+go test ./...
+npm test -- --run</code></pre>
+    <p>Prefer the same command your CI runs, so a green ticket means a green pipeline. The proof is a marker
+    plus a timestamp and the output tail (<code>[PASS] 2026-11-26T…</code>); release refuses a ticket whose
+    proof is not <code>[PASS]</code>.</p>
+    <p class="note">Why outside the thread? A test the agent runs could be shaped by the agent. Running it from
+    the host makes the evidence independent of the model's opinion.</p>
+  </section>
+
+  <section id="model">
+    <h2>Harness, model and presets</h2>
+    <p>The pickers are not a hard-coded list. They come from T3's own provider cache
+    (<code>~/.t3/caches/&lt;instanceId&gt;.json</code>), so they show exactly the harnesses T3 reports as installed
+    and enabled. A disabled harness is rejected by the API even if you send it.</p>
+    <p>Resolution order, strongest first:</p>
+    <ol>
+      <li><code>provider</code> + <code>model</code> stored on the ticket;</li>
+      <li>the ticket's preset (<code>model_profile</code>), a named pair in <code>~/.config/t3-workflow/config.json</code>;</li>
+      <li><code>defaults.profile</code> from the same config.</li>
+    </ol>
+    <p>A half-filled pair (provider without a model) is rejected when the ticket is created. Presets are a
+    shortcut, not a limit: choosing one fills both fields, choosing <em>manual</em> keeps what you picked.</p>
+    <p>Model options such as <code>thinking</code>, <code>variant</code> or <code>effort</code> are shown for
+    information only. The <code>t3 thread start</code> command has no flag for them, so the thread keeps the
+    project default; this board does not pretend otherwise.</p>
+  </section>
+
+  <section id="fields">
+    <h2>What each ticket field does</h2>
+    <table>
+      <thead><tr><th>Field</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td>Title</td><td>Becomes the thread title (first 70 characters) and the commit subject.</td></tr>
+        <tr><td>Project</td><td>A T3 project title or an absolute path; determines the folder the agent works in and the test runs in.</td></tr>
+        <tr><td>Preset, harness, model</td><td>Which agent drives the thread, as described above.</td></tr>
+        <tr><td>Context / specification</td><td>The ticket body, handed to the agent verbatim. Acceptance criteria belong here.</td></tr>
+        <tr><td>Attachment</td><td>An absolute path on this machine, passed to the agent to read. Nothing is uploaded.</td></tr>
+        <tr><td>Test command</td><td>The proof gate described above.</td></tr>
+        <tr><td>Priority</td><td>Queue order, 1 (urgent) to 5 (later).</td></tr>
+        <tr><td>Needs my approval</td><td>The watcher asks before it starts, and waits for an answer.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="priority">
+    <h2>Priority</h2>
+    <table>
+      <thead><tr><th>Value</th><th>Use for</th></tr></thead>
+      <tbody>
+        <tr><td>1 — Urgent</td><td>Something is broken, or it blocks somebody else.</td></tr>
+        <tr><td>2 — High</td><td>Promised for today.</td></tr>
+        <tr><td>3 — Normal</td><td>The default queue.</td></tr>
+        <tr><td>4 — Low</td><td>Polish and cleanup.</td></tr>
+        <tr><td>5 — Someday</td><td>Ideas that should not compete for the slot.</td></tr>
+      </tbody>
+    </table>
+    <p>The watcher always takes the lowest number first, then the oldest ticket at that level.</p>
+  </section>
+
+  <section id="approval">
+    <h2>Approvals</h2>
+    <p>Ticking <em>Needs my approval</em> makes the dev stage ask instead of starting. The request appears on the
+    board card (Approve / Reject), in Telegram (<code>/approve &lt;id&gt;</code>, <code>/reject &lt;id&gt;</code>),
+    and in the ticket's event history.</p>
+    <p>Approvals are one-shot: the first answer wins and a second one is refused. A rejection moves the ticket to
+    <code>blocked</code>; an approval lets the watcher proceed on its next step.</p>
+    <p class="note">Approval requests that appear <em>inside</em> a running T3 turn are a different mechanism and
+    are still answered in the T3 interface: the CLI has no command to answer them.</p>
+  </section>
+
+  <section id="adopt">
+    <h2>Creating versus adopting</h2>
+    <p>A ticket without a thread starts a new one. A ticket that already carries a thread continues that same
+    thread: the watcher sends the ticket text into it and records a <code>continued</code> event. One ticket
+    never owns two threads.</p>
+    <p>Use <strong>Adopt thread</strong> when an agent already produced work, or when you want to continue an
+    earlier conversation; create a ticket when the work is new or independent.</p>
+  </section>
+
+  <section id="limits">
+    <h2>Limits, failures and overrides</h2>
+    <ul>
+      <li><code>watcher.maxConcurrent</code> (default 1) keeps at most that many tickets <code>in-progress</code>;
+      extra tickets wait in <code>ready</code>.</li>
+      <li><code>limits.maxInProgressMinutes</code> moves a ticket that overran its time budget to
+      <code>blocked</code>, so a stuck run cannot hang the queue.</li>
+      <li>A failing thread, a failed test or a broken T3 call moves the ticket to <code>blocked</code> with the
+      reason in the note; nothing is retried silently.</li>
+      <li>Release pushes <code>ticket/T-xxxx-…</code> to <code>origin</code> and never the base branch; a
+      repository without a remote fails loudly and the ticket stays in <code>review</code>.</li>
+      <li><strong>Force move</strong> is the human override. It skips the state machine and is recorded as a
+      <code>forced</code> event, so a report can tell a decision from a normal transition.</li>
+    </ul>
+  </section>
+
+  <section id="telegram">
+    <h2>Driving it from Telegram</h2>
+    <table>
+      <thead><tr><th>Command</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code>/tickets [status]</code></td><td>List tickets, optionally filtered by status.</td></tr>
+        <tr><td><code>/ticket &lt;project&gt; &lt;text&gt;</code></td><td>Create a backlog ticket.</td></tr>
+        <tr><td><code>/pending</code>, <code>/approve &lt;id&gt;</code>, <code>/reject &lt;id&gt;</code></td><td>Approval queue.</td></tr>
+        <tr><td><code>/projects</code>, <code>/threads &lt;project&gt;</code></td><td>Inspect T3 projects and recent threads.</td></tr>
+        <tr><td><code>/ctx &lt;thread&gt; [n]</code></td><td>Title, status, model, link and the last messages of a thread.</td></tr>
+        <tr><td><code>/send &lt;thread&gt; &lt;text&gt;</code></td><td>Send to a thread; a busy thread takes it as the next turn.</td></tr>
+        <tr><td><code>/new &lt;project&gt; &lt;text&gt;</code></td><td>Start a T3 thread directly, without a ticket.</td></tr>
+      </tbody>
+    </table>
+    <p>Only allowlisted chats get answers; anything else is logged and ignored. Read commands work with the T3
+    database read-only; write commands honour <code>bridge.allowWrites</code>.</p>
+  </section>
+
+  <section id="data">
+    <h2>Where the data lives</h2>
+    <table>
+      <thead><tr><th>Thing</th><th>Location</th></tr></thead>
+      <tbody>
+        <tr><td>Tickets, events, approvals</td><td><code>~/.local/state/t3-workflow/tickets.sqlite</code></td></tr>
+        <tr><td>Reports and PR bodies</td><td><code>~/.local/state/t3-workflow/reports/</code></td></tr>
+        <tr><td>Model presets and limits</td><td><code>~/.config/t3-workflow/config.json</code></td></tr>
+        <tr><td>Projects and threads</td><td>T3's own database, read-only from here</td></tr>
+      </tbody>
+    </table>
+    <p>Reports are evidence, not notes: do not edit them by hand. Regenerate one from the ticket instead
+    (<code>python3 tickets/cli.py report T-0001</code>).</p>
+  </section>
+
+  <section id="gaps">
+    <h2>What is not built yet</h2>
+    <ul>
+      <li><strong>Independent review by a fresh model.</strong> The design and the measured facts are in
+      <code>docs/independent-verification.md</code>; the stage is not running yet.</li>
+      <li><strong>Editing or deleting a ticket</strong> from the board or the CLI. Today a wrong ticket is moved
+      with Force move, or recreated.</li>
+      <li><strong>Per-ticket model options</strong> (thinking, variant, effort): no CLI flag exists.</li>
+      <li><strong>Images as attachments.</strong> <code>t3 thread send</code> accepts text; a path is passed
+      instead.</li>
+      <li><strong>Pull-request creation and deploy.</strong> Release stops at a pushed branch, a compare link and
+      a PR body file.</li>
+    </ul>
+  </section>
+</main>
+<footer>Generated by the board itself; the same material in prose lives in <code>docs/usage.md</code>.</footer>
+</body>
+</html>

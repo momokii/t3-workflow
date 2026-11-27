@@ -101,6 +101,18 @@ class BoardApiTests(unittest.TestCase):
         conn.close()
         return response, raw
 
+    def test_guide_page_is_served(self) -> None:
+        response, raw = self.request("GET", "/guide")
+        self.assertEqual(response.status, 200)
+        self.assertIn("text/html", response.headers.get("Content-Type", ""))
+        self.assertIn("Ticket lifecycle", raw)
+        self.assertIn("Test command", raw)
+
+    def test_home_page_links_to_the_guide(self) -> None:
+        response, raw = self.request("GET", "/")
+        self.assertEqual(response.status, 200)
+        self.assertIn('href="/guide"', raw)
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)

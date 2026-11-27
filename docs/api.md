@@ -10,6 +10,7 @@ POST /api/projects                     register a T3 project
 POST /api/threads/<thread>/adopt       adopt a T3 thread as a ticket
 
 GET  /                                 the board page
+GET  /guide                            how it works: lifecycle, test command, models, limits
 GET  /static/<file>                    logo, favicon, touch icon
 GET  /api/tickets                      tickets, approvals, profiles, counts
 GET  /api/tickets/<id>/events          the ticket's event history
@@ -26,6 +27,20 @@ Start it:
 ```bash
 python3 board/server.py --host 100.124.184.116 --port 8787 --token "$(grep -o '[0-9a-f]\{32\}' ~/.config/t3-workflow/board.env)"
 ```
+
+---
+
+## GET /guide
+
+A standalone page served from `board/static/guide.html`: the lifecycle and who moves a ticket, what the
+test command is for and how its exit code decides, the harness/model resolution order, priorities,
+approvals, adoption, limits and failure behaviour, Telegram commands, where the data lives, and the
+gaps that are not built yet. It is linked from the board header. `200 text/html`, `404` if the file is
+missing.
+
+`GET /api/catalog` is served from a snapshot cached on the cache directory's mtime and file sizes, so a
+provider probe that rewrites `~/.t3/caches/*.json` invalidates it; `loadedAt` therefore reports when the
+snapshot was read, not when the request arrived.
 
 ---
 
