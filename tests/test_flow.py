@@ -53,24 +53,24 @@ class ProofTests(Base):
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing")
         self.store.attach_proof(ticket["id"], True, "output baris 1")
         stored = self.store.get(ticket["id"])
-        self.assertIn("[LULUS]", stored["proof"])
+        self.assertIn("[PASS]", stored["proof"])
         self.assertIn("output baris 1", stored["proof"])
         kinds = [event["kind"] for event in self.store.events(ticket["id"])]
         self.assertIn("proof", kinds)
 
     def test_list_public_hides_proof(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing")
-        self.store.attach_proof(ticket["id"], True, "output rahasia")
+        self.store.attach_proof(ticket["id"], True, "secret output")
         public = self.store.list_public()[0]
         self.assertNotIn("proof", public)
         self.assertIn("proof", self.store.get(ticket["id"]))
 
     def test_report_contains_proof(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing")
-        self.store.attach_proof(ticket["id"], False, "gagal di test 3")
+        self.store.attach_proof(ticket["id"], False, "failed at test 3")
         report = self.store.report(ticket["id"])
-        self.assertIn("### Bukti test", report)
-        self.assertIn("gagal di test 3", report)
+        self.assertIn("### Test evidence", report)
+        self.assertIn("failed at test 3", report)
 
 
 class ApprovalTests(Base):
@@ -94,7 +94,7 @@ class ApprovalTests(Base):
         approval = self.store.request_approval(ticket["id"], "mulai?")
         self.store.decide_approval(approval["approval_id"], False, "kelanach")
         message = watcher.run_once(self.store, CONFIG, "/bin/true", dry_run=False)
-        self.assertIn("ditolak", message)
+        self.assertIn("rejected", message)
         self.assertEqual(self.store.get(ticket["id"])["status"], "blocked")
 
 
@@ -102,18 +102,18 @@ class TestStageTests(Base):
     def test_success_moves_to_review_with_proof(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing", test_cmd="true")
         message = watcher.run_test(self.store, ticket, runner=ok_runner)
-        self.assertIn("lulus", message)
+        self.assertIn("passed", message)
         stored = self.store.get(ticket["id"])
         self.assertEqual(stored["status"], "review")
-        self.assertIn("LULUS", stored["proof"])
+        self.assertIn("PASS", stored["proof"])
 
     def test_failure_returns_to_in_progress(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing", test_cmd="false")
         message = watcher.run_test(self.store, ticket, runner=fail_runner)
-        self.assertIn("gagal", message)
+        self.assertIn("failed", message)
         stored = self.store.get(ticket["id"])
         self.assertEqual(stored["status"], "in-progress")
-        self.assertIn("GAGAL", stored["proof"])
+        self.assertIn("FAIL", stored["proof"])
 
     def test_missing_test_cmd_does_not_advance(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing")
@@ -141,7 +141,7 @@ class ContinuationTests(Base):
             return subprocess.CompletedProcess(command, 0, '{"ok":true}', "")
 
         message = watcher.run_once(self.store, CONFIG, "t3", dry_run=False, runner=fake)
-        self.assertIn("melanjutkan thread", message)
+        self.assertIn("continuing thread", message)
         self.assertEqual(calls[0][:3], ["t3", "thread", "send"])
         self.assertEqual(calls[0][3], "mcp:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         stored = self.store.get(ticket["id"])
@@ -153,18 +153,18 @@ class ContinuationTests(Base):
         ticket = self.store.add("lanjut", "/tmp/p", model_profile="fast", status="ready")
         self.store.attach_thread(ticket["id"], "mcp:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         message = watcher.run_once(self.store, CONFIG, "t3", dry_run=True)
-        self.assertIn("lanjutkan thread", message)
+        self.assertIn("continue thread", message)
         self.assertEqual(self.store.get(ticket["id"])["status"], "ready")
 
     def test_prompt_carries_body_attachment_and_test(self) -> None:
         ticket = self.store.add(
-            "judul", "/tmp/p", model_profile="fast", status="ready",
-            body="konteks penting", test_cmd="make check",
+            "title", "/tmp/p", model_profile="fast", status="ready",
+            body="important context", test_cmd="make check",
         )
         self.store.con.execute("update tickets set attachment_path=? where id=?", ("/tmp/spec.pdf", ticket["id"]))
         self.store.con.commit()
         prompt = watcher.build_prompt(self.store.get(ticket["id"]))
-        self.assertIn("konteks penting", prompt)
+        self.assertIn("important context", prompt)
         self.assertIn("/tmp/spec.pdf", prompt)
         self.assertIn("make check", prompt)
 
@@ -207,7 +207,7 @@ class SyncTests(Base):
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
 
         def fake(command, **kwargs):  # noqa: ARG001
-            raise AssertionError("tidak boleh memanggil t3 untuk tiket tanpa thread")
+            raise AssertionError("t3 must not be called for a ticket without a thread")
 
         self.assertEqual(watcher.sync_threads(self.store, CONFIG, runner=fake), [])
         self.assertEqual(self.store.get(ticket["id"])["status"], "in-progress")
@@ -217,7 +217,7 @@ class ApprovalGateTests(Base):
     def test_gate_requests_and_does_not_claim(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="ready", requires_approval=True)
         message = watcher.run_once(self.store, CONFIG, "/bin/true", dry_run=False)
-        self.assertIn("butuh persetujuan", message)
+        self.assertIn("needs approval", message)
         self.assertEqual(self.store.get(ticket["id"])["status"], "ready")
         self.assertEqual(len(self.store.pending_approvals()), 1)
 

@@ -13,6 +13,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Changed
+
+- **One language, English, everywhere a person reads text.** API errors, board labels and toasts,
+  Telegram replies and help, CLI output, watcher notes, report and PR-body sections, script messages
+  and the docs quotes now speak English; the board page declares `lang="en"`. The passing-proof marker
+  is now `[PASS]` (it used to be the Indonesian word for *pass*), so the release gate,
+  `AGENTS.md`, `README.md`, the runbook and the architecture diagram moved with it. `tests/test_language.py` scans every tracked text file and fails
+  on Indonesian vocabulary, so the next copied error string cannot drift back.
+
 ### Added
 
 - `docs/handoff-template.md`: the structure and gate a handoff should follow, including

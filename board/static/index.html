@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Papan Tiket · t3-workflow</title>
+<title>Ticket Board · t3-workflow</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="apple-touch-icon" href="/static/logo-180.png">
 <meta name="theme-color" content="#4f46e5">
-<meta name="description" content="Papan tiket t3-workflow: backlog, siap, dikerjakan, testing, review, selesai.">
+<meta name="description" content="Ticket board for t3-workflow: backlog, ready, in progress, testing, review, done.">
 <style>
   :root {
     --bg: #f6f7f9;
@@ -64,8 +64,8 @@
   .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x proximity; }
   section.col { scroll-snap-align: start; }
   .col[data-status="done"], .col[data-status="blocked"] { max-width: 220px; }
-  /* Semua kolom harus terlihat tanpa scroll horizontal di lebar umum.
-     7 kolom hanya muat di layar sangat lebar; di bawah itu grid membungkus. */
+  /* Every column must stay visible without horizontal scrolling at common widths.
+     Seven columns only fit on very wide screens; below that the grid wraps. */
   @media (max-width: 1800px) {
     .board { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .col[data-status="done"], .col[data-status="blocked"] { max-width: none; }
@@ -136,79 +136,79 @@
 <body>
 <header class="top">
   <div class="bar">
-    <div class="brand"><img src="/static/logo.svg" alt="" width="26" height="26">Papan Tiket <span>· t3-workflow</span></div>
-    <div class="counts" id="counts" aria-label="Ringkasan status"></div>
+    <div class="brand"><img src="/static/logo.svg" alt="" width="26" height="26">Ticket Board <span>· t3-workflow</span></div>
+    <div class="counts" id="counts" aria-label="Status summary"></div>
     <div class="spacer"></div>
     <div class="controls">
-      <button class="btn primary" id="new-ticket" type="button">＋ Tiket</button>
-      <button class="btn" id="adopt-thread" type="button">Adopsi thread</button>
-      <button class="btn" id="new-project" type="button">Daftarkan project</button>
-      <label class="sr-only" for="q">Cari tiket</label>
-      <input id="q" type="search" placeholder="Cari judul, id, project…" autocomplete="off">
-      <label class="sr-only" for="project">Filter project</label>
-      <select id="project" class="filter"><option value="">Semua project</option></select>
+      <button class="btn primary" id="new-ticket" type="button">＋ Ticket</button>
+      <button class="btn" id="adopt-thread" type="button">Adopt thread</button>
+      <button class="btn" id="new-project" type="button">Register project</button>
+      <label class="sr-only" for="q">Search tickets</label>
+      <input id="q" type="search" placeholder="Search title, id, project…" autocomplete="off">
+      <label class="sr-only" for="project">Filter by project</label>
+      <select id="project" class="filter"><option value="">All projects</option></select>
     </div>
   </div>
 </header>
 
 <main>
-  <div class="board" id="board" aria-label="Papan tiket"></div>
+  <div class="board" id="board" aria-label="Ticket board"></div>
   <p class="hint" style="color:var(--ink-soft);font-size:12px;margin-top:10px">
-    Tarik kartu ke kolom lain, atau pakai kontrol <strong>Pindahkan</strong> di kartu (setara pointer tunggal, sesuai WCAG 2.2 SC 2.5.7).
-    <kbd>Tab</kbd> untuk berpindah, <kbd>Enter</kbd> pada kontrol untuk mengubah status.
+    Drag a card to another column, or use the <strong>Move</strong> control on the card (a single-pointer equivalent, per WCAG 2.2 SC 2.5.7).
+    <kbd>Tab</kbd> to move focus, <kbd>Enter</kbd> on a control to change status.
   </p>
   <div id="live" class="sr-only" aria-live="polite"></div>
 </main>
 <footer id="foot"></footer>
 <dialog id="dlg-ticket" aria-labelledby="dlg-ticket-title">
   <form method="dialog" id="form-ticket">
-    <h3 id="dlg-ticket-title">Tiket baru</h3>
-    <label>Judul <input name="title" required autocomplete="off"></label>
+    <h3 id="dlg-ticket-title">New ticket</h3>
+    <label>Title <input name="title" required autocomplete="off"></label>
     <label>Project <select name="project" required></select></label>
-    <label>Preset (opsional) <select name="profile"></select></label>
-    <p class="hint">Preset mengisi harness dan model sekaligus. Kosongkan untuk memilih manual di bawah.</p>
+    <label>Preset (optional) <select name="profile"></select></label>
+    <p class="hint">A preset fills the harness and model at once. Leave it empty to choose manually below.</p>
     <label>Harness <select name="provider" required></select></label>
     <label>Model <select name="model" required></select></label>
-    <p class="hint" id="model-hint">Daftar ini berasal dari cache T3 — hanya harness yang aktif yang bisa dipilih.</p>
-    <label>Konteks / spesifikasi <textarea name="body" placeholder="Konteks, kriteria selesai, tautan, atau catatan penting…"></textarea></label>
-    <label>Lampiran (path di mesin ini) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
-    <p class="hint">Lampiran tidak diunggah; path-nya diteruskan ke agent agar bisa dibaca langsung.</p>
-    <label>Perintah test <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
-    <p class="hint">Wajib bisa dijalankan dari folder project. Exit code 0 = lulus; selain itu tiket kembali dikerjakan.</p>
-    <label>Prioritas <select name="priority">
-      <option value="1">1 — Urgent (kerjakan lebih dulu)</option>
-      <option value="2">2 — Tinggi</option>
+    <p class="hint" id="model-hint">This list comes from the T3 cache — only enabled harnesses can be chosen.</p>
+    <label>Context / specification <textarea name="body" placeholder="Context, acceptance criteria, links, or important notes…"></textarea></label>
+    <label>Attachment (path on this machine) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
+    <p class="hint">The attachment is not uploaded; its path is passed to the agent so it can read it directly.</p>
+    <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
+    <p class="hint">Must run from the project folder. Exit code 0 = pass; otherwise the ticket goes back to work.</p>
+    <label>Priority <select name="priority">
+      <option value="1">1 — Urgent (do first)</option>
+      <option value="2">2 — High</option>
       <option value="3" selected>3 — Normal</option>
-      <option value="4">4 — Rendah</option>
-      <option value="5">5 — Kapan-kapan</option>
+      <option value="4">4 — Low</option>
+      <option value="5">5 — Someday</option>
     </select></label>
-    <p class="hint">Watcher selalu mengambil prioritas terkecil lebih dulu, lalu yang paling lama menunggu.</p>
-    <label class="check"><input type="checkbox" name="requires_approval"> Butuh persetujuan saya sebelum dikerjakan</label>
-    <p class="hint">Centang bila tiket menyentuh hal sensitif; watcher akan menunggu /approve sebelum memulai.</p>
-    <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Buat tiket</button></div>
+    <p class="hint">The watcher always takes the lowest number first, then the oldest wait.</p>
+    <label class="check"><input type="checkbox" name="requires_approval"> Needs my approval before work starts</label>
+    <p class="hint">Tick this when the ticket touches something sensitive; the watcher waits for /approve before starting.</p>
+    <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Create ticket</button></div>
   </form>
 </dialog>
 
 <dialog id="dlg-project" aria-labelledby="dlg-project-title">
   <form method="dialog" id="form-project">
-    <h3 id="dlg-project-title">Daftarkan project</h3>
-    <p style="margin:0;color:var(--ink-soft);font-size:12px">Project T3 dibuat dengan <code>t3 project add</code>. Folder harus sudah ada.</p>
-    <label>Nama project <input name="title" required autocomplete="off"></label>
-    <label>Path absolut <input name="path" required placeholder="/home/kelanach/…" autocomplete="off"></label>
-    <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Daftarkan</button></div>
+    <h3 id="dlg-project-title">Register project</h3>
+    <p style="margin:0;color:var(--ink-soft);font-size:12px">A T3 project is created with <code>t3 project add</code>. The folder must already exist.</p>
+    <label>Project name <input name="title" required autocomplete="off"></label>
+    <label>Absolute path <input name="path" required placeholder="/home/kelanach/…" autocomplete="off"></label>
+    <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Register</button></div>
   </form>
 </dialog>
 
 <dialog id="dlg-adopt" aria-labelledby="dlg-adopt-title">
   <form method="dialog" id="form-adopt">
-    <h3 id="dlg-adopt-title">Adopsi thread T3</h3>
-    <p style="margin:0;color:var(--ink-soft);font-size:12px">Tiket ini <strong>melanjutkan thread yang sama</strong>: watcher mengirim instruksi tiket ke thread itu, menunggu sampai thread selesai, lalu membawanya ke testing. Tidak ada thread baru yang dibuat.</p>
+    <h3 id="dlg-adopt-title">Adopt thread T3</h3>
+    <p style="margin:0;color:var(--ink-soft);font-size:12px">This ticket <strong>continues the same thread</strong>: the watcher sends the ticket instructions into that thread, waits for it to finish, then moves it to testing. No new thread is created.</p>
     <label>Thread <select name="thread_id" required></select></label>
-    <label>Preset (informasi) <select name="profile"></select></label>
-    <p class="hint">Model mengikuti thread yang sudah ada; nilai ini hanya dicatat pada tiket.</p>
-    <label>Konteks tambahan <textarea name="body" placeholder="Apa yang harus diselesaikan pada thread ini?"></textarea></label>
-    <label>Perintah test <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
-    <div class="row"><button class="btn" value="cancel" type="button" data-close>Batal</button><button class="btn primary" type="submit">Adopsi</button></div>
+    <label>Preset (informational) <select name="profile"></select></label>
+    <p class="hint">The model follows the existing thread; this value is only recorded on the ticket.</p>
+    <label>Additional context <textarea name="body" placeholder="What should this thread finish?"></textarea></label>
+    <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
+    <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Adopt</button></div>
   </form>
 </dialog>
 
@@ -223,7 +223,7 @@
   const q = document.getElementById('q');
   const projectSel = document.getElementById('project');
   const foot = document.getElementById('foot');
-  const LABELS = { backlog:'Backlog', ready:'Siap', 'in-progress':'Dikerjakan', testing:'Testing', review:'Review', done:'Selesai', blocked:'Terhambat' };
+  const LABELS = { backlog:'Backlog', ready:'Ready', 'in-progress':'In progress', testing:'Testing', review:'Review', done:'Done', blocked:'Blocked' };
   const ORDER = ['backlog','ready','in-progress','testing','review','done','blocked'];
   let state = { tickets: [], transitions: {}, profiles: [], statuses: ORDER, catalog: null };
   const TOKEN = (document.querySelector('meta[name="board-token"]') || {}).content || '';
@@ -256,7 +256,7 @@
     el.dataset.priority = String(t.priority);
     el.draggable = true;
     el.tabIndex = 0;
-    el.setAttribute('aria-roledescription', 'kartu tiket');
+    el.setAttribute('aria-roledescription', 'ticket card');
     el.setAttribute('aria-label', `${t.id}, ${t.title}, status ${LABELS[t.status] || t.status}`);
 
     const top = document.createElement('div');
@@ -299,22 +299,22 @@
     const report = document.createElement('a');
     report.className = 'thread';
     report.href = `/api/report/${t.id}`;
-    report.textContent = 'laporan';
+    report.textContent = 'report';
     meta.appendChild(report);
     el.appendChild(meta);
 
-    // Alternatif single-pointer + keyboard untuk drag.
+    // Single-pointer + keyboard alternative to dragging.
     const move = document.createElement('div');
     move.className = 'move';
     const label = document.createElement('label');
     label.htmlFor = `move-${t.id}`;
-    label.textContent = 'Pindahkan';
+    label.textContent = 'Move';
     const sel = document.createElement('select');
     sel.id = `move-${t.id}`;
     const allowed = state.transitions[t.status] || [];
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = 'pilih…';
+    placeholder.textContent = 'select…';
     sel.appendChild(placeholder);
     for (const status of allowed) {
       const opt = document.createElement('option');
@@ -335,18 +335,18 @@
       const box = document.createElement('div');
       box.className = 'approval';
       const q = document.createElement('p');
-      q.textContent = `Persetujuan #${pending.approval_id} menunggu: ${pending.question}`;
+      q.textContent = `Approval #${pending.approval_id} pending: ${pending.question}`;
       const row = document.createElement('div');
       row.className = 'row';
       const yes = document.createElement('button');
       yes.type = 'button';
       yes.className = 'yes';
-      yes.textContent = 'Setujui';
+      yes.textContent = 'Approve';
       yes.addEventListener('click', () => decide(pending.approval_id, true));
       const no = document.createElement('button');
       no.type = 'button';
       no.className = 'no';
-      no.textContent = 'Tolak';
+      no.textContent = 'Reject';
       no.addEventListener('click', () => decide(pending.approval_id, false));
       row.append(yes, no);
       box.append(q, row);
@@ -356,7 +356,7 @@
     const force = document.createElement('details');
     force.className = 'force';
     const summary = document.createElement('summary');
-    summary.textContent = 'Paksa pindah…';
+    summary.textContent = 'Force move…';
     force.appendChild(summary);
     const row = document.createElement('div');
     row.className = 'row';
@@ -365,14 +365,14 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = LABELS[status] || status;
-      b.setAttribute('aria-label', `Paksa ${t.id} ke ${LABELS[status] || status}`);
+      b.setAttribute('aria-label', `Force ${t.id} to ${LABELS[status] || status}`);
       b.addEventListener('click', () => moveTicket(t.id, status, true));
       row.appendChild(b);
     }
     force.appendChild(row);
     el.appendChild(force);
 
-    // Kolom akhir (done) tidak punya transisi: sembunyikan kontrol yang tak berguna.
+    // The terminal column (done) has no transitions: hide the useless controls.
     if (!allowed.length) {
       el.querySelector('.move')?.remove();
       el.querySelector('details.force')?.remove();
@@ -412,7 +412,7 @@
         if (!ticket || ticket.status === status) return;
         const allowed = state.transitions[ticket.status] || [];
         if (!allowed.includes(status)) {
-          say(`${id}: ${LABELS[ticket.status]} → ${LABELS[status]} tidak diizinkan. Pakai "Paksa pindah…" jika memang mau.`, true);
+          say(`${id}: ${LABELS[ticket.status]} → ${LABELS[status]} is not allowed. Use "Force move…" if you really mean it.`, true);
           return;
         }
         moveTicket(id, status, false);
@@ -421,14 +421,14 @@
       if (!items.length) {
         const empty = document.createElement('p');
         empty.className = 'empty';
-        empty.textContent = 'kosong';
+        empty.textContent = 'empty';
         col.appendChild(empty);
       }
       for (const ticket of items) col.appendChild(card(ticket));
       board.appendChild(col);
     }
     if ((state.approvalCount || 0) > 0) {
-      counts.innerHTML = `<span class="chip" style="border-color:var(--warn);color:var(--warn)">Persetujuan: ${state.approvalCount}</span>`;
+      counts.innerHTML = `<span class="chip" style="border-color:var(--warn);color:var(--warn)">Approvals: ${state.approvalCount}</span>`;
     } else {
       counts.innerHTML = '';
     }
@@ -466,7 +466,7 @@
     const providers = enabledProviders();
     select.innerHTML = providers
       .map(p => `<option value="${p.instanceId}">${p.displayName} (${p.instanceId})</option>`).join('');
-    if (!providers.length) select.innerHTML = '<option value="">(tidak ada harness aktif)</option>';
+    if (!providers.length) select.innerHTML = '<option value="">(no enabled harness)</option>';
   }
 
   function fillModels(form, preferred) {
@@ -475,7 +475,7 @@
     form.model.innerHTML = models
       .map(m => `<option value="${m.slug}">${m.name} — ${m.slug}</option>`).join('');
     if (!models.length) {
-      form.model.innerHTML = '<option value="">(tidak ada model)</option>';
+      form.model.innerHTML = '<option value="">(no models)</option>';
       return;
     }
     const pick = preferred && models.some(m => m.slug === preferred)
@@ -490,11 +490,11 @@
     const hint = document.getElementById('model-hint');
     const provider = enabledProviders().find(p => p.instanceId === form.provider.value);
     const model = provider && provider.models.find(m => m.slug === form.model.value);
-    if (!model) { hint.textContent = 'Pilih harness dan model.'; return; }
+    if (!model) { hint.textContent = 'Pick a harness and a model.'; return; }
     const options = (model.options || []).map(o => `${o.label}: ${o.values.map(v => v.id).join('/')}`);
     hint.textContent = options.length
-      ? `Opsi model — ${options.join(' · ')}. Opsi mengikuti default project; CLI belum punya flag untuk mengubahnya per tiket.`
-      : 'Model ini tidak punya opsi tambahan.';
+      ? `Model options — ${options.join(' · ')}. Options follow the project default; the CLI has no flag to change them per ticket.`
+      : 'This model has no extra options.';
   }
 
   function fillProfiles(select) {
@@ -526,7 +526,7 @@
     const data = await api('/api/threads');
     const form = document.getElementById('form-adopt');
     form.thread_id.innerHTML = (data.threads || []).slice(0, 40).map(t =>
-      `<option value="${t.thread_id}">${(t.project || '?')} · ${(t.title || '(tanpa judul)').slice(0, 48)} [${t.status || '?'}]</option>`
+      `<option value="${t.thread_id}">${(t.project || '?')} · ${(t.title || '(untitled)').slice(0, 48)} [${t.status || '?'}]</option>`
     ).join('');
     await ensureCatalog();
     fillPresets(form.profile);
@@ -538,12 +538,12 @@
     const data = await res.json();
     const projects = [...new Set(data.tickets.map(t => t.project))].sort();
     const keep = projectSel.value;
-    projectSel.innerHTML = '<option value="">Semua project</option>' +
+    projectSel.innerHTML = '<option value="">All projects</option>' +
       projects.map(p => `<option value="${p}">${p}</option>`).join('');
     projectSel.value = projects.includes(keep) ? keep : '';
     state = data;
     render();
-    foot.textContent = `${data.tickets.length} tiket · profil tersedia: ${(data.profiles || []).join(', ') || '-'}`;
+    foot.textContent = `${data.tickets.length} tickets · profiles available: ${(data.profiles || []).join(', ') || '-'}`;
   }
 
   async function moveTicket(id, status, force) {
@@ -558,10 +558,10 @@
         body: JSON.stringify({ status, force })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'gagal memindahkan');
+      if (!res.ok) throw new Error(data.error || 'move failed');
       state.tickets = state.tickets.map(t => t.id === id ? data.ticket : t);
       await load();
-      say(`${id} dipindah ke ${LABELS[status] || status}${force ? ' (paksa)' : ''}`);
+      say(`${id} moved to ${LABELS[status] || status}${force ? ' (forced)' : ''}`);
     } catch (err) {
       state.tickets = state.tickets.map(t => t.id === id ? before : t);
       render();
@@ -577,8 +577,8 @@
         body: JSON.stringify({ approved })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'gagal');
-      say(`Persetujuan #${approvalId} ${approved ? 'disetujui' : 'ditolak'}`);
+      if (!res.ok) throw new Error(data.error || 'failed');
+      say(`Approval #${approvalId} ${approved ? 'approved' : 'rejected'}`);
       await load();
     } catch (err) {
       say(String(err.message || err), true);
@@ -623,7 +623,7 @@
       const data = await api('/api/tickets', { method: 'POST', body: JSON.stringify(body) });
       form.closest('dialog').close();
       form.reset();
-      say(`${data.ticket.id} dibuat`);
+      say(`${data.ticket.id} created`);
       await load();
     } catch (err) { say(err.message, true); }
   });
@@ -638,7 +638,7 @@
       });
       form.closest('dialog').close();
       form.reset();
-      say(data.message || 'project terdaftar');
+      say(data.message || 'project registered');
     } catch (err) { say(err.message, true); }
   });
 
@@ -659,18 +659,18 @@
         }),
       });
       form.closest('dialog').close();
-      say(`${data.ticket.id} mengadopsi thread`);
+      say(`${data.ticket.id} adopted the thread`);
       await load();
     } catch (err) { say(err.message, true); }
   });
 
-  // untuk verifikasi visual: /#new membuka dialog tiket
+  // for visual checks: /#new opens the ticket dialog
   if (location.hash === '#new') openTicketDialog().catch(() => {});
   if (location.hash === '#adopt') openAdoptDialog().catch(() => {});
 
   q.addEventListener('input', render);
   projectSel.addEventListener('change', render);
-  load().catch(err => say('gagal memuat: ' + err.message, true));
+  load().catch(err => say('load failed: ' + err.message, true));
   setInterval(() => load().catch(() => {}), 15000);
 })();
 </script>

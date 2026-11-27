@@ -18,17 +18,17 @@ CONFIG = Path.home() / ".config/t3-wa-notify/config.json"
 
 
 def main() -> int:
-    unit = sys.argv[1] if len(sys.argv) > 1 else "unit tidak dikenal"
+    unit = sys.argv[1] if len(sys.argv) > 1 else "unknown unit"
     if not CONFIG.exists():
-        print("config notifier tidak ada", file=sys.stderr)
+        print("notifier config is missing", file=sys.stderr)
         return 1
     telegram = json.loads(CONFIG.read_text(encoding="utf-8")).get("telegram") or {}
     token = telegram.get("botToken")
     chat = telegram.get("chatId")
     if not token or not chat:
-        print("token/chat Telegram belum diisi", file=sys.stderr)
+        print("Telegram token/chat is not set", file=sys.stderr)
         return 1
-    text = f"⚠️ {unit} gagal. Cek: journalctl --user -u {unit} -n 50"
+    text = f"⚠️ {unit} failed. Check: journalctl --user -u {unit} -n 50"
     request = urllib.request.Request(
         f"https://api.telegram.org/bot{token}/sendMessage",
         data=json.dumps({"chat_id": chat, "text": text}).encode(),
@@ -38,7 +38,7 @@ def main() -> int:
         with urllib.request.urlopen(request, timeout=20) as response:
             return 0 if response.status == 200 else 1
     except (urllib.error.URLError, TimeoutError) as exc:
-        print(f"gagal kirim: {exc}", file=sys.stderr)
+        print(f"send failed: {exc}", file=sys.stderr)
         return 1
 
 

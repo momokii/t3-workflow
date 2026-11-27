@@ -12,8 +12,8 @@ The order matters: a ticket waiting in `testing` is handled before a new ticket 
 started, so the loop drains work instead of piling up threads.
 
     python3 watcher.py --once --dry-run
-    python3 watcher.py --once            # satu langkah
-    python3 watcher.py --loop            # jalan terus, interval dari config
+    python3 watcher.py --once            # one step
+    python3 watcher.py --loop            # keep running, interval from config
 
 Model selection is never invented here: the profile comes from the ticket or from
 `defaults.profile`, and both live in the config the human owns. A ticket marked
@@ -52,7 +52,7 @@ def project_path(project: str, t3_db: Path = T3_DB) -> str:
     if project.startswith("/"):
         return project
     if not t3_db.exists():
-        raise TicketError(f"project '{project}' bukan path absolut dan database T3 tidak ada")
+        raise TicketError(f"project '{project}' is not an absolute path and the T3 database is missing")
     con = sqlite3.connect(f"file:{t3_db}?mode=ro", uri=True, timeout=5)
     try:
         rows = con.execute(
@@ -62,23 +62,23 @@ def project_path(project: str, t3_db: Path = T3_DB) -> str:
     finally:
         con.close()
     if not rows:
-        raise TicketError(f"project '{project}' tidak ada di T3 (pakai judul persis atau path absolut)")
+        raise TicketError(f"project '{project}' is not in T3 (use the exact title or an absolute path)")
     if len(rows) > 1:
-        raise TicketError(f"project '{project}' ambigu ({len(rows)} kandidat)")
+        raise TicketError(f"project '{project}' is ambiguous ({len(rows)} candidates)")
     return rows[0][0]
 
 
 def build_prompt(ticket: dict) -> str:
-    parts = [ticket["title"], "", ticket["body"] or "(tanpa deskripsi)"]
+    parts = [ticket["title"], "", ticket["body"] or "(no description)"]
     if ticket.get("attachment_path"):
-        parts += ["", f"Lampiran (baca dari path ini bila perlu): {ticket['attachment_path']}"]
+        parts += ["", f"Attachment (read it from this path when needed): {ticket['attachment_path']}"]
     if ticket["test_cmd"]:
-        parts += ["", "Perintah test yang harus lulus:", ticket["test_cmd"]]
+        parts += ["", "Test command that must pass:", ticket["test_cmd"]]
     parts += [
         "",
-        f"Tiket: {ticket['id']} · project: {ticket['project']}",
-        "Kerjakan tiket ini sampai tuntas dan laporkan hasilnya. Status tiket diurus watcher; "
-        "kamu tidak perlu memindahkannya.",
+        f"Ticket: {ticket['id']} · project: {ticket['project']}",
+        "Finish this ticket and report the result. The watcher owns the ticket status; "
+        "you do not need to move it.",
     ]
     return "\n".join(parts).strip()
 
@@ -114,7 +114,7 @@ def sync_threads(store: TicketStore, config: dict, runner=None) -> list[str]:
             continue
         status = thread_status(config, thread_id, runner=runner)
         if status in ("completed", "idle"):
-            store.move(ticket["id"], "testing", f"thread selesai ({status})")
+            store.move(ticket["id"], "testing", f"thread finished ({status})")
             notes.append(f"{ticket['id']} → testing (thread {status})")
         elif status in ("failed", "cancelled", "interrupted"):
             store.move(ticket["id"], "blocked", f"thread {status}")
@@ -130,12 +130,12 @@ def approval_gate(store: TicketStore, ticket: dict) -> str | None:
     if state == "approved":
         return None
     if state == "pending":
-        return f"{ticket['id']} menunggu persetujuan"
+        return f"{ticket['id']} is waiting for approval"
     if state == "rejected":
-        store.move(ticket["id"], "blocked", "persetujuan ditolak")
-        return f"{ticket['id']} ditolak → blocked"
-    approval = store.request_approval(ticket["id"], f"Mulai tiket {ticket['id']}: {ticket['title']}")
-    return f"{ticket['id']} butuh persetujuan (approval #{approval['approval_id']})"
+        store.move(ticket["id"], "blocked", "approval rejected")
+        return f"{ticket['id']} was rejected → blocked"
+    approval = store.request_approval(ticket["id"], f"Start ticket {ticket['id']}: {ticket['title']}")
+    return f"{ticket['id']} needs approval (approval #{approval['approval_id']})"
 
 
 # ---------------------------------------------------------------- dev stage
@@ -151,7 +151,7 @@ def run_once(
 ) -> str:
     ticket = store.next_ready()
     if ticket is None:
-        return "tidak ada tiket berstatus ready"
+        return "no ticket is ready"
     gate = approval_gate(store, ticket)
     if gate:
         return gate
@@ -162,7 +162,7 @@ def run_once(
         raise TicketError(str(exc)) from exc
     source = selection["source"]
     if source == "ticket":
-        label = "pilihan tiket"
+        label = "ticket choice"
     elif source.startswith("profile:"):
         label = f"preset {source.split(':', 1)[1]}"
     else:
@@ -171,8 +171,8 @@ def run_once(
     if dry_run:
         if ticket.get("thread_id"):
             return (
-                f"[dry-run] {ticket['id']} · lanjutkan thread {ticket['thread_id']} "
-                f"(profil {profile['name']})"
+                f"[dry-run] {ticket['id']} · continue thread {ticket['thread_id']} "
+                f"(profile {profile['name']})"
             )
         preview = [
             t3_cli, "thread", "start", project_path(ticket["project"]), "-",
@@ -180,7 +180,7 @@ def run_once(
             "--model", profile["model"], "--json",
         ]
         return (
-            f"[dry-run] {ticket['id']} · profil {profile['name']} "
+            f"[dry-run] {ticket['id']} · profile {profile['name']} "
             f"({profile['provider']} / {profile['model']})\n"
             f"  {' '.join(preview[:5])} …\n"
             f"  prompt: {prompt.splitlines()[0][:70]}"
@@ -189,18 +189,18 @@ def run_once(
     store.claim(ticket["id"], worker)
 
     if ticket.get("thread_id"):
-        # Tiket membawa thread: lanjutkan thread itu, jangan buat yang baru.
+        # The ticket carries a thread: continue it, never start a second one.
         command = [t3_cli, "thread", "send", ticket["thread_id"], "-", "--json"]
         try:
             proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
         except (OSError, subprocess.TimeoutExpired) as exc:
-            store.move(ticket["id"], "blocked", f"thread send gagal: {type(exc).__name__}")
-            raise TicketError(f"gagal melanjutkan thread: {exc}") from exc
+            store.move(ticket["id"], "blocked", f"thread send failed: {type(exc).__name__}")
+            raise TicketError(f"failed to continue thread: {exc}") from exc
         if proc.returncode != 0:
             store.move(ticket["id"], "blocked", f"thread send rc={proc.returncode}")
-            raise TicketError(f"thread send gagal (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:200]}")
+            raise TicketError(f"thread send failed (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:200]}")
         store.record_event(ticket["id"], "continued", f"thread {ticket['thread_id']}")
-        return f"{ticket['id']} → melanjutkan thread {ticket['thread_id']} (profil {profile['name']})"
+        return f"{ticket['id']} → continuing thread {ticket['thread_id']} (profile {profile['name']})"
 
     command = [t3_cli, "thread", "start", project_path(ticket["project"]), "-",
                "--title", ticket["title"][:70],
@@ -208,18 +208,18 @@ def run_once(
     try:
         proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        store.move(ticket["id"], "blocked", f"start gagal: {type(exc).__name__}")
-        raise TicketError(f"gagal menjalankan t3: {type(exc).__name__}: {exc}") from exc
+        store.move(ticket["id"], "blocked", f"start failed: {type(exc).__name__}")
+        raise TicketError(f"failed to run t3: {type(exc).__name__}: {exc}") from exc
     if proc.returncode != 0:
         store.move(ticket["id"], "blocked", f"t3 rc={proc.returncode}")
-        raise TicketError(f"t3 gagal (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:300]}")
+        raise TicketError(f"t3 failed (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:300]}")
     try:
         thread_id = json.loads(proc.stdout)["threadId"]
     except (json.JSONDecodeError, KeyError) as exc:
-        store.move(ticket["id"], "blocked", "output t3 bukan JSON")
-        raise TicketError(f"output t3 tidak berisi threadId: {(proc.stdout or '')[:200]}") from exc
+        store.move(ticket["id"], "blocked", "t3 output is not JSON")
+        raise TicketError(f"t3 output has no threadId: {(proc.stdout or '')[:200]}") from exc
     store.attach_thread(ticket["id"], thread_id)
-    return f"{ticket['id']} → thread {thread_id} (profil {profile['name']})"
+    return f"{ticket['id']} → thread {thread_id} (profile {profile['name']})"
 
 
 # ---------------------------------------------------------------- release stage
@@ -237,11 +237,11 @@ def _slug(text: str, limit: int = 40) -> str:
     out = "".join(ch.lower() if ch.isalnum() else "-" for ch in text)
     while "--" in out:
         out = out.replace("--", "-")
-    return out.strip("-")[:limit] or "tiket"
+    return out.strip("-")[:limit] or "ticket"
 
 
 def compare_url(remote_url: str, base: str, branch: str) -> str:
-    """Tautan 'buat PR' dari URL remote, tanpa perlu gh atau token."""
+    """Build a 'create PR' link from the remote URL, without gh or a token."""
     url = remote_url.strip()
     if url.startswith("git@"):  # git@github.com:owner/repo.git
         host, _, path = url[4:].partition(":")
@@ -262,27 +262,27 @@ def release(store: TicketStore, ticket: dict, config: dict) -> str:
     """
     cfg = config.get("release") or {}
     if not cfg.get("enabled"):
-        raise TicketError("release dimatikan (release.enabled=false di config)")
+        raise TicketError("release is disabled (release.enabled=false in config)")
     mode = cfg.get("mode", "branch")
     if mode != "branch":
-        raise TicketError(f"release.mode '{mode}' belum didukung (hanya 'branch')")
+        raise TicketError(f"release.mode '{mode}' is not supported yet (only 'branch')")
     proof = (ticket.get("proof") or "").strip()
-    if not proof.startswith("[LULUS]"):
+    if not proof.startswith("[PASS]"):
         raise TicketError(
-            f"{ticket['id']} belum punya bukti test lulus — jalankan test dulu, atau pindahkan manual"
+            f"{ticket['id']} has no passing test evidence — run the test first, or move it by hand"
         )
     path = project_path(ticket["project"])
     remote = cfg.get("remote", "origin")
     code, _ = _git(["remote", "get-url", remote], path)
     if code != 0:
-        raise TicketError(f"repo {path} tidak punya remote '{remote}' — push tidak mungkin")
+        raise TicketError(f"repository {path} has no remote '{remote}' — cannot push")
 
     code, status = _git(["status", "--porcelain"], path)
     if code != 0:
-        raise TicketError(f"git status gagal di {path}")
+        raise TicketError(f"git status failed in {path}")
     if not status.strip():
-        store.move(ticket["id"], "done", "release: tidak ada perubahan untuk di-push")
-        return f"{ticket['id']}: tidak ada perubahan — tiket langsung selesai"
+        store.move(ticket["id"], "done", "release: nothing to push")
+        return f"{ticket['id']}: no changes — ticket finished directly"
 
     branch = f"ticket/{ticket['id'].lower()}-{_slug(ticket['title'])}"
     code, current = _git(["rev-parse", "--abbrev-ref", "HEAD"], path)
@@ -291,28 +291,28 @@ def release(store: TicketStore, ticket: dict, config: dict) -> str:
         if code != 0:
             code, out = _git(["checkout", branch], path)
             if code != 0:
-                raise TicketError(f"tidak bisa pindah ke branch {branch}: {out[:200]}")
+                raise TicketError(f"cannot switch to branch {branch}: {out[:200]}")
 
     _git(["add", "-A"], path)
     message = f"feat({ticket['id'].lower()}): {ticket['title']}"
     code, out = _git(["commit", "-m", message], path)
     if code != 0 and "nothing to commit" not in out:
-        raise TicketError(f"commit gagal: {out[:200]}")
+        raise TicketError(f"commit failed: {out[:200]}")
 
     code, out = _git(["push", "-u", remote, branch], path)
     if code != 0:
-        raise TicketError(f"push gagal: {out[:300]}")
+        raise TicketError(f"push failed: {out[:300]}")
 
     _, remote_url = _git(["remote", "get-url", remote], path)
     base = (config.get("release") or {}).get("baseBranch") or "main"
     link = compare_url(remote_url, base, branch)
     body_path = store.write_pr_body(ticket["id"], branch, remote_url)
     store.set_branch(ticket["id"], branch, pr_url=link)
-    store.move(ticket["id"], "done", f"release: {branch} di-push ke {remote}")
+    store.move(ticket["id"], "done", f"release: pushed {branch} to {remote}")
     suffix = f" · PR: {link}" if link else ""
     if body_path:
         suffix += f" · body: {body_path}"
-    return f"{ticket['id']}: branch {branch} di-push ke {remote}{suffix}"
+    return f"{ticket['id']}: pushed branch {branch} to {remote}{suffix}"
 
 
 # ---------------------------------------------------------------- test stage
@@ -322,9 +322,9 @@ def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
     """Run the ticket's test command and turn the exit code into a status move."""
     command = (ticket.get("test_cmd") or "").strip()
     if not command:
-        store.attach_proof(ticket["id"], False, "tidak ada test_cmd pada tiket")
-        store.move(ticket["id"], "in-progress", "test dilewati: test_cmd kosong")
-        return f"{ticket['id']}: test_cmd kosong → in-progress"
+        store.attach_proof(ticket["id"], False, "ticket has no test_cmd")
+        store.move(ticket["id"], "in-progress", "test skipped: test_cmd is empty")
+        return f"{ticket['id']}: test_cmd is empty → in-progress"
     cwd = project_path(ticket["project"])
     try:
         proc = runner(
@@ -339,12 +339,12 @@ def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
     output = ((proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")).strip()
     tail = "\n".join(output.splitlines()[-40:])
     ok = proc.returncode == 0
-    store.attach_proof(ticket["id"], ok, tail or "(tanpa output)")
+    store.attach_proof(ticket["id"], ok, tail or "(no output)")
     if ok:
-        store.move(ticket["id"], "review", "test lulus")
-        return f"{ticket['id']}: test lulus (rc=0) → review"
-    store.move(ticket["id"], "in-progress", f"test gagal (rc={proc.returncode})")
-    return f"{ticket['id']}: test gagal (rc={proc.returncode}) → in-progress"
+        store.move(ticket["id"], "review", "test passed")
+        return f"{ticket['id']}: test passed (rc=0) → review"
+    store.move(ticket["id"], "in-progress", f"test failed (rc={proc.returncode})")
+    return f"{ticket['id']}: test failed (rc={proc.returncode}) → in-progress"
 
 
 def active_tickets(store: TicketStore) -> list[dict]:
@@ -352,11 +352,11 @@ def active_tickets(store: TicketStore) -> list[dict]:
 
 
 def enforce_budget(store: TicketStore, config: dict) -> list[str]:
-    """Tandai tiket yang melewati anggaran waktu, supaya tidak menggantung.
+    """Flag tickets that overran their time budget so they do not hang forever.
 
-    Anggarannya sengaja kasar: satu angka menit di config, bukan penghitung token,
-    karena watcher tidak melihat biaya provider. Tujuannya memutus loop yang macet,
-    bukan menagih pemakaian.
+    The budget is deliberately coarse: one minute figure in config, not a token meter,
+    because the watcher never sees provider cost. Its purpose is to break a stuck loop,
+    not to bill usage.
     """
     limit = int((config.get("limits") or {}).get("maxInProgressMinutes", 0) or 0)
     if limit <= 0:
@@ -374,9 +374,9 @@ def enforce_budget(store: TicketStore, config: dict) -> list[str]:
         if minutes > limit:
             store.move(
                 ticket["id"], "blocked",
-                f"anggaran waktu: {minutes:.0f} menit > {limit} menit",
+                f"time budget: {minutes:.0f} min > {limit} min",
             )
-            notes.append(f"{ticket['id']} melewati anggaran ({minutes:.0f} menit) → blocked")
+            notes.append(f"{ticket['id']} exceeded its budget ({minutes:.0f} min) → blocked")
     return notes
 
 
@@ -403,26 +403,26 @@ def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: s
     review = next_review(store)
     if review is not None:
         if dry_run:
-            return f"[dry-run] {review['id']} · release: push branch dan selesaikan tiket"
+            return f"[dry-run] {review['id']} · release: push branch and finish the ticket"
         return release(store, review, config)
 
     testing = next_testing(store)
     if testing is not None:
         if dry_run:
-            return f"[dry-run] {testing['id']} · jalankan test: {testing['test_cmd'] or '(kosong)'}"
+            return f"[dry-run] {testing['id']} · run test: {testing['test_cmd'] or '(empty)'}"
         return run_test(store, testing, runner=runner)
     limit = int((config.get("watcher") or {}).get("maxConcurrent", 1) or 1)
     active = active_tickets(store)
     if len(active) >= limit:
-        return f"{len(active)} tiket in-progress (batas {limit}) — tiket baru menunggu"
+        return f"{len(active)} in-progress tickets (limit {limit}) — new tickets wait"
     return run_once(store, config, t3_cli, dry_run, worker, runner=runner)
 
 
 def loop(store_factory, config: dict, t3_cli: str, interval: int, worker: str) -> None:
-    print(f"watcher mulai (interval {interval}s)", flush=True)
+    print(f"watcher started (interval {interval}s)", flush=True)
     while True:
         if not (config.get("watcher") or {}).get("enabled", True):
-            print("watcher dijeda lewat config (watcher.enabled=false)", flush=True)
+            print("watcher paused by config (watcher.enabled=false)", flush=True)
             time.sleep(max(60, interval))
             continue
         store = store_factory()
@@ -438,13 +438,13 @@ def loop(store_factory, config: dict, t3_cli: str, interval: int, worker: str) -
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--once", action="store_true", help="satu langkah lalu keluar")
-    parser.add_argument("--loop", action="store_true", help="jalan terus dengan interval dari config")
-    parser.add_argument("--dry-run", action="store_true", help="cetak rencana, tidak mengubah apa pun")
+    parser.add_argument("--once", action="store_true", help="run one step then exit")
+    parser.add_argument("--loop", action="store_true", help="keep running at the configured interval")
+    parser.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
     parser.add_argument("--db", default=str(DB_PATH))
     parser.add_argument("--config", default=str(CONFIG_PATH))
     parser.add_argument("--worker", default="watcher")
-    parser.add_argument("--interval", type=int, default=0, help="detik antar langkah (default dari config)")
+    parser.add_argument("--interval", type=int, default=0, help="seconds between steps (default from config)")
     args = parser.parse_args()
 
     config = load_config(Path(args.config))
@@ -463,9 +463,9 @@ def main() -> int:
         if args.once:
             print(step(store, config, t3_cli, args.dry_run, args.worker))
         else:
-            print("pakai --once atau --loop")
+            print("use --once or --loop")
     except TicketError as exc:
-        print(f"ditolak: {exc}", file=sys.stderr)
+        print(f"rejected: {exc}", file=sys.stderr)
         return 2
     finally:
         if store:

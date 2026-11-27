@@ -116,7 +116,7 @@ class LoopTests(unittest.TestCase):
         self.assertIn("kelanach", FakeTelegram.sent[0]["text"])
         self.assertEqual(FakeTelegram.sent[0]["chat_id"], CHAT)
 
-        # putaran berikutnya mengirim offset yang sudah maju
+        # the next round sends the already advanced offset
         FakeTelegram.updates = []
         bridge.poll_once(self.config, state)
         self.assertEqual(FakeTelegram.offsets[-1], 101)

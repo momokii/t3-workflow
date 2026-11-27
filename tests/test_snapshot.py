@@ -32,7 +32,7 @@ class SnapshotTests(unittest.TestCase):
         }))
         self.db = self.tmp / "t.sqlite"
         store = TicketStore(self.db, self.config)
-        store.add("tiket snapshot", "/tmp/p", model_profile="fast", status="ready")
+        store.add("snapshot ticket", "/tmp/p", model_profile="fast", status="ready")
         store.close()
         self.out = self.tmp / "STATE.md"
 
@@ -57,7 +57,7 @@ class SnapshotTests(unittest.TestCase):
                               capture_output=True, text=True).stdout.strip()
         self.assertIn(head, text)
         self.assertIn("T-0001", text)
-        self.assertIn("tiket snapshot", text)
+        self.assertIn("snapshot ticket", text)
         self.assertIn("`pi` | True | 1", text)
 
     def test_is_not_a_hand_edited_file(self) -> None:

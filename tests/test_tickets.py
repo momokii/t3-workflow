@@ -44,22 +44,22 @@ class StoreTests(unittest.TestCase):
         self.store.close()
 
     def test_add_assigns_sequential_ids(self) -> None:
-        first = self.store.add("satu", "t3-workflow", model_profile="fast")
-        second = self.store.add("dua", "t3-workflow", model_profile="deep")
+        first = self.store.add("one", "t3-workflow", model_profile="fast")
+        second = self.store.add("two", "t3-workflow", model_profile="deep")
         self.assertEqual(first["id"], "T-0001")
         self.assertEqual(second["id"], "T-0002")
 
     def test_add_rejects_unknown_profile(self) -> None:
         with self.assertRaises(TicketError) as ctx:
-            self.store.add("x", "t3-workflow", model_profile="tidak-ada")
-        self.assertIn("tidak ada di config", str(ctx.exception))
+            self.store.add("x", "t3-workflow", model_profile="no-such-profile")
+        self.assertIn("is not in config", str(ctx.exception))
 
     def test_transitions_allowed_and_rejected(self) -> None:
         ticket = self.store.add("x", "t3-workflow", model_profile="fast", status="backlog")
         ticket = self.store.move(ticket["id"], "ready")
         self.assertEqual(ticket["status"], "ready")
         with self.assertRaises(TicketError):
-            self.store.move(ticket["id"], "done")  # ready → done tidak boleh
+            self.store.move(ticket["id"], "done")  # ready → done is not allowed
 
     def test_claim_is_atomic(self) -> None:
         ticket = self.store.add("x", "t3-workflow", model_profile="fast", status="ready")
@@ -137,7 +137,7 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(self.store.get(ticket["id"])["status"], "blocked")
 
     def test_unknown_profile_blocks_before_claim(self) -> None:
-        ticket = self.store.add("uji", "/tmp/project", status="ready")  # tanpa profil, ada default
+        ticket = self.store.add("probe", "/tmp/project", status="ready")  # no profile, a default exists
         config = json.loads(json.dumps(CONFIG))
         config["defaults"] = {}
         with self.assertRaises(TicketError):

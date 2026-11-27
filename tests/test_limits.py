@@ -46,7 +46,7 @@ class LimitTests(unittest.TestCase):
         self.store.add("aktif", "/tmp/p", model_profile="fast", status="in-progress")
         self.store.add("baru", "/tmp/p", model_profile="fast", status="ready")
         message = watcher.step(self.store, CONFIG, "/bin/true", dry_run=False)
-        self.assertIn("menunggu", message)
+        self.assertIn("wait", message)
         self.assertNotIn("thread", message)
 
     def test_ready_ticket_starts_when_slot_free(self) -> None:
@@ -67,7 +67,7 @@ class LimitTests(unittest.TestCase):
         notes = watcher.enforce_budget(self.store, CONFIG)
         self.assertTrue(notes)
         self.assertEqual(self.store.get(ticket["id"])["status"], "blocked")
-        self.assertIn("anggaran", self.store.get(ticket["id"])["note"])
+        self.assertIn("budget", self.store.get(ticket["id"])["note"])
 
     def test_budget_disabled_does_nothing(self) -> None:
         ticket = self.store.add("macet", "/tmp/p", model_profile="fast", status="in-progress")

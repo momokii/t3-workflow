@@ -34,26 +34,26 @@ CONFIG = {
 class BoardApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        board.Handler.token = "rahasia"
+        board.Handler.token = "secret"
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), board.Handler)
         cls.port = cls.server.server_address[1]
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
 
     def setUp(self) -> None:
         os.environ["T3_REPORTS_DIR"] = str(Path(tempfile.mkdtemp(prefix="reports-")) / "reports")
-        """Database baru per test, supaya urutan test tidak saling mempengaruhi."""
+        """A fresh database per test so test order cannot interfere."""
         self.tmp = Path(tempfile.mkdtemp(prefix="board-"))
         self.config = self.tmp / "config.json"
         self.config.write_text(json.dumps(CONFIG))
         self.db = self.tmp / "t.sqlite"
         store = TicketStore(self.db, self.config)
-        store.add("tiket satu", "t3-workflow", model_profile="fast", test_cmd="true", status="backlog")
-        store.add("tiket dua", "t3-workflow", model_profile="fast", status="ready")
+        store.add("ticket one", "t3-workflow", model_profile="fast", test_cmd="true", status="backlog")
+        store.add("ticket two", "t3-workflow", model_profile="fast", status="ready")
         store.close()
         board.Handler.store_path = self.db
         board.Handler.config_path = self.config
 
-        # database T3 tiruan: dua project, satu thread
+        # fake T3 database: two projects, one thread
         self.t3_db = self.tmp / "t3.sqlite"
         con = sqlite3.connect(self.t3_db)
         con.executescript(
@@ -68,7 +68,7 @@ class BoardApiTests(unittest.TestCase):
         con.close()
         board.Handler.t3_db_path = self.t3_db
 
-        # katalog model tiruan: satu provider aktif, satu nonaktif
+        # fake model catalogue: one active provider, one disabled
         self.catalog_dir = self.tmp / "caches"
         self.catalog_dir.mkdir()
         (self.catalog_dir / "pi.json").write_text(json.dumps({
@@ -114,18 +114,18 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(response.status, 401)
 
     def test_move_allowed_with_token(self) -> None:
-        response, raw = self.request("POST", "/api/tickets/T-0001/move", {"status": "ready"}, token="rahasia")
+        response, raw = self.request("POST", "/api/tickets/T-0001/move", {"status": "ready"}, token="secret")
         self.assertEqual(response.status, 200)
         self.assertEqual(json.loads(raw)["ticket"]["status"], "ready")
 
     def test_move_invalid_transition_is_rejected(self) -> None:
-        response, raw = self.request("POST", "/api/tickets/T-0002/move", {"status": "done"}, token="rahasia")
+        response, raw = self.request("POST", "/api/tickets/T-0002/move", {"status": "done"}, token="secret")
         self.assertEqual(response.status, 409)
-        self.assertIn("tidak diizinkan", json.loads(raw)["error"])
+        self.assertIn("not allowed", json.loads(raw)["error"])
 
     def test_force_move_is_allowed_and_recorded(self) -> None:
         response, raw = self.request(
-            "POST", "/api/tickets/T-0002/move", {"status": "done", "force": True}, token="rahasia"
+            "POST", "/api/tickets/T-0002/move", {"status": "done", "force": True}, token="secret"
         )
         self.assertEqual(response.status, 200)
         self.assertEqual(json.loads(raw)["ticket"]["status"], "done")
@@ -139,7 +139,7 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertIn("text/markdown", response.getheader("Content-Type"))
         self.assertIn("# T-0001", raw)
-        self.assertIn("## Riwayat", raw)
+        self.assertIn("## History", raw)
 
     def test_report_unknown_ticket_is_404(self) -> None:
         response, _ = self.request("GET", "/api/report/T-9999")
@@ -166,11 +166,11 @@ class BoardApiTests(unittest.TestCase):
         approval = store.request_approval("T-0001", "mulai?")
         store.close()
         path = f"/api/approvals/{approval['approval_id']}/decide"
-        first, _ = self.request("POST", path, {"approved": True}, token="rahasia")
+        first, _ = self.request("POST", path, {"approved": True}, token="secret")
         self.assertEqual(first.status, 200)
-        second, raw = self.request("POST", path, {"approved": False}, token="rahasia")
+        second, raw = self.request("POST", path, {"approved": False}, token="secret")
         self.assertEqual(second.status, 409)
-        self.assertIn("sudah", json.loads(raw)["error"])
+        self.assertIn("already", json.loads(raw)["error"])
 
     def test_healthz_reports_ticket_count(self) -> None:
         response, raw = self.request("GET", "/healthz")
@@ -189,36 +189,36 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(data["threads"][0]["status"], "completed")
 
     def test_create_ticket_from_board(self) -> None:
-        body = {"title": "dari papan", "project": "t3-workflow", "profile": "fast", "priority": 2}
-        response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+        body = {"title": "from the board", "project": "t3-workflow", "profile": "fast", "priority": 2}
+        response, raw = self.request("POST", "/api/tickets", body, token="secret")
         self.assertEqual(response.status, 200)
-        self.assertEqual(json.loads(raw)["ticket"]["title"], "dari papan")
+        self.assertEqual(json.loads(raw)["ticket"]["title"], "from the board")
         response, _ = self.request("POST", "/api/tickets", {"title": "x", "project": "p"})
         self.assertEqual(response.status, 401)
 
     def test_create_ticket_rejects_unknown_profile(self) -> None:
-        body = {"title": "x", "project": "t3-workflow", "profile": "tidak-ada"}
-        response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+        body = {"title": "x", "project": "t3-workflow", "profile": "no-such-profile"}
+        response, raw = self.request("POST", "/api/tickets", body, token="secret")
         self.assertEqual(response.status, 409)
-        self.assertIn("profil", json.loads(raw)["error"])
+        self.assertIn("profile", json.loads(raw)["error"])
 
     def test_adopt_existing_thread(self) -> None:
         body = {"title": "Thread lama", "project": "t3-workflow", "profile": "fast"}
-        response, raw = self.request("POST", "/api/threads/th-1/adopt", body, token="rahasia")
+        response, raw = self.request("POST", "/api/threads/th-1/adopt", body, token="secret")
         self.assertEqual(response.status, 200)
         ticket = json.loads(raw)["ticket"]
         self.assertEqual(ticket["thread_id"], "th-1")
-        self.assertEqual(ticket["status"], "ready")  # watcher akan melanjutkan thread ini
+        self.assertEqual(ticket["status"], "ready")  # the watcher continues this thread
 
     def test_create_ticket_accepts_body_and_attachment(self) -> None:
         body = {
-            "title": "dengan lampiran", "project": "t3-workflow", "profile": "fast",
-            "body": "konteks panjang", "attachment_path": "/tmp/spec.pdf",
+            "title": "with attachment", "project": "t3-workflow", "profile": "fast",
+            "body": "long context", "attachment_path": "/tmp/spec.pdf",
         }
-        response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+        response, raw = self.request("POST", "/api/tickets", body, token="secret")
         self.assertEqual(response.status, 200)
         ticket = json.loads(raw)["ticket"]
-        self.assertEqual(ticket["body"], "konteks panjang")
+        self.assertEqual(ticket["body"], "long context")
         self.assertEqual(ticket["attachment_path"], "/tmp/spec.pdf")
 
     def test_catalog_lists_providers_with_models(self) -> None:
@@ -232,19 +232,19 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual([p["name"] for p in data["presets"]], ["fast"])
 
     def test_create_ticket_with_explicit_harness_and_model(self) -> None:
-        body = {"title": "pilih model", "project": "t3-workflow",
+        body = {"title": "choose model", "project": "t3-workflow",
                 "provider": "pi", "model": "opencode-go/qwen3.8-max"}
-        response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+        response, raw = self.request("POST", "/api/tickets", body, token="secret")
         self.assertEqual(response.status, 200)
         ticket = json.loads(raw)["ticket"]
         self.assertEqual(ticket["provider"], "pi")
         self.assertEqual(ticket["model"], "opencode-go/qwen3.8-max")
 
     def test_create_ticket_rejects_disabled_provider_and_unknown_model(self) -> None:
-        for provider, model in (("claudeAgent", "claude-opus-5-5"), ("pi", "tidak-ada"), ("pi", "")):
+        for provider, model in (("claudeAgent", "claude-opus-5-5"), ("pi", "no-such-model"), ("pi", "")):
             with self.subTest(provider=provider, model=model):
                 body = {"title": "x", "project": "t3-workflow", "provider": provider, "model": model}
-                response, raw = self.request("POST", "/api/tickets", body, token="rahasia")
+                response, raw = self.request("POST", "/api/tickets", body, token="secret")
                 self.assertEqual(response.status, 409)
                 self.assertIn("error", json.loads(raw))
 
@@ -256,7 +256,7 @@ class BoardApiTests(unittest.TestCase):
 
     def test_register_project_validates_path(self) -> None:
         response, raw = self.request(
-            "POST", "/api/projects", {"title": "baru", "path": "/tidak/ada"}, token="rahasia"
+            "POST", "/api/projects", {"title": "new", "path": "/not/here"}, token="secret"
         )
         self.assertEqual(response.status, 400)
         self.assertIn("path", json.loads(raw)["error"])
@@ -264,7 +264,7 @@ class BoardApiTests(unittest.TestCase):
     def test_page_is_served(self) -> None:
         response, raw = self.request("GET", "/")
         self.assertEqual(response.status, 200)
-        self.assertIn("Papan Tiket", raw)
+        self.assertIn("Ticket Board", raw)
         self.assertIn("2.5.7", raw)
 
 

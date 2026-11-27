@@ -19,7 +19,7 @@ CLI = Path.home() / ".local/bin/t3"
 PROJECT = Path.home() / "Public/main-linux-kelanach/code-berkah-titipan-tuhan/code/personal_prjct/t3-workflow"
 
 
-@unittest.skipUnless(os.environ.get("T3_INTEGRATION") == "1", "set T3_INTEGRATION=1 untuk menjalankan")
+@unittest.skipUnless(os.environ.get("T3_INTEGRATION") == "1", "set T3_INTEGRATION=1 to run")
 class T3Integration(unittest.TestCase):
     def test_cli_reports_a_version(self) -> None:
         proc = subprocess.run([str(CLI), "--version"], capture_output=True, text=True, timeout=60)

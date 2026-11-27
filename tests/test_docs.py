@@ -19,7 +19,7 @@ class DocsTests(unittest.TestCase):
         prompt = text.split("## 10. Copy-paste prompt", 1)[1]
         for needle in ("make snapshot", "STATE.md", "CONFIRMATION", "go"):
             self.assertIn(needle, prompt, f"prompt must mention {needle}")
-        # tiga angka dari snapshot harus diminta secara eksplisit
+        # the three snapshot numbers must be requested explicitly
         for needle in ("HEAD", "commit count", "uncommitted"):
             self.assertIn(needle, prompt)
 

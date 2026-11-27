@@ -81,7 +81,7 @@ create table if not exists approvals (
 create index if not exists approvals_status on approvals(status, approval_id);
 """
 
-# kolom yang ditambahkan sesudah rilis pertama; aman dijalankan berulang
+# columns added after the first release; safe to run repeatedly
 MIGRATIONS = [
     ("tickets", "proof", "text not null default ''"),
     ("tickets", "report_path", "text not null default ''"),
@@ -112,7 +112,7 @@ def now() -> str:
 def load_config(path: Path | None = None) -> dict:
     path = path or CONFIG_PATH
     if not path.exists():
-        raise TicketError(f"config tidak ada: {path}")
+        raise TicketError(f"config not found: {path}")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -124,12 +124,12 @@ def resolve_profile(config: dict, name: str | None) -> dict:
     profiles = config.get("models") or {}
     chosen = name or (config.get("defaults") or {}).get("profile") or ""
     if not chosen:
-        raise TicketError("tiket tidak menyebut profil model dan config tidak punya defaults.profile")
+        raise TicketError("ticket names no model profile and config has no defaults.profile")
     profile = profiles.get(chosen)
     if not profile:
-        raise TicketError(f"profil model '{chosen}' tidak ada di config (pilihan: {', '.join(sorted(profiles)) or 'kosong'})")
+        raise TicketError(f"model profile '{chosen}' is not in config (available: {', '.join(sorted(profiles)) or 'none'})")
     if not profile.get("provider") or not profile.get("model"):
-        raise TicketError(f"profil '{chosen}' harus punya provider dan model")
+        raise TicketError(f"profile '{chosen}' must define provider and model")
     return {"name": chosen, **profile}
 
 
@@ -176,14 +176,14 @@ class TicketStore:
         model: str = "",
     ) -> dict:
         if not title.strip():
-            raise TicketError("judul tiket kosong")
+            raise TicketError("ticket title is empty")
         if status not in STATUSES:
-            raise TicketError(f"status '{status}' tidak dikenal")
+            raise TicketError(f"unknown status '{status}'")
         if priority < 1 or priority > 5:
-            raise TicketError("prioritas harus 1..5")
+            raise TicketError("priority must be 1..5")
         config = load_config(self.config_path)
         if model_profile:
-            resolve_profile(config, model_profile)  # tolak profil asing saat dibuat
+            resolve_profile(config, model_profile)  # reject an unknown profile at creation
         ticket_id = self._next_id()
         stamp = now()
         self.con.execute(
@@ -204,15 +204,15 @@ class TicketStore:
         """
         ticket = self.get(ticket_id)
         if status not in STATUSES:
-            raise TicketError(f"status '{status}' tidak dikenal")
+            raise TicketError(f"unknown status '{status}'")
         if ticket["status"] == status:
-            raise TicketError(f"tiket {ticket_id} sudah berstatus {status}")
+            raise TicketError(f"ticket {ticket_id} is already {status}")
         allowed = status in TRANSITIONS[ticket["status"]]
         if not allowed and not force:
             raise TicketError(
-                f"transisi {ticket['status']} → {status} tidak diizinkan "
-                f"(boleh: {', '.join(sorted(TRANSITIONS[ticket['status']])) or 'tidak ada'}; "
-                "pakai --force untuk memaksa)"
+                f"transition {ticket['status']} → {status} is not allowed "
+                f"(allowed: {', '.join(sorted(TRANSITIONS[ticket['status']])) or 'none'}; "
+                "use --force to override)"
             )
         self.con.execute(
             "update tickets set status=?, updated_at=?, note=? where id=?",
@@ -226,7 +226,7 @@ class TicketStore:
         return self.get(ticket_id)
 
     def write_pr_body(self, ticket_id: str, branch: str, remote_url: str) -> str:
-        """Ringkasan untuk badan PR: apa yang berubah, bukti test, dan tautan."""
+        """PR body summary: what changed, the test evidence, and the link."""
         ticket = self.get(ticket_id)
         reports_dir = Path(os.environ.get("T3_REPORTS_DIR", REPORTS_DIR))
         target = reports_dir / f"{ticket_id}.pr.md"
@@ -237,14 +237,14 @@ class TicketStore:
             ticket["body"] or "",
             "",
             f"- Branch: `{branch}`",
-            f"- Profil model: `{ticket['model_profile'] or 'default'}`",
+            f"- Model profile: `{ticket['model_profile'] or 'default'}`",
         ]
         if ticket["thread_id"]:
             lines.append(f"- Thread: `{ticket['thread_id']}`")
         if ticket["proof"]:
-            lines += ["", "### Bukti test", "", "```", ticket["proof"], "```"]
+            lines += ["", "### Test evidence", "", "```", ticket["proof"], "```"]
         if ticket["test_cmd"]:
-            lines += ["", f"Perintah test: `{ticket['test_cmd']}`"]
+            lines += ["", f"Test command: `{ticket['test_cmd']}`"]
         target.write_text("\n".join(lines) + "\n", encoding="utf-8")
         self.con.execute(
             "update tickets set pr_body_path=?, updated_at=? where id=?", (str(target), now(), ticket_id)
@@ -254,17 +254,17 @@ class TicketStore:
         return str(target)
 
     def list_public(self, status: str | None = None) -> list[dict]:
-        """Daftar untuk HTTP: buang kolom yang bisa besar atau sensitif."""
+        """List for HTTP: drop columns that can be large or sensitive."""
         rows = self.list(status)
         for row in rows:
             row.pop("proof", None)
         return rows
 
     def write_report(self, ticket_id: str) -> str:
-        """Tulis laporan markdown ke disk dan simpan path-nya di tiket.
+        """Write the markdown report to disk and store its path on the ticket.
 
-        Direktori dibaca ulang dari environment setiap kali supaya test bisa
-        mengarahkannya ke folder sementara dan tidak mengotori folder produksi.
+        The directory is re-read from the environment on every call so a test can
+        point it at a temporary folder without touching the production one.
         """
         reports_dir = Path(os.environ.get("T3_REPORTS_DIR", REPORTS_DIR))
         target = reports_dir / f"{ticket_id}.md"
@@ -288,19 +288,19 @@ class TicketStore:
         if cursor.rowcount != 1:
             self.con.rollback()
             current = self.get(ticket_id)["status"]
-            raise TicketError(f"tiket {ticket_id} tidak bisa diambil (status sekarang: {current})")
+            raise TicketError(f"ticket {ticket_id} cannot be claimed (current status: {current})")
         self._event(ticket_id, "claimed", worker)
         self.con.commit()
         return self.get(ticket_id)
 
     def attach_proof(self, ticket_id: str, ok: bool, output: str) -> dict:
-        """Simpan bukti test: hasil, cuplikan output, dan waktunya."""
+        """Store test evidence: result, output tail and timestamp."""
         stamp = now()
-        proof = f"[{'LULUS' if ok else 'GAGAL'}] {stamp}\n{output.strip()[:4000]}"
+        proof = f"[{'PASS' if ok else 'FAIL'}] {stamp}\n{output.strip()[:4000]}"
         self.con.execute(
             "update tickets set proof=?, updated_at=? where id=?", (proof, stamp, ticket_id)
         )
-        self._event(ticket_id, "proof", "lulus" if ok else "gagal")
+        self._event(ticket_id, "proof", "pass" if ok else "fail")
         self.con.commit()
         return self.get(ticket_id)
 
@@ -321,7 +321,7 @@ class TicketStore:
     # ---------------------------------------------------------- approvals
 
     def request_approval(self, ticket_id: str, question: str) -> dict:
-        self.get(ticket_id)  # pastikan tiket ada
+        self.get(ticket_id)  # make sure the ticket exists
         existing = self.con.execute(
             "select * from approvals where ticket_id=? and status='pending' order by approval_id desc limit 1",
             (ticket_id,),
@@ -340,7 +340,7 @@ class TicketStore:
     def get_approval(self, approval_id: int) -> dict:
         row = self.con.execute("select * from approvals where approval_id=?", (approval_id,)).fetchone()
         if row is None:
-            raise TicketError(f"approval {approval_id} tidak ada")
+            raise TicketError(f"approval {approval_id} not found")
         return dict(row)
 
     def pending_approvals(self) -> list[dict]:
@@ -352,12 +352,12 @@ class TicketStore:
     def decide_approval(self, approval_id: int, approved: bool, by: str, note: str = "") -> dict:
         approval = self.get_approval(approval_id)
         if approval["status"] != "pending":
-            raise TicketError(f"approval {approval_id} sudah {approval['status']} — balasan kedua diabaikan")
+            raise TicketError(f"approval {approval_id} is already {approval['status']} — second answer ignored")
         self.con.execute(
             "update approvals set status=?, decided_at=?, decided_by=?, note=? where approval_id=?",
             ("approved" if approved else "rejected", now(), by, note, approval_id),
         )
-        self._event(approval["ticket_id"], "approval-decided", f"{'approved' if approved else 'rejected'} oleh {by}")
+        self._event(approval["ticket_id"], "approval-decided", f"{'approved' if approved else 'rejected'} by {by}")
         self.con.commit()
         return self.get_approval(approval_id)
 
@@ -387,7 +387,7 @@ class TicketStore:
     def get(self, ticket_id: str) -> dict:
         row = self.con.execute("select * from tickets where id=?", (ticket_id,)).fetchone()
         if row is None:
-            raise TicketError(f"tiket {ticket_id} tidak ada")
+            raise TicketError(f"ticket {ticket_id} not found")
         return dict(row)
 
     def list(self, status: str | None = None) -> list[dict]:
@@ -410,7 +410,7 @@ class TicketStore:
         return dict(row) if row else None
 
     def backup(self, out_dir: Path) -> Path:
-        """Salinan konsisten database memakai API backup sqlite3."""
+        """Consistent database copy using the sqlite3 backup API."""
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -435,26 +435,26 @@ class TicketStore:
             "",
             f"- **Status**: `{ticket['status']}`",
             f"- **Project**: {ticket['project']}",
-            f"- **Profil model**: {ticket['model_profile'] or '(default config)'}",
-            f"- **Prioritas**: {ticket['priority']}",
-            f"- **Dibuat**: {ticket['created_at']}",
-            f"- **Diperbarui**: {ticket['updated_at']}",
+            f"- **Model profile**: {ticket['model_profile'] or '(default config)'}",
+            f"- **Priority**: {ticket['priority']}",
+            f"- **Created**: {ticket['created_at']}",
+            f"- **Updated**: {ticket['updated_at']}",
         ]
         if ticket["thread_id"]:
             lines.append(f"- **Thread**: `{ticket['thread_id']}`")
         if t3_link:
-            lines.append(f"- **Tautan**: {t3_link}")
+            lines.append(f"- **Link**: {t3_link}")
         if ticket["test_cmd"]:
-            lines += ["", "## Perintah test", "", "```bash", ticket["test_cmd"], "```"]
+            lines += ["", "## Test command", "", "```bash", ticket["test_cmd"], "```"]
         if ticket["body"]:
-            lines += ["", "## Deskripsi", "", ticket["body"]]
+            lines += ["", "## Description", "", ticket["body"]]
         approval = self.approval_state(ticket_id)
         if approval != "none":
-            lines += ["", f"**Persetujuan**: `{approval}`"]
-        lines += ["", "## Bukti & catatan", "", ticket["note"] or "_belum ada catatan bukti_"]
+            lines += ["", f"**Approval**: `{approval}`"]
+        lines += ["", "## Evidence and notes", "", ticket["note"] or "_no evidence note yet_"]
         if ticket.get("proof"):
-            lines += ["", "### Bukti test", "", "```", ticket["proof"], "```"]
-        lines += ["", "## Riwayat", "", "| Waktu | Kejadian | Detail |", "|---|---|---|"]
+            lines += ["", "### Test evidence", "", "```", ticket["proof"], "```"]
+        lines += ["", "## History", "", "| Time | Event | Detail |", "|---|---|---|"]
         for event in events:
             lines.append(f"| {event['at'][:19]} | {event['kind']} | {event['detail'].replace('|', '/')} |")
         return "\n".join(lines) + "\n"

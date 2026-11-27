@@ -26,8 +26,8 @@ class BackupTests(unittest.TestCase):
         self.config = self.tmp / "config.json"
         self.config.write_text(json.dumps({"models": {}, "defaults": {"profile": ""}}))
         self.store = TicketStore(self.tmp / "t.sqlite", self.config)
-        self.store.add("satu", "/tmp/p", status="backlog")
-        self.store.add("dua", "/tmp/p", status="ready")
+        self.store.add("one", "/tmp/p", status="backlog")
+        self.store.add("two", "/tmp/p", status="ready")
 
     def tearDown(self) -> None:
         self.store.close()

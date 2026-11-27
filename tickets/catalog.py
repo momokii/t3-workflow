@@ -122,17 +122,17 @@ def find_provider(catalog: dict, instance_id: str) -> dict | None:
 def resolve_selection(catalog: dict, provider_id: str, model_slug: str) -> dict:
     """Validate an explicit harness/model pair against the live catalogue."""
     if not provider_id:
-        raise CatalogError("provider kosong")
+        raise CatalogError("provider is empty")
     if not model_slug:
-        raise CatalogError("model kosong")
+        raise CatalogError("model is empty")
     provider = find_provider(catalog, provider_id)
     if provider is None:
-        known = ", ".join(p["instanceId"] for p in catalog["providers"]) or "tidak ada"
-        raise CatalogError(f"provider '{provider_id}' tidak dikenal (tersedia: {known})")
+        known = ", ".join(p["instanceId"] for p in catalog["providers"]) or "none"
+        raise CatalogError(f"unknown provider '{provider_id}' (available: {known})")
     if not (provider["enabled"] and provider["installed"]):
-        raise CatalogError(f"provider '{provider_id}' tidak aktif di T3")
+        raise CatalogError(f"provider '{provider_id}' is not enabled in T3")
     if not any(m["slug"] == model_slug for m in provider["models"]):
-        raise CatalogError(f"model '{model_slug}' tidak ada di provider '{provider_id}'")
+        raise CatalogError(f"model '{model_slug}' is not offered by provider '{provider_id}'")
     return {"provider": provider_id, "model": model_slug}
 
 
@@ -151,8 +151,8 @@ def resolve_ticket(ticket: dict, config: dict, catalog: dict | None = None) -> d
     if provider or model:
         if not provider or not model:
             raise CatalogError(
-                f"{ticket['id']}: provider dan model harus diisi bersama, "
-                "atau kosongkan keduanya dan gunakan preset"
+                f"{ticket['id']}: provider and model must be set together, "
+                "or leave both empty and use a preset"
             )
         selection = resolve_selection(catalog, provider, model)
         return {**selection, "source": "ticket"}
@@ -162,14 +162,14 @@ def resolve_ticket(ticket: dict, config: dict, catalog: dict | None = None) -> d
     )
     if not profile_name:
         raise CatalogError(
-            f"{ticket['id']}: tidak ada provider/model dan tidak ada default profile di config"
+            f"{ticket['id']}: no provider/model and no default profile in config"
         )
     profile = (config.get("models") or {}).get(profile_name)
     if not profile:
-        available = ", ".join(sorted((config.get("models") or {}))) or "kosong"
-        raise CatalogError(f"profil model '{profile_name}' tidak ada di config (pilihan: {available})")
+        available = ", ".join(sorted((config.get("models") or {}))) or "none"
+        raise CatalogError(f"model profile '{profile_name}' is not in config (available: {available})")
     if not profile.get("provider") or not profile.get("model"):
-        raise CatalogError(f"profil '{profile_name}' harus punya provider dan model")
+        raise CatalogError(f"profile '{profile_name}' must define provider and model")
     source = "profile" if (ticket.get("model_profile") or "").strip() else "default"
     return {
         "provider": profile["provider"],

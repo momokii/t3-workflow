@@ -98,7 +98,7 @@ class CatalogTests(unittest.TestCase):
     def test_resolve_selection_rejects_unknown_provider_model_and_disabled(self) -> None:
         for provider, model in (
             ("nope", "x"),
-            ("pi", "tidak-ada"),
+            ("pi", "no-such-model"),
             ("claudeAgent", "claude-opus-5-5"),
         ):
             with self.subTest(provider=provider, model=model):

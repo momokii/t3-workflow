@@ -59,7 +59,7 @@ def t3_projects(db_path: Path) -> list[dict]:
 
 
 def t3_threads(db_path: Path, limit: int = 40) -> list[dict]:
-    """Thread T3 terbaru, supaya yang sudah ada bisa diadopsi jadi tiket."""
+    """The most recent T3 threads, so existing work can be adopted as a ticket."""
     if not db_path.exists():
         return []
     con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
@@ -113,7 +113,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             return json.loads(self.rfile.read(length) or b"{}")
         except json.JSONDecodeError:
-            self._json(400, {"error": "body bukan JSON"})
+            self._json(400, {"error": "body is not JSON"})
             return None
 
     def _authorised(self) -> bool:
@@ -133,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
             raw = raw.replace(b"</head>", meta + b"</head>", 1)
         return raw
 
-    def log_message(self, fmt: str, *args) -> None:  # ringkas
+    def log_message(self, fmt: str, *args) -> None:  # concise
         sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
 
     # ------------------------------------------------------------ routes
@@ -144,7 +144,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, self._page(), "text/html; charset=utf-8")
             return
         if path.startswith("/static/"):
-            name = Path(path).name  # basename saja: tidak ada traversal
+            name = Path(path).name  # basename only: no traversal
             target = STATIC / name
             if target.is_file():
                 kind = (
@@ -231,7 +231,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/tickets":
             if not self._authorised():
-                self._json(401, {"error": "token tidak valid"})
+                self._json(401, {"error": "invalid token"})
                 return
             payload = self._payload()
             if payload is None:
@@ -270,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/threads/") and path.endswith("/adopt"):
             if not self._authorised():
-                self._json(401, {"error": "token tidak valid"})
+                self._json(401, {"error": "invalid token"})
                 return
             payload = self._payload()
             if payload is None:
@@ -291,7 +291,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 ticket = store.attach_thread(
                     ticket["id"], thread_id,
-                    "diadopsi dari thread T3 — watcher melanjutkan thread yang sama",
+                    "adopted from a T3 thread — the watcher continues the same thread",
                 )
                 self._json(200, {"ticket": ticket})
             except TicketError as exc:
@@ -314,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/projects":
             if not self._authorised():
-                self._json(401, {"error": "token tidak valid"})
+                self._json(401, {"error": "invalid token"})
                 return
             payload = self._payload()
             if payload is None:
@@ -322,7 +322,7 @@ class Handler(BaseHTTPRequestHandler):
             title = str(payload.get("title", "")).strip()
             folder = Path(str(payload.get("path", ""))).expanduser()
             if not title or not folder.is_absolute() or not folder.is_dir():
-                self._json(400, {"error": "judul wajib, path harus absolut dan ada"})
+                self._json(400, {"error": "title is required; path must be absolute and exist"})
                 return
             config = load_config(Path(self.config_path))
             cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
@@ -335,21 +335,21 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
                 return
             if proc.returncode != 0:
-                self._json(409, {"error": (proc.stderr or proc.stdout or "gagal").strip()[:300]})
+                self._json(409, {"error": (proc.stderr or proc.stdout or "failed").strip()[:300]})
                 return
             self._json(200, {"message": (proc.stdout or "project ditambahkan").strip()[:300],
                              "projects": t3_projects(Path(self.t3_db_path))})
             return
         if path.startswith("/api/approvals/") and path.endswith("/decide"):
             if not self._authorised():
-                self._json(401, {"error": "token tidak valid"})
+                self._json(401, {"error": "invalid token"})
                 return
             length = int(self.headers.get("Content-Length", 0))
             try:
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 approval_id = int(path.split("/")[3])
             except (json.JSONDecodeError, ValueError):
-                self._json(400, {"error": "body atau id tidak valid"})
+                self._json(400, {"error": "invalid body or id"})
                 return
             store = self._store()
             try:
@@ -366,13 +366,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
             return
         if not self._authorised():
-            self._json(401, {"error": "token tidak valid"})
+            self._json(401, {"error": "invalid token"})
             return
         length = int(self.headers.get("Content-Length", 0))
         try:
             payload = json.loads(self.rfile.read(length) or b"{}")
         except json.JSONDecodeError:
-            self._json(400, {"error": "body bukan JSON"})
+            self._json(400, {"error": "body is not JSON"})
             return
         ticket_id = path.split("/")[3]
         store = self._store()
@@ -394,7 +394,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
-    parser.add_argument("--token", default="", help="wajibkan header X-Board-Token untuk POST (fallback: env T3_BOARD_TOKEN)")
+    parser.add_argument("--token", default="", help="require X-Board-Token on POST (falls back to env T3_BOARD_TOKEN)")
     parser.add_argument("--db", default=str(DB_PATH))
     parser.add_argument("--config", default=str(CONFIG_PATH))
     parser.add_argument("--t3-db", default=str(T3_DB))
@@ -408,11 +408,11 @@ def main() -> int:
     Handler.catalog_dir = Path(args.catalog_dir)
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"kanban di http://{args.host}:{args.port}  (db={args.db})", flush=True)
+    print(f"board on http://{args.host}:{args.port}  (db={args.db})", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("berhenti")
+        print("stopped")
     finally:
         server.server_close()
     return 0

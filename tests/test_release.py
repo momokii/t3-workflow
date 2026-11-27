@@ -59,8 +59,8 @@ class ReleaseTests(unittest.TestCase):
         self.store.close()
 
     def ticket(self):
-        """Tiket yang sudah lulus test, siap masuk tahap release."""
-        t = self.store.add("Tambah fitur X", str(self.repo), model_profile="fast",
+        """A ticket whose test passed, ready for the release stage."""
+        t = self.store.add("Add feature X", str(self.repo), model_profile="fast",
                            status="review", test_cmd="true")
         self.store.attach_proof(t["id"], True, "12 tests OK")
         return self.store.get(t["id"])
@@ -83,7 +83,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(Path(stored["report_path"]).exists())
 
     def test_release_leaves_pr_url_empty_for_non_http_remote(self) -> None:
-        """Remote berupa path lokal tidak menghasilkan tautan PR — dan itu benar."""
+        """A local-path remote produces no PR link — and that is correct."""
         ticket = self.ticket()
         (self.repo / "b.txt").write_text("perubahan\n")
         watcher.release(self.store, ticket, CONFIG)
@@ -101,10 +101,10 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(watcher.compare_url("/tmp/bare.git", "main", "b"), "")
 
     def test_release_refuses_without_passing_proof(self) -> None:
-        ticket = self.store.add("tanpa bukti", str(self.repo), model_profile="fast", status="review")
+        ticket = self.store.add("without evidence", str(self.repo), model_profile="fast", status="review")
         with self.assertRaises(TicketError) as ctx:
             watcher.release(self.store, ticket, CONFIG)
-        self.assertIn("bukti test", str(ctx.exception))
+        self.assertIn("test evidence", str(ctx.exception))
         self.assertEqual(self.store.get(ticket["id"])["status"], "review")
 
     def test_release_refuses_unknown_mode(self) -> None:
@@ -123,7 +123,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(stored["pr_body_path"])
         body = Path(stored["pr_body_path"]).read_text()
         self.assertIn(ticket["id"], body)
-        self.assertIn("Bukti test", body)
+        self.assertIn("Test evidence", body)
 
     def test_release_refuses_without_remote(self) -> None:
         ticket = self.ticket()
@@ -143,8 +143,8 @@ class ReleaseTests(unittest.TestCase):
     def test_release_does_not_touch_clean_tree(self) -> None:
         ticket = self.ticket()
         message = watcher.release(self.store, ticket, CONFIG)
-        self.assertIn("tidak ada perubahan", message.lower())
-        # tetap selesai, tapi tanpa branch baru
+        self.assertIn("no changes", message.lower())
+        # still finished, but without a new branch
         self.assertEqual(self.store.get(ticket["id"])["status"], "done")
 
 

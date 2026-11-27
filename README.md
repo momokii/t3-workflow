@@ -228,7 +228,7 @@ Stages are drained in that order, so a ticket waiting in `testing` is tested bef
 ## Release and push policy
 
 - Pushes are automatic, but **never to the base branch**: every release goes to `ticket/T-xxxx-<slug>` on `origin`.
-- A ticket without a `[LULUS]` (passing) proof is refused; a human can still move it by hand.
+- A ticket without a `[PASS]` (passing) proof is refused; a human can still move it by hand.
 - After the push the ticket stores `branch`, `pr_url` (a `…/compare/main...branch?expand=1` link when the remote is HTTP or SSH) and a PR body file (`T-xxxx.pr.md`) containing the summary and the test evidence.
 - Creating the pull request itself needs `gh` or a GitHub token; neither is required for the push to work.
 - `release.mode` is validated: an unsupported value is an error, not a silent fallback.

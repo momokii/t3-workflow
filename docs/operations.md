@@ -39,7 +39,7 @@ c = json.loads(p.read_text()); c["watcher"]["enabled"] = False
 p.write_text(json.dumps(c, indent=2)+"\n")
 PY
 systemctl --user restart t3-watcher
-journalctl --user -u t3-watcher -n 3     # "watcher dijeda lewat config"
+journalctl --user -u t3-watcher -n 3     # "watcher paused by config"
 ```
 
 Set it back to `true` and restart to resume. The bridge and the board keep working while the watcher is paused.
@@ -101,8 +101,8 @@ Verification that the restore worked: `tickets/cli.py list` shows the tickets fr
 | Bridge silent, `getUpdates` failing | network or a competing webhook | `journalctl --user -u t3-bridge -n 50`; confirm no webhook with the Bot API `getWebhookInfo` |
 | Cycle repeats "no ready tickets" | nothing queued | move a ticket to `ready` |
 | Ticket stuck `in-progress` | thread still running, or lost | wait for `limits.maxInProgressMinutes`, or move it by hand with `--force` |
-| Release fails with "tidak punya remote" | repository has no `origin` | `git remote add origin <url>` |
-| Release fails with "belum punya bukti test lulus" | ticket reached `review` without a test run | move it back to `testing` and let the watcher run it |
+| Release fails with "has no remote" | repository has no `origin` | `git remote add origin <url>` |
+| Release fails with "has no passing test evidence" | ticket reached `review` without a test run | move it back to `testing` and let the watcher run it |
 | Approval never arrives in Telegram | bridge down, or chat id not allowlisted | check the bridge log; `/id` from the chat and compare with `allowChatIds` |
 | Board returns `401` on a move | page loaded before a token rotation | reload the page |
 | `t3-alert@…` did not fire | `OnFailure` written under `[Service]` | it belongs in `[Unit]`; check `systemctl --user show t3-watcher -p OnFailure` |
@@ -127,7 +127,7 @@ journalctl --user -u t3-board   --since today
 tail -n 100 ~/.local/state/t3-workflow/audit.jsonl
 ```
 
-Watcher output is one line per step (`22:49:14 tidak ada tiket berstatus ready`). Bridge output is one line per state change and per error. Neither logs the Telegram token.
+Watcher output is one line per step (`22:49:14 no ticket is ready`). Bridge output is one line per state change and per error. Neither logs the Telegram token.
 
 ## Upgrade
 

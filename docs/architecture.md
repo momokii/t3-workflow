@@ -133,7 +133,7 @@ sequenceDiagram
     participant W as watcher
     participant G as git
     participant S as store
-    W->>S: proof must start with [LULUS]
+    W->>S: proof must start with [PASS]
     W->>G: remote get-url origin (fail loudly when absent)
     W->>G: checkout -b ticket/T-xxxx-<slug>
     W->>G: add -A && commit

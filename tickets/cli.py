@@ -2,7 +2,7 @@
 """CLI for the ticket store.
 
     python3 tickets/cli.py init
-    python3 tickets/cli.py add "Judul" --project t3-workflow --profile fast --test "python3 -m unittest"
+    python3 tickets/cli.py add "Title" --project t3-workflow --profile fast --test "python3 -m unittest"
     python3 tickets/cli.py list [--status ready]
     python3 tickets/cli.py show T-0001
     python3 tickets/cli.py move T-0001 ready
@@ -40,7 +40,7 @@ def print_ticket(ticket: dict, events: list[dict] | None = None) -> None:
     if ticket["note"]:
         print(f"  note    : {ticket['note']}")
     if events:
-        print("  riwayat :")
+        print("  history :")
         for event in events:
             print(f"    - {event['at'][:19]}  {event['kind']}  {event['detail']}")
 
@@ -51,43 +51,43 @@ def main() -> int:
     parser.add_argument("--config", default=str(CONFIG_PATH))
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init", help="buat database dan tabel")
-    sub.add_parser("profiles", help="tampilkan profil model dari config")
+    sub.add_parser("init", help="create the database and its tables")
+    sub.add_parser("profiles", help="list the model profiles from config")
 
-    add = sub.add_parser("add", help="buat tiket")
+    add = sub.add_parser("add", help="create a ticket")
     add.add_argument("title")
     add.add_argument("--project", required=True)
     add.add_argument("--body", default="")
-    add.add_argument("--profile", default="", help="nama profil di config; kosong = defaults.profile")
+    add.add_argument("--profile", default="", help="profile name in config; empty = defaults.profile")
     add.add_argument("--test", dest="test_cmd", default="")
     add.add_argument("--priority", type=int, default=3)
     add.add_argument("--status", default="backlog", choices=STATUSES)
 
-    listing = sub.add_parser("list", help="daftar tiket")
+    listing = sub.add_parser("list", help="list tickets")
     listing.add_argument("--status", default=None, choices=STATUSES)
 
-    show = sub.add_parser("show", help="detail satu tiket")
+    show = sub.add_parser("show", help="show one ticket")
     show.add_argument("ticket")
 
-    move = sub.add_parser("move", help="pindahkan status")
+    move = sub.add_parser("move", help="move a ticket to another status")
     move.add_argument("ticket")
     move.add_argument("status", choices=STATUSES)
     move.add_argument("--note", default="")
-    move.add_argument("--force", action="store_true", help="lewati state machine (override manusia)")
+    move.add_argument("--force", action="store_true", help="skip the state machine (human override)")
 
-    backup = sub.add_parser("backup", help="salin database tiket dan laporan ke folder")
+    backup = sub.add_parser("backup", help="copy the ticket database and reports to a folder")
     backup.add_argument("--out", default=str(Path.home() / ".local/state/t3-workflow/backups"))
-    backup.add_argument("--keep", type=int, default=7, help="jumlah backup terbaru yang disimpan (0 = semua)")
+    backup.add_argument("--keep", type=int, default=7, help="how many recent backups to keep (0 = all)")
 
-    report = sub.add_parser("report", help="tulis laporan markdown untuk satu tiket")
+    report = sub.add_parser("report", help="write the markdown report for one ticket")
     report.add_argument("ticket")
-    report.add_argument("--out", default="", help="path tujuan; kosong = cetak ke stdout")
+    report.add_argument("--out", default="", help="target path; empty = print to stdout")
 
     args = parser.parse_args()
     store = TicketStore(Path(args.db), Path(args.config))
     try:
         if args.command == "init":
-            print(f"database siap: {store.path}")
+            print(f"database ready: {store.path}")
         elif args.command == "profiles":
             config = load_config(Path(args.config))
             for name, profile in sorted((config.get("models") or {}).items()):
@@ -107,7 +107,7 @@ def main() -> int:
         elif args.command == "list":
             tickets = store.list(args.status)
             if not tickets:
-                print("(tidak ada tiket)")
+                print("(no tickets)")
             for ticket in tickets:
                 print(f"{ticket['id']}  [{ticket['status']:11}] p{ticket['priority']}  {ticket['title'][:60]}")
         elif args.command == "show":
@@ -128,11 +128,11 @@ def main() -> int:
                 if stamp:
                     for old in sorted(Path(args.out).glob("tickets-*.sqlite"))[:-args.keep]:
                         old.unlink(missing_ok=True)
-                        print(f"dipangkas: {old.name}")
+                        print(f"pruned: {old.name}")
                     for old in sorted(Path(args.out).glob("reports-*"))[:-args.keep]:
                         if old.is_dir():
                             shutil.rmtree(old, ignore_errors=True)
-                            print(f"dipangkas: {old.name}")
+                            print(f"pruned: {old.name}")
             print(f"backup: {target}")
         elif args.command == "report":
             text = store.report(args.ticket)
@@ -140,11 +140,11 @@ def main() -> int:
                 out = Path(args.out)
                 out.parent.mkdir(parents=True, exist_ok=True)
                 out.write_text(text, encoding="utf-8")
-                print(f"laporan ditulis: {out}")
+                print(f"report written: {out}")
             else:
                 print(text)
     except TicketError as exc:
-        print(f"ditolak: {exc}", file=sys.stderr)
+        print(f"rejected: {exc}", file=sys.stderr)
         return 2
     finally:
         store.close()

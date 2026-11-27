@@ -62,7 +62,7 @@ WF_CONFIG = {
 
 
 class TicketCommandTests(unittest.TestCase):
-    """Perintah tiket dan persetujuan lewat bridge."""
+    """Ticket and approval commands through the bridge."""
 
     def setUp(self) -> None:
         os.environ["T3_REPORTS_DIR"] = str(Path(tempfile.mkdtemp(prefix="reports-")) / "reports")
@@ -93,27 +93,27 @@ class TicketCommandTests(unittest.TestCase):
             store.close()
 
     def test_ticket_command_creates_backlog_ticket(self) -> None:
-        answer = bridge.handle(self.config, CHAT, "/ticket t3-workflow perbaiki laporan")
+        answer = bridge.handle(self.config, CHAT, "/ticket t3-workflow fix the report")
         self.assertIn("T-0001", answer or "")
         ticket = self.read("T-0001")
         self.assertEqual(ticket["status"], "backlog")
         self.assertEqual(ticket["model_profile"], "fast")
 
     def test_tickets_command_lists(self) -> None:
-        bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow one")
         answer = bridge.handle(self.config, CHAT, "/tickets")
         self.assertIn("T-0001", answer or "")
         self.assertIn("backlog", answer or "")
 
     def test_approve_command_decides(self) -> None:
-        bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow one")
         store = self.store_cls(self.db, self.wf_config)
         try:
             approval = store.request_approval("T-0001", "mulai?")
         finally:
             store.close()
         answer = bridge.handle(self.config, CHAT, f"/approve {approval['approval_id']}")
-        self.assertIn("disetujui", answer or "")
+        self.assertIn("approved", answer or "")
         store = self.store_cls(self.db, self.wf_config)
         try:
             self.assertEqual(store.approval_state("T-0001"), "approved")
@@ -121,28 +121,28 @@ class TicketCommandTests(unittest.TestCase):
             store.close()
 
     def test_ticket_state_notification_is_sent_once(self) -> None:
-        bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow one")
         sent: list[str] = []
         original = bridge.reply
         bridge.reply = lambda config, chat, text: sent.append(text)
         try:
             state = {"ticketStates": {}}
-            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # seed, tanpa kirim
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # seed, nothing sent
             store = self.store_cls(self.db, self.wf_config)
             store.move("T-0001", "ready", force=True)
             store.close()
-            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # ready tidak dinotifikasi
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # ready is not announced
             store = self.store_cls(self.db, self.wf_config)
             store.move("T-0001", "done", force=True)
             store.close()
             self.assertEqual(bridge.notify_ticket_states(self.config, state), 1)
             self.assertIn("done", sent[0])
-            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # tidak dobel
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # not duplicated
         finally:
             bridge.reply = original
 
     def test_second_decision_is_reported_not_crashing(self) -> None:
-        bridge.handle(self.config, CHAT, "/ticket t3-workflow satu")
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow one")
         store = self.store_cls(self.db, self.wf_config)
         try:
             approval = store.request_approval("T-0001", "mulai?")
@@ -150,7 +150,7 @@ class TicketCommandTests(unittest.TestCase):
             store.close()
         bridge.handle(self.config, CHAT, f"/approve {approval['approval_id']}")
         answer = bridge.handle(self.config, CHAT, f"/reject {approval['approval_id']}")
-        self.assertIn("sudah", answer or "")
+        self.assertIn("already", answer or "")
 
 
 class BridgeTests(unittest.TestCase):
@@ -197,8 +197,8 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(project["title"], "kelanach")
 
     def test_resolve_project_reports_ambiguity(self) -> None:
-        # "dem" cocok sebagian dengan "demo" dan "demo-two" -> ambigu.
-        # "demo" sendiri harus menang karena cocok persis.
+        # "dem" partially matches "demo" and "demo-two" -> ambiguous.
+        # "demo" itself must win because it matches exactly.
         project, error = bridge.resolve_project(self.config, "dem")
         self.assertIsNone(project)
         self.assertIn("ambigu", error)
@@ -206,27 +206,27 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(exact["workspace_root"], "/work/demo-a")
 
     def test_resolve_project_missing(self) -> None:
-        project, error = bridge.resolve_project(self.config, "tidak-ada")
+        project, error = bridge.resolve_project(self.config, "no-such-project")
         self.assertIsNone(project)
-        self.assertIn("tidak ada", error)
+        self.assertIn("not found", error)
 
     # ---------------------------------------------------------- resolve thread
 
     def test_send_accepts_project_with_single_thread(self) -> None:
-        payload = [{"threadId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "status": "idle", "title": "satu-satunya"}]
+        payload = [{"threadId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "status": "idle", "title": "the only one"}]
         original = bridge.thread_rows
         bridge.thread_rows = lambda config, project: payload
         try:
-            answer = bridge.handle(self.config, CHAT, "/send petarasa halo dari hp")
+            answer = bridge.handle(self.config, CHAT, "/send petarasa hello from the phone")
         finally:
             bridge.thread_rows = original
-        self.assertIn("Terkirim", answer or "")
+        self.assertIn("Sent.", answer or "")
         self.assertEqual(self.args(), ["thread", "send", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "-", "--json"])
 
     def test_send_lists_threads_when_project_has_many(self) -> None:
         rows = [
-            {"threadId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "status": "idle", "title": "satu"},
-            {"threadId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", "status": "idle", "title": "dua"},
+            {"threadId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "status": "idle", "title": "one"},
+            {"threadId": "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", "status": "idle", "title": "two"},
         ]
         original = bridge.thread_rows
         bridge.thread_rows = lambda config, project: rows
@@ -234,27 +234,27 @@ class BridgeTests(unittest.TestCase):
             answer = bridge.handle(self.config, CHAT, "/send petarasa halo")
         finally:
             bridge.thread_rows = original
-        self.assertIn("sebut id-nya", answer or "")
+        self.assertIn("name one", answer or "")
         self.assertIn("aaaaaaaa", answer or "")
         self.assertFalse((self.tmp / "args.txt").exists())
 
     # ---------------------------------------------------------- send
 
     def test_send_invokes_cli_with_stdin(self) -> None:
-        answer = bridge.handle(self.config, CHAT, f"/send {THREAD} halo dari telegram")
-        self.assertIn("Terkirim", answer or "")
+        answer = bridge.handle(self.config, CHAT, f"/send {THREAD} hello from telegram")
+        self.assertIn("Sent.", answer or "")
         self.assertEqual(self.args(), ["thread", "send", THREAD, "-", "--json"])
-        self.assertEqual(self.stdin(), "halo dari telegram")
+        self.assertEqual(self.stdin(), "hello from telegram")
 
     def test_send_explains_when_target_is_unknown(self) -> None:
         answer = bridge.handle(self.config, CHAT, "/send bukan-uuid halo")
-        self.assertIn("Kirim thread id", answer or "")
+        self.assertIn("Send a thread id", answer or "")
         self.assertFalse((self.tmp / "args.txt").exists())
 
     def test_send_respects_allow_writes_false(self) -> None:
         self.config["bridge"]["allowWrites"] = False
         answer = bridge.handle(self.config, CHAT, f"/send {THREAD} halo")
-        self.assertIn("dimatikan", answer or "")
+        self.assertIn("disabled", answer or "")
         self.assertFalse((self.tmp / "args.txt").exists())
 
     def test_send_dry_run_does_not_call_cli(self) -> None:
@@ -278,7 +278,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_unknown_command_returns_help(self) -> None:
         answer = bridge.handle(self.config, CHAT, "/halo")
-        self.assertIn("tidak dikenal", answer or "")
+        self.assertIn("Unknown command", answer or "")
 
     def test_id_command(self) -> None:
         self.assertIn(CHAT, bridge.handle(self.config, CHAT, "/id") or "")

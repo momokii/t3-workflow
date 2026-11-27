@@ -157,9 +157,9 @@ The watcher takes the lowest number first, then the oldest ticket at that priori
 ## 5. Walkthrough: adopt a running thread
 
 ```
-1. Board → Adopsi thread → pick "cve-injector · Fix image size [running]"
+1. Board → Adopt thread → pick "cve-injector · Fix image size [running]"
 2. Profile: fast · Context: "Selesaikan perubahan ukuran gambar, tambahkan test." · Test: make check
-3. Ticket T-0007 appears in Siap with the thread attached.
+3. Ticket T-0007 appears in Ready with the thread attached.
 4. Watcher: sends that prompt to the thread (event: continued).
 5. Thread finishes → watcher moves T-0007 to Testing.
 6. Watcher runs make check → exit 0 → Review.

@@ -19,7 +19,7 @@ GET  /api/projects                     T3 projects
 GET  /api/threads                      recent T3 threads
 ```
 
-Authentication: `X-Board-Token: <token>` on every `POST`. The token comes from `--token`, or `T3_BOARD_TOKEN` in the environment (the systemd unit reads it from `~/.config/t3-workflow/board.env`). A missing or wrong token returns `401 {"error": "token tidak valid"}`.
+Authentication: `X-Board-Token: <token>` on every `POST`. The token comes from `--token`, or `T3_BOARD_TOKEN` in the environment (the systemd unit reads it from `~/.config/t3-workflow/board.env`). A missing or wrong token returns `401 {"error": "invalid token"}`.
 
 Start it:
 
@@ -127,10 +127,10 @@ curl -s -X POST http://127.0.0.1:8787/api/tickets \
 
 Returns `{"ticket": {…}}`. Rejections with `409`:
 
-- unknown preset — `profil model '<name>' tidak ada di config`;
-- unknown or disabled harness — `provider '<id>' tidak dikenal` / `tidak aktif di T3`;
-- model missing from that harness — `model '<slug>' tidak ada di provider '<id>'`;
-- a provider without a model — `provider dan model harus diisi bersama`.
+- unknown preset — `model profile '<name>' is not in config`;
+- unknown or disabled harness — `unknown provider '<id>'` / `is not enabled in T3`;
+- model missing from that harness — `model '<slug>' is not offered by provider '<id>'`;
+- a provider without a model — `provider and model must be set together`.
 
 An explicit `provider`/`model` pair takes precedence over `profile`; a ticket with neither falls back
 to `defaults.profile`.
@@ -182,7 +182,7 @@ curl -s -X POST http://127.0.0.1:8787/api/tickets/T-0001/move \
 | `note` | replaces the ticket's note |
 | `force` | `true` skips the state machine and records a `forced` event |
 
-Responses: `200 {"ticket": {…}}`, `409 {"error": "transisi … tidak diizinkan (boleh: …)"}`, `401` without the token.
+Responses: `200 {"ticket": {…}}`, `409 {"error": "transition … is not allowed (allowed: …)"}`, `401` without the token.
 
 ## POST /api/approvals/<id>/decide
 
@@ -192,7 +192,7 @@ curl -s -X POST http://127.0.0.1:8787/api/approvals/1/decide \
   -d '{"approved":true,"note":"go"}'
 ```
 
-The first decision wins; a second one returns `409 {"error": "approval 1 sudah approved — balasan kedua diabaikan"}`.
+The first decision wins; a second one returns `409 {"error": "approval 1 is already approved — second answer ignored"}`.
 
 ## GET /api/report/<id>
 
@@ -246,7 +246,7 @@ curl -s -X POST "http://127.0.0.1:8787/api/threads/$THREAD_ID/adopt" \
   -d '{"title":"Refresh screenshots","project":"cve-injector","profile":"fast"}'
 ```
 
-The resulting ticket has `status=in-progress`, `thread_id` set to the adopted thread, and the note `diadopsi dari thread T3`.
+The resulting ticket has `status=in-progress`, `thread_id` set to the adopted thread, and the note `adopted from a T3 thread`.
 
 ## GET /api/tickets/<id>/events
 

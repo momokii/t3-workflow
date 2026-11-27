@@ -27,7 +27,7 @@ schema or state machine → `docs/architecture.md`, procedures → `docs/operati
 6. **Reports are evidence.** Do not hand-edit `~/.local/state/t3-workflow/reports/`;
    regenerate them from the ticket.
 7. **Release pushes only a ticket branch.** The base branch is never pushed, and a ticket
-   without a `[LULUS]` proof is refused.
+   without a `[PASS]` proof is refused.
 8. **Board writes need the token.** Every `POST` passes through `X-Board-Token`; `GET` is
    open to the tailnet, which is the real boundary.
 9. **T3 stays the owner of projects and threads.** Read `statev2.sqlite` read-only; create
