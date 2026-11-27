@@ -53,6 +53,7 @@ treat them as a hint and let `STATE.md` and §9 tell you the truth.
 | Why the design is what it is, measured facts, decisions | `RESEARCH.md` |
 | Review history (standards and spec, seven rounds) | `REVIEW.md` |
 | Invariants an agent must keep | `AGENTS.md` |
+| The same material as a page, with screenshots | `/guide` on the board (`board/static/guide.html`) |
 | Shape of a handoff like this one | `docs/handoff-template.md` |
 
 ## 4. Architecture in one screen
@@ -86,11 +87,20 @@ started. The sync stage moves a ticket to `testing` when T3 reports the thread `
    sends the ticket prompt into that same thread and records a `continued` event. A sync stage
    advances the ticket from the thread's status. Proven end to end on `T-0002` with a real thread:
    prompt sent → agent replied → `completed` → `testing` → `test` → `review` → `done` + report.
-4. **Board UI.** Ticket dialog: preset, harness, model, context, attachment path, test command,
-   labelled priorities, approval explanation; dialog scrolls. Adopt dialog states that the same thread
-   is continued. Profile details come from the catalogue.
-5. **Verification:** both suites green (`make check`), board `/healthz` and `/api/*` exercised over the tailnet, Docker
-   image built and run (board healthy, workers one-shot, host services untouched), CI green.
+4. **Board UI.** Every dialog explains each field (ticket, adopt, register project); the ticket dialog
+   opens immediately and fills its pickers from T3, with a loading state and submit disabled until ready.
+   The header carries a distinct **Guide** link; `/guide` serves the lifecycle, the test command and three
+   screenshots (board, new ticket, adopt) captured from a throwaway database. Profile details come from
+   the catalogue, and adoption says that the same thread is continued.
+5. **Independent review before release.** `review` starts a second thread in a fresh context (same
+   harness and model by default, `verification.profile` to override) that receives the ticket, the test
+   proof, `git status` and `git diff HEAD`, and must end with `VERDICT: ACCEPT` or `VERDICT: REJECT`; a
+   rejection sends the findings into the dev thread and spends one of `maxAttempts` (2). A missing
+   verdict, a failed reviewer, a timeout or a tree that changed mid-review blocks the ticket. The guard
+   is a tree fingerprint, because T3 0.1.9 has no read-only mode (`docs/readonly-verifier.md`).
+6. **Verification:** both suites green (`make check`), board `/healthz`, `/api/*` and `/guide` exercised
+   over the tailnet, Docker image built and run (board healthy, workers one-shot, host services
+   untouched), CI green.
 
 ## 6. Rules for this thread
 
@@ -128,6 +138,10 @@ Do not start #3 without a target from the owner, and do not start #4 without a t
 - No ticket edit/delete yet; no image attachments (`t3 thread send` is text only; a path is passed
   instead); no per-ticket model options; no deploy; no PR creation; no token accounting; Telegram-only
   approvals; Docker deployment uses host networking (see `docs/docker.md`).
+- The reviewer has no sandbox: T3 0.1.9 has no read-only runtime mode, so the watcher refuses a verdict
+  when the project tree changed during the review instead (`docs/readonly-verifier.md`).
+- The board's JavaScript has no browser-driven test in CI; it is checked by `node --check`, the HTTP
+  tests and the screenshots in `board/static/shots/`.
 
 ## 9. Verify the environment before trusting it
 

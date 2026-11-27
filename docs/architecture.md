@@ -21,7 +21,7 @@ flowchart LR
 | Component | Owns | Never does |
 |---|---|---|
 | `tickets/store.py` | the state machine, atomic claim, approvals, proofs, reports | call T3 or the network |
-| `watcher.py` | the dev, test and release stages | invent a model profile; push the base branch |
+| `watcher.py` | the dev, test, review and release stages | invent a model profile; push the base branch |
 | `bridge/t3_bridge.py` | Telegram commands, audit log, approval notices | answer a T3 approval request itself |
 | `board/server.py` + `index.html` | HTTP API and the single-page board | write a ticket outside `store.move`/`store.add` |
 | `scripts/alert.py` | one Telegram alert per failing unit | retry, restart, or decide anything |
@@ -218,7 +218,7 @@ default options. Applying per-ticket options would need a CLI flag that does not
 
 ## Concurrency and ordering
 
-- `step()` drains `review`, then `testing`, then `ready`; a waiting test never competes with a new thread.
+- `step()` drains `review` (verification first, then release), then `testing`, then `ready`; a waiting test never competes with a new thread.
 - `watcher.maxConcurrent` counts `in-progress` tickets; above the limit the stage returns "waiting" and does nothing.
 - `limits.maxInProgressMinutes` sweeps stale `in-progress` tickets to `blocked` at the start of each step.
 - The bridge and the board share the same store file; SQLite's locking handles it, and the claim is the only place that needs atomicity.
@@ -232,6 +232,8 @@ default options. Applying per-ticket options would need a CLI flag that does not
 | Test command missing or timing out | proof records it, ticket returns to `in-progress` |
 | No git remote | release raises; the ticket stays in `review` |
 | Non-passing proof | release raises; only a human override moves it |
+| Reviewer rejects | findings go into the dev thread, one attempt is spent, the ticket returns to `in-progress` |
+| No verdict, reviewer failed, timed out, or the tree changed | ticket moves to `blocked`; nothing is accepted silently |
 | Unit crash | systemd restarts it (`Restart=on-failure`) and `OnFailure=` sends one Telegram alert |
 
 ## Why no daemon on the T3 side

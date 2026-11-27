@@ -75,6 +75,9 @@
   .flow { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; overflow-x: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; }
   .note { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; color: var(--ink-soft); }
   .tag { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-soft); background: var(--surface-2); }
+  figure.shot { margin: 14px 0 4px; }
+  figure.shot img { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+  figure.shot figcaption { font-size: 12px; color: var(--ink-soft); margin-top: 8px; }
   footer { max-width: 1000px; margin: 0 auto; padding: 0 20px 48px; color: var(--ink-soft); font-size: 12px; }
   a { color: var(--accent); }
 </style>
@@ -94,6 +97,11 @@
   the result with a test command, and a passing ticket is pushed as its own git branch. Nothing runs on a
   server you do not own; every step is a script on this machine.</p>
 
+  <figure class="shot">
+    <img src="/static/shots/board.png" alt="The board: seven columns from Backlog to Blocked, each card showing its id, priority, project, profile and the release controls." width="1280" height="820" loading="lazy" decoding="async">
+    <figcaption>The board is the queue. Cards move by dragging or with the <strong>Move</strong> control; the header shows how many tickets sit in each status.</figcaption>
+  </figure>
+
   <nav class="toc" aria-labelledby="toc-title">
     <h2 id="toc-title">On this page</h2>
     <ol>
@@ -104,7 +112,7 @@
       <li><a href="#review">Independent review</a></li>
       <li><a href="#priority">Priority</a></li>
       <li><a href="#approval">Approvals</a></li>
-      <li><a href="#adopt">Creating versus adopting</a></li>
+      <li><a href="#adopt">Creating, adopting and registering</a></li>
       <li><a href="#limits">Limits, failures and overrides</a></li>
       <li><a href="#telegram">Driving it from Telegram</a></li>
       <li><a href="#data">Where the data lives</a></li>
@@ -180,6 +188,10 @@ npm test -- --run</code></pre>
 
   <section id="fields">
     <h2>What each ticket field does</h2>
+    <figure class="shot">
+      <img src="/static/shots/new-ticket.png" alt="The New ticket dialog: title, project, preset, harness, model, context, attachment, test command, priority and the approval checkbox, each with a short explanation." width="1100" height="900" loading="lazy" decoding="async">
+      <figcaption>Every field carries its own explanation under it. The dialog opens immediately and fills its pickers from T3; submit stays disabled until they are ready.</figcaption>
+    </figure>
     <table>
       <thead><tr><th>Field</th><th>Effect</th></tr></thead>
       <tbody>
@@ -248,12 +260,23 @@ npm test -- --run</code></pre>
   </section>
 
   <section id="adopt">
-    <h2>Creating versus adopting</h2>
+    <h2>Creating, adopting and registering</h2>
     <p>A ticket without a thread starts a new one. A ticket that already carries a thread continues that same
     thread: the watcher sends the ticket text into it and records a <code>continued</code> event. One ticket
     never owns two threads.</p>
+    <figure class="shot">
+      <img src="/static/shots/adopt-thread.png" alt="The Adopt a T3 thread dialog: a thread picker, an informational preset, additional context and a test command, each with an explanation." width="1100" height="900" loading="lazy" decoding="async">
+      <figcaption>Adopting keeps the conversation, the plan and the agent's memory. The thread's own harness and model stay; the preset is recorded for the report only.</figcaption>
+    </figure>
     <p>Use <strong>Adopt thread</strong> when an agent already produced work, or when you want to continue an
     earlier conversation; create a ticket when the work is new or independent.</p>
+    <h3>Registering a project</h3>
+    <p>Agents may only work in folders T3 knows about. <strong>Register project</strong> takes a name and an
+    absolute path that already exists, then runs <code>t3 project add</code>: T3 stays the owner of the project,
+    and this board only mirrors the result. Point it at the repository root, because the agent works there and
+    the test command runs there. A registered project appears in the ticket dialog immediately.</p>
+    <p>A folder that is not a git repository can be registered, but the release stage will fail loudly when it
+    looks for a remote; that is intentional, so nothing is ever pushed nowhere.</p>
   </section>
 
   <section id="limits">

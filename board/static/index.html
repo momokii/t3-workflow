@@ -113,6 +113,9 @@
   .empty { color: var(--ink-soft); font-size: 12px; padding: 6px; }
   .btn { font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
   .btn[disabled] { opacity: .55; cursor: not-allowed; }
+  .btn.guide { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); color: var(--accent); font-weight: 600; gap: 6px; }
+  .btn.guide:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); }
+  .btn.guide svg { width: 15px; height: 15px; flex: none; }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
@@ -144,7 +147,10 @@
       <button class="btn primary" id="new-ticket" type="button">＋ Ticket</button>
       <button class="btn" id="adopt-thread" type="button">Adopt thread</button>
       <button class="btn" id="new-project" type="button">Register project</button>
-      <a class="btn" href="/guide">Guide</a>
+      <a class="btn guide" href="/guide" aria-label="Open the guide: how tickets, reviews and releases work">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15"/><path d="M8 7h8M8 11h6"/></svg>
+        Guide
+      </a>
       <label class="sr-only" for="q">Search tickets</label>
       <input id="q" type="search" placeholder="Search title, id, project…" autocomplete="off">
       <label class="sr-only" for="project">Filter by project</label>
@@ -168,9 +174,11 @@
     <p class="hint" id="ticket-load" role="status"></p>
     <label>Title <input name="title" required autocomplete="off"></label>
     <label>Project <select name="project" required></select></label>
+    <p class="hint">Where the agent works and where the test command runs. Register a new folder with <strong>Register project</strong>.</p>
     <label>Preset (optional) <select name="profile"></select></label>
     <p class="hint">A preset fills the harness and model at once. Leave it empty to choose manually below.</p>
     <label>Harness <select name="provider" required></select></label>
+    <p class="hint">The T3 harness that runs the thread. Only harnesses T3 reports as enabled are listed.</p>
     <label>Model <select name="model" required></select></label>
     <p class="hint" id="model-hint">This list comes from the T3 cache — only enabled harnesses can be chosen.</p>
     <label>Context / specification <textarea name="body" placeholder="Context, acceptance criteria, links, or important notes…"></textarea></label>
@@ -195,9 +203,17 @@
 <dialog id="dlg-project" aria-labelledby="dlg-project-title">
   <form method="dialog" id="form-project">
     <h3 id="dlg-project-title">Register project</h3>
-    <p style="margin:0;color:var(--ink-soft);font-size:12px">A T3 project is created with <code>t3 project add</code>. The folder must already exist.</p>
-    <label>Project name <input name="title" required autocomplete="off"></label>
-    <label>Absolute path <input name="path" required placeholder="/home/kelanach/…" autocomplete="off"></label>
+    <p class="hint" id="project-load" role="status"></p>
+    <p style="margin:0;color:var(--ink-soft);font-size:12px">A T3 project is a folder the agents may work in. Registering runs <code>t3 project add</code>, so T3 owns the project exactly as it owns the ones created in its own UI; this board only mirrors it.</p>
+    <label>Project name
+      <input name="title" required autocomplete="off">
+    </label>
+    <p class="hint">The label shown in ticket dialogs and the board filter; T3 stores it as the project title. Keep it short and unique.</p>
+    <label>Absolute path
+      <input name="path" required placeholder="/home/kelanach/projects/my-project" autocomplete="off">
+    </label>
+    <p class="hint">Must already exist on this machine. Point at the repository root, not a subfolder: the agent works here and the test command runs here. A folder that is not a git repository can still be registered, but release then fails loudly.</p>
+    <p class="hint">After registering, the project appears in <strong>New ticket</strong> immediately; the board reads the list from T3 on every dialog open.</p>
     <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Register</button></div>
   </form>
 </dialog>
@@ -208,10 +224,13 @@
     <p class="hint" id="adopt-load" role="status"></p>
     <p style="margin:0;color:var(--ink-soft);font-size:12px">This ticket <strong>continues the same thread</strong>: the watcher sends the ticket instructions into that thread, waits for it to finish, then moves it to testing. No new thread is created.</p>
     <label>Thread <select name="thread_id" required></select></label>
+    <p class="hint">The 40 most recent T3 threads, newest first, with their project and current status. A running thread is fine: the prompt becomes its next turn, queued behind what it is doing.</p>
     <label>Preset (informational) <select name="profile"></select></label>
-    <p class="hint">The model follows the existing thread; this value is only recorded on the ticket.</p>
+    <p class="hint">A thread already has its harness and model, and this dialog cannot change them. The preset is stored on the ticket for the record and for the report, so pick the one that matches the thread.</p>
     <label>Additional context <textarea name="body" placeholder="What should this thread finish?"></textarea></label>
+    <p class="hint">Sent into the thread verbatim, together with the title. Write the acceptance criteria here: this is the whole contract the agent receives.</p>
     <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
+    <p class="hint">Runs in the project folder after the thread finishes; exit code 0 is the proof, anything else sends the ticket back. <a href="/guide#test-command">Why this field exists</a>.</p>
     <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Adopt</button></div>
   </form>
 </dialog>

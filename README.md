@@ -8,11 +8,11 @@ Ticket-driven automation for [T3 Code](https://github.com/): a ticket becomes an
 
 ```
 backlog ──► ready ──► in-progress ──► testing ──► review ──► done
-                     (continue the     (watcher        (branch
-                      linked thread     runs tests)      + push)
-                          │              │           │          │
-                    t3 thread     test command   branch +    markdown
-                       start      + exit code      push       report
+                     (continue the     (watcher    (independent    (branch
+                      linked thread     runs tests)  review, then    + push)
+                          │              │            release)         │
+                    t3 thread     test command     VERDICT: ACCEPT   markdown
+                       start      + exit code      gate              report
 ```
 
 Everything runs on one machine, without a daemon on the target side of T3 and without third-party Python packages: the three services are standard-library scripts under `systemd --user`.
@@ -40,7 +40,7 @@ Everything runs on one machine, without a daemon on the target side of T3 and wi
 | Piece | Responsibility |
 |---|---|
 | `tickets/store.py` | SQLite source of truth: tickets, allowed transitions, atomic claim, approvals, proofs, reports |
-| `watcher.py` | Three stages: start a thread for `ready` tickets, test `testing` tickets, release `review` tickets |
+| `watcher.py` | Four stages: start a thread for `ready` tickets, test `testing` tickets, review `review` tickets with a fresh thread, release on `VERDICT: ACCEPT` |
 | `bridge/t3_bridge.py` | Telegram ⇄ T3 over long polling: read, send, create tickets, decide approvals |
 | `board/` | Local kanban on the tailnet: drag and drop, per-card move control, approvals, ticket and project creation, thread adoption |
 | `scripts/alert.py` | One Telegram message when a `t3-*` unit fails |
@@ -221,9 +221,10 @@ backlog → ready → in-progress → testing → review → done
 | dev | ticket in `ready`, slot free, approval satisfied | claim atomically; if the ticket carries a thread, `t3 thread send` continues **that** thread, otherwise `t3 thread start` creates one; store the thread id |
 | sync | every loop | a ticket in `in-progress` whose thread reports `completed`/`idle` moves to `testing`; `failed`/`cancelled` moves to `blocked` |
 | test | ticket in `testing` | run the ticket's `test_cmd` in the project directory; store exit code and output tail as proof; `review` on 0, back to `in-progress` otherwise |
-| release | ticket in `review` with a passing proof | create `ticket/T-xxxx-<slug>`, commit, push, store branch and compare link, write the PR body, finish the ticket and write the report |
+| review | ticket in `review`, verification enabled | start a second thread in a fresh context with the ticket's harness and model (`verification.profile` overrides); it gets the ticket, the proof, `git status` and `git diff HEAD`, and must end with `VERDICT: ACCEPT` or `VERDICT: REJECT`; a rejection sends the findings into the dev thread and spends one of `verification.maxAttempts`; a missing verdict, a failed reviewer, a timeout or a tree that changed mid-review blocks the ticket |
+| release | ticket in `review` with a passing proof and an accepted review | create `ticket/T-xxxx-<slug>`, commit, push, store branch and compare link, write the PR body, finish the ticket and write the report |
 
-Stages are drained in that order, so a ticket waiting in `testing` is tested before a new thread is started.
+Stages are drained in that order, so a ticket waiting in `testing` is tested before a new thread is started, and `review` verifies before it releases.
 
 ## Release and push policy
 

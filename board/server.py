@@ -106,8 +106,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_static(self, name: str) -> None:
-        target = STATIC / name
-        if not target.is_file():
+        """Serve a file under `board/static/`, including subfolders such as `shots/`."""
+        root = STATIC.resolve()
+        target = (root / name).resolve()
+        if root not in target.parents or not target.is_file():
             self._json(404, {"error": "not found"})
             return
         kind = (
@@ -160,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_static("guide.html")
             return
         if path.startswith("/static/"):
-            self._send_static(Path(path).name)  # basename only: no traversal
+            self._send_static(path[len("/static/"):])
             return
         if path == "/healthz":
             store = self._store()

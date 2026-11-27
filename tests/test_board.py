@@ -6,6 +6,7 @@ from __future__ import annotations
 import http.client
 import importlib.util
 import json
+import re
 import os
 import sqlite3
 import sys
@@ -112,6 +113,39 @@ class BoardApiTests(unittest.TestCase):
         response, raw = self.request("GET", "/")
         self.assertEqual(response.status, 200)
         self.assertIn('href="/guide"', raw)
+
+    def test_guide_embeds_screenshots_that_exist(self) -> None:
+        response, raw = self.request("GET", "/guide")
+        self.assertEqual(response.status, 200)
+        sources = re.findall(r'<img src="(/static/shots/[^"]+)"', raw)
+        self.assertGreaterEqual(len(sources), 3)
+        for src in sources:
+            self.assertTrue((board.STATIC / "shots" / Path(src).name).is_file(), src)
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            conn.request("GET", src)
+            image = conn.getresponse()
+            body = image.read()
+            conn.close()
+            self.assertEqual(image.status, 200, src)
+            self.assertEqual(image.headers.get("Content-Type"), "image/png", src)
+            self.assertGreater(len(body), 1000, src)
+
+    def test_dialogs_explain_their_fields(self) -> None:
+        _, raw = self.request("GET", "/")
+        # The adopt dialog repeats the test-command explanation and links to the guide.
+        self.assertEqual(raw.count('href="/guide#test-command"'), 2)
+        for phrase in (
+            "Point at the repository root",
+            "The 40 most recent T3 threads",
+            "The label shown in ticket dialogs",
+            "The T3 harness that runs the thread",
+        ):
+            self.assertIn(phrase, raw)
+
+    def test_guide_button_is_visually_distinct(self) -> None:
+        _, raw = self.request("GET", "/")
+        self.assertIn('class="btn guide"', raw)
+        self.assertIn('aria-label="Open the guide', raw)
 
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")

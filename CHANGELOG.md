@@ -15,6 +15,23 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **The guide has screenshots and covers registering and adopting.** Three captures taken from a real
+  board running on a throwaway database (headless Chromium, 2× DPR off, no real ticket data): the board
+  with all seven columns, the New ticket dialog, and the Adopt a T3 thread dialog. The section on
+  projects now explains what `Register project` does and why the path must already exist.
+- **Per-field explanations in every dialog.** The register and adopt dialogs now explain each field the
+  way the ticket dialog does: what the project name is for, why the path is the repository root, which
+  threads are listed, why the preset is informational, and what the test command proves.
+- **A separate Guide button.** It is accent-coloured with a book icon and an accessible label, instead of
+  looking like a fourth action next to New ticket, Adopt and Register.
+
+### Changed
+
+- README, AGENTS.md (invariant 10: review before release), docs/architecture.md, docs/operations.md and
+  docs/api.md now describe the review stage, the four stages, the verification columns and the guide page.
+
+### Fixed
+
 - **Independent review before release.** A ticket in `review` now starts a second thread in a fresh
   context (same harness and model by default, `verification.profile` to override) that receives the
   ticket, the test proof, `git status` and `git diff HEAD`, and must end with `VERDICT: ACCEPT` or
