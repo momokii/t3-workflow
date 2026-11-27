@@ -53,6 +53,7 @@ treat them as a hint and let `STATE.md` and §9 tell you the truth.
 | Why the design is what it is, measured facts, decisions | `RESEARCH.md` |
 | Review history (standards and spec, seven rounds) | `REVIEW.md` |
 | Invariants an agent must keep | `AGENTS.md` |
+| Shape of a handoff like this one | `docs/handoff-template.md` |
 
 ## 4. Architecture in one screen
 
@@ -152,14 +153,19 @@ You are continuing development of the repository t3-workflow on this VM.
 Working directory:
 /home/kelanach/Public/main-linux-kelanach/code-berkah-titipan-tuhan/code/personal_prjct/t3-workflow
 
-First, read these files in order, and do not write any code before you finish:
+First run `make snapshot` and read `STATE.md`. It is generated, so it is the only current
+state you can trust; any table in the documents is "at writing" only.
+
+Then read these files in order, and do not write any code before you finish:
 1. HANDOFF.md              (state, rules, next tasks)
 2. AGENTS.md               (invariants you must keep)
 3. docs/usage.md           (how the system is used: tickets, threads, harness/model, priority)
 4. docs/architecture.md    (data model, state machine, stages, resolution order)
 5. docs/api.md             (every HTTP endpoint and its errors)
+6. docs/handoff-template.md (the shape this handoff follows)
 
 Then reply with a block titled CONFIRMATION containing:
+- the HEAD, commit count and uncommitted-file count exactly as `STATE.md` printed them;
 - 5 facts about the system, each with the file it came from;
 - the resolution order for provider/model;
 - the rule that decides whether a ticket continues a thread or starts one;

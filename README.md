@@ -310,6 +310,7 @@ docs/           architecture, API, operations
 | [README.md](README.md) | this file: usage and configuration |
 | [docs/architecture.md](docs/architecture.md) | components, data model, state machine, sequences |
 | [docs/usage.md](docs/usage.md) | how to use it, which workflow to pick, model and priority guidance, FAQ |
+| [docs/handoff-template.md](docs/handoff-template.md) | how to hand work to another thread without losing state |
 | [docs/api.md](docs/api.md) | board HTTP API with payloads and curl examples |
 | [docs/operations.md](docs/operations.md) | runbook: services, backup/restore, incidents, troubleshooting |
 | [docs/docker.md](docs/docker.md) | container deployment: mounts, host networking, verification, troubleshooting |

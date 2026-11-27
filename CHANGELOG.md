@@ -15,6 +15,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- `docs/handoff-template.md`: the structure and gate a handoff should follow, including
+  snapshot-first verification and a checklist.
 - `make snapshot` / `scripts/snapshot.py`: writes `STATE.md` with the measured git state, service
   states, ticket summary, model catalogue and documentation list, so a handoff or review can point at
   a regenerable file instead of prose numbers.

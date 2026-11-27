@@ -149,3 +149,13 @@ Against `RESEARCH.md` §6 and the decisions recorded in §7.
 | A hand-written state table is stale immediately: `HANDOFF.md` recorded HEAD `7865eeb`, and committing the handoff itself moved HEAD to `54b24c8` | `git log` vs the file, minutes apart | fixed: `make snapshot` writes `STATE.md`; the handoff now points at it and labels its own numbers as "at writing" |
 | Prose numbers can silently disagree with the repository | above | fixed by the same generator; its output is git-ignored so it cannot pretend to be source |
 | The generator itself could drift | new code | 3 tests assert the sections, that the current HEAD appears, and that the file says it must not be hand-edited |
+
+---
+
+## Round 9 (handoff guards)
+
+| Item | Result |
+|---|---|
+| Handoff template | `docs/handoff-template.md` records the structure, the confirmation gate, the rules and a pre-handoff checklist |
+| Prompt gate | `HANDOFF.md` now requires `make snapshot` first and asks the new thread to quote HEAD, commit count and uncommitted count from `STATE.md` |
+| Documentation guards | `tests/test_docs.py` fails if the prompt loses `STATE.md`/`CONFIRMATION`/`make snapshot`, if a relative link breaks, or if the handoff stops marking its figures as "at writing" |
