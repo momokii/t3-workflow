@@ -129,13 +129,15 @@
   .btn.danger { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); color: var(--danger); }
   .btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border-color: var(--danger); color: var(--danger); }
   .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
-  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); max-height: 88vh; overflow: auto; box-shadow: var(--shadow); }
+  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); max-height: 88vh; overflow: auto; overflow-x: hidden; box-shadow: var(--shadow); }
   dialog::backdrop { background: rgba(12, 14, 20, .45); }
   dialog form { padding: 18px 18px 16px; display: grid; gap: 12px; }
   dialog h3 { margin: 0; font-size: 16px; }
   dialog label { display: grid; gap: 4px; font-size: 12px; color: var(--ink-soft); }
   dialog input, dialog select, dialog textarea { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 9px; width: 100%; }
   dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  dialog .row.actions { position: sticky; bottom: 0; z-index: 1; background: var(--surface);
+    border-top: 1px solid var(--line); padding: 10px 0 2px; }
   dialog .check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); }
   dialog .hint { font-size: 11px; color: var(--ink-soft); margin: -2px 0 0; }
   dialog textarea { min-height: 76px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
@@ -168,10 +170,13 @@
   ul.fs button { width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink); display: flex; justify-content: space-between; gap: 8px; }
   ul.fs button:hover, ul.fs button:focus-visible { background: var(--surface-2); }
   ul.fs li .path { color: var(--ink-soft); font-size: 11px; margin-left: 22px; }
-  .projects { display: grid; gap: 8px; margin: 4px 0 2px; }
+  dialog#dlg-project { width: min(640px, 94vw); }
+  .projects { display: grid; gap: 8px; margin: 4px 0 2px; min-width: 0;
+    max-height: 26vh; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
   .project-row { display: flex; justify-content: space-between; gap: 10px; align-items: center;
-    border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
-  .project-row .meta { font-size: 12px; min-width: 0; }
+    border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; min-width: 0; }
+  .project-row .meta { font-size: 12px; min-width: 0; flex: 1 1 auto; }
+  .project-row .btn { flex: none; }
   .project-row .meta strong { display: block; }
   .project-row .meta span { color: var(--ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #toast { position: fixed; inset-inline: 0; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
@@ -248,7 +253,7 @@
     <p class="hint">The watcher always takes the lowest number first, then the oldest wait.</p>
     <label class="check"><input type="checkbox" name="requires_approval"> Needs my approval before work starts</label>
     <p class="hint">Tick this when the ticket touches something sensitive; the watcher waits for /approve before starting.</p>
-    <div class="row"><button class="btn danger" id="delete-ticket" type="button" hidden>Delete</button><span class="spacer"></span><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="ticket-submit">Create ticket</button></div>
+    <div class="row actions"><button class="btn danger" id="delete-ticket" type="button" hidden>Delete</button><span class="spacer"></span><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="ticket-submit">Create ticket</button></div>
   </form>
 </dialog>
 
@@ -269,12 +274,14 @@
     <p class="hint">After registering, the project appears in <strong>New ticket</strong> immediately; the board reads the list from T3 on every dialog open.</p>
 
     <h3>Existing projects</h3>
+    <p class="hint">This list is T3's own project list, read live. <a href="/guide#adopt">How projects and
+    tickets relate</a>. The list scrolls; the buttons below stay reachable.</p>
     <p class="hint">Removing a project deletes it and <strong>all of its threads</strong> in T3 (the CLI's
     <code>project remove --force</code>). Tickets and their reports are kept; their cards then show
     <strong>project missing</strong>. This cannot be undone.</p>
     <div class="projects" id="project-rows"></div>
     <p class="hint" id="project-status" role="status"></p>
-    <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Register</button></div>
+    <div class="row actions"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Register</button></div>
   </form>
 </dialog>
 
@@ -292,7 +299,7 @@
     <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
     <p class="hint">Runs in the project folder after the thread finishes; exit code 0 is the proof, anything else sends the ticket back. <a href="/guide#test-command">Why this field exists</a>.</p>
     <p class="hint warn" id="adopt-test-warning" hidden>No test command yet: the ticket will block at testing until one is filled in.</p>
-    <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Adopt</button></div>
+    <div class="row actions"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Adopt</button></div>
   </form>
 </dialog>
 
@@ -464,6 +471,7 @@
     const label = document.createElement('label');
     label.htmlFor = `move-${t.id}`;
     label.textContent = 'Move';
+    label.title = 'Only the transitions the state machine allows are listed.';
     const sel = document.createElement('select');
     sel.id = `move-${t.id}`;
     const allowed = state.transitions[t.status] || [];
@@ -518,6 +526,7 @@
     force.className = 'force';
     const summary = document.createElement('summary');
     summary.textContent = 'Force move…';
+    summary.title = 'Human override: skips the state machine and is recorded as a forced event.';
     force.appendChild(summary);
     const row = document.createElement('div');
     row.className = 'row';
@@ -849,6 +858,7 @@
         remove.type = 'button';
         remove.className = 'btn danger';
         remove.textContent = 'Remove…';
+        remove.title = 'Removes this project and every thread in it from T3 (typed confirmation).';
         remove.addEventListener('click', () => removeProject(project));
         row.append(meta, remove);
         rows.appendChild(row);
@@ -1186,6 +1196,7 @@
 
   // for visual checks: /#new opens the ticket dialog
   if (location.hash === '#new') openTicketDialog().catch(() => {});
+  if (location.hash === '#projects') openProjectDialog();
   if (location.hash === '#adopt') openAdoptDialog().catch(() => {});
 
   q.addEventListener('input', render);

@@ -238,7 +238,8 @@ class BoardApiTests(unittest.TestCase):
     def test_the_board_has_readers_for_reports_threads_and_folders(self) -> None:
         _, raw = self.request("GET", "/")
         for needle in ("dlg-report", "dlg-thread", "dlg-fs", "data-browse", "test-warning",
-                       "project-rows", "ALL of its threads"):
+                       "project-rows", "ALL of its threads", "row actions",
+                       "How projects and tickets relate", "#projects"):
             self.assertIn(needle, raw)
 
     def test_removing_a_project_needs_the_exact_title_and_runs_force(self) -> None:
