@@ -35,6 +35,10 @@ schema or state machine → `docs/architecture.md`, procedures → `docs/operati
 10. **Review before release.** `review` releases only on a `VERDICT: ACCEPT` line from the review
     thread. A rejection sends its findings into the dev thread; a missing verdict, a failed reviewer
     or a tree that changed during the review blocks the ticket — prose is never read as approval.
+11. **Retries are bounded and only for transient failures.** A crashed `t3` call, a dead thread or a
+    failing test goes back into the loop (findings into the dev thread) until `retry.maxThreadAttempts`
+    / `retry.maxTestAttempts` is spent, then blocks. A missing test command, an unknown model, a
+    missing remote and a review rejection never retry blindly.
 
 ## Environment
 

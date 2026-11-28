@@ -121,6 +121,26 @@ Defaults live in `~/.config/t3-workflow/config.json`:
 `enabled: false` restores the old flow, where `review` releases directly. `maxDiffBytes` caps the diff
 that goes into the prompt; a larger change is truncated in the prompt and says so.
 
+### When something fails (and how it comes back)
+
+The loop is meant to finish without you, so failures are classified rather than dumped as `blocked`:
+
+| Failure | What happens | Bounded by |
+|---|---|---|
+| The test fails | the output tail is sent **into the dev thread**, the ticket returns to `in-progress`, and testing waits until the thread starts a new run | `retry.maxTestAttempts` (3) |
+| The dev thread reports `failed`/`cancelled`/`interrupted` | the ticket goes back to `ready` for another attempt | `retry.maxThreadAttempts` (3) |
+| `t3 thread start`/`send` fails to run (crash, timeout, non-JSON) | same retry, with the exit code in the note | `retry.maxThreadAttempts` (3) |
+| The review rejects | findings into the dev thread, one review attempt spent | `verification.maxAttempts` (2) |
+| The ticket has no test command | `blocked` immediately: a retry cannot invent one | — |
+| A model or preset is unknown, a remote is missing, the reviewer never decides | `blocked`: retrying would loop forever | — |
+
+Two guards make the loop safe rather than optimistic: the resume anchor (`dev_run_id`) stops the
+watcher from testing the code that just failed, and every retry is counted on the ticket
+(`dev_attempts`, `test_attempts`) so a broken loop ends in `blocked` with the reason, not in silence.
+
+Telegram announces the work as it moves: an acknowledgement when a ticket is claimed, a retry notice, the
+review verdict, and on `done` the markdown report as a document, so the evidence arrives with the news.
+
 ## 4. Recommendations
 
 ### Choosing the harness and the model

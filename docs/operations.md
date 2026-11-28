@@ -106,6 +106,10 @@ Verification that the restore worked: `tickets/cli.py list` shows the tickets fr
 | Approval never arrives in Telegram | bridge down, or chat id not allowlisted | check the bridge log; `/id` from the chat and compare with `allowChatIds` |
 | Board returns `401` on a move | page loaded before a token rotation | reload the page |
 | `t3-alert@…` did not fire | `OnFailure` written under `[Service]` | it belongs in `[Unit]`; check `systemctl --user show t3-watcher -p OnFailure` |
+| Ticket bounces `in-progress → ready` | a bounded retry: the T3 call failed or the thread died | read the note (`retry 1/3`); nothing to do unless it ends in `blocked` |
+| Ticket says `waiting for the dev thread to resume` | findings were sent and testing waits for the thread's next run | watch the thread in T3; `limits.maxInProgressMinutes` blocks it if the thread never resumes |
+| Test keeps failing | the tail is sent into the dev thread each time, bounded by `retry.maxTestAttempts` | after the budget, `blocked`; read the proof, fix by hand or raise the budget |
+| No report arrived in Telegram | `sendDocument` needs a readable `report_path` and a bot token | check `journalctl --user -u t3-bridge` for `report not sent: …` |
 | Review blocks with "no verdict line in the reply" | the reviewer replied without the required last line | read `/api/report/<id>`, then either send it back (`blocked → ready`) or force `done` if you accept the work yourself |
 | Review blocks with "project changed during verification" | something edited the project while the reviewer was reading it | move the ticket to `ready`; the next review takes a fresh fingerprint |
 | Review blocks after two rejections | `verification.maxAttempts` reached | read the findings in the note and the report; fix in the dev thread, then `blocked → ready` |

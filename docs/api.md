@@ -84,7 +84,12 @@ curl -s http://127.0.0.1:8787/api/tickets | python3 -m json.tool
 }
 ```
 
-`proof` is deliberately absent from this response — it can contain build logs or environment detail. `verify_findings` is absent for the same reason; a ticket exposes only `verify_verdict` and `verify_attempt`, so a card can show the outcome without leaking the review. Use `GET /api/report/<id>` or the CLI to read the rest.
+`proof` is deliberately absent from this response — it can contain build logs or environment detail. The
+review is trimmed the same way: a ticket exposes `verify_verdict`, `verify_attempt`, `verify_provider`,
+`verify_model`, `verify_started_at` and `verify_finished_at` so a card can show the outcome, while
+`verify_findings` (reviewer prose), `verify_baseline` (a tree fingerprint) and `verify_run_id` (an internal
+anchor) stay private. The response also carries `verification: {"enabled": bool, "maxAttempts": int}` so the
+board can render `2/2` without guessing. Use `GET /api/report/<id>` or the CLI to read the findings.
 
 ## GET /api/catalog
 

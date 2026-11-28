@@ -54,6 +54,7 @@ treat them as a hint and let `STATE.md` and §9 tell you the truth.
 | Review history (standards and spec, seven rounds) | `REVIEW.md` |
 | Invariants an agent must keep | `AGENTS.md` |
 | The same material as a page, with screenshots | `/guide` on the board (`board/static/guide.html`) |
+| Why the loop is safe to leave alone | `docs/autonomy.md` |
 | Shape of a handoff like this one | `docs/handoff-template.md` |
 
 ## 4. Architecture in one screen
@@ -92,13 +93,18 @@ started. The sync stage moves a ticket to `testing` when T3 reports the thread `
    The header carries a distinct **Guide** link; `/guide` serves the lifecycle, the test command and three
    screenshots (board, new ticket, adopt) captured from a throwaway database. Profile details come from
    the catalogue, and adoption says that the same thread is continued.
-5. **Independent review before release.** `review` starts a second thread in a fresh context (same
+5. **Autonomous repair loop.** A failing test sends its output into the dev thread; a crashed T3 call
+   or a dead thread returns the ticket to `ready`. Both are bounded (`retry.maxTestAttempts`,
+   `retry.maxThreadAttempts`) and counted on the ticket (`test_attempts`, `dev_attempts`); the
+   `dev_run_id` anchor keeps `testing` from re-running against the code that just failed. A configuration
+   error or a review rejection never retries blindly. `docs/autonomy.md` records the decisions.
+6. **Independent review before release.** `review` starts a second thread in a fresh context (same
    harness and model by default, `verification.profile` to override) that receives the ticket, the test
    proof, `git status` and `git diff HEAD`, and must end with `VERDICT: ACCEPT` or `VERDICT: REJECT`; a
    rejection sends the findings into the dev thread and spends one of `maxAttempts` (2). A missing
    verdict, a failed reviewer, a timeout or a tree that changed mid-review blocks the ticket. The guard
    is a tree fingerprint, because T3 0.1.9 has no read-only mode (`docs/readonly-verifier.md`).
-6. **Verification:** both suites green (`make check`), board `/healthz`, `/api/*` and `/guide` exercised
+7. **Verification:** both suites green (`make check`), board `/healthz`, `/api/*` and `/guide` exercised
    over the tailnet, Docker image built and run (board healthy, workers one-shot, host services
    untouched), CI green.
 

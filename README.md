@@ -220,11 +220,13 @@ backlog → ready → in-progress → testing → review → done
 |---|---|---|
 | dev | ticket in `ready`, slot free, approval satisfied | claim atomically; if the ticket carries a thread, `t3 thread send` continues **that** thread, otherwise `t3 thread start` creates one; store the thread id |
 | sync | every loop | a ticket in `in-progress` whose thread reports `completed`/`idle` moves to `testing`; `failed`/`cancelled` moves to `blocked` |
-| test | ticket in `testing` | run the ticket's `test_cmd` in the project directory; store exit code and output tail as proof; `review` on 0, back to `in-progress` otherwise |
+| test | ticket in `testing` | run the ticket's `test_cmd` in the project directory; store exit code and output tail as proof; `review` on 0; on a failure the tail goes **into the dev thread**, the ticket returns to `in-progress`, and testing waits for the thread's next run (`retry.maxTestAttempts`) |
 | review | ticket in `review`, verification enabled | start a second thread in a fresh context with the ticket's harness and model (`verification.profile` overrides); it gets the ticket, the proof, `git status` and `git diff HEAD`, and must end with `VERDICT: ACCEPT` or `VERDICT: REJECT`; a rejection sends the findings into the dev thread and spends one of `verification.maxAttempts`; a missing verdict, a failed reviewer, a timeout or a tree that changed mid-review blocks the ticket |
 | release | ticket in `review` with a passing proof and an accepted review | create `ticket/T-xxxx-<slug>`, commit, push, store branch and compare link, write the PR body, finish the ticket and write the report |
 
 Stages are drained in that order, so a ticket waiting in `testing` is tested before a new thread is started, and `review` verifies before it releases.
+
+Failures that a retry can fix are not dumped as `blocked`: a crashed `t3` call or a dead thread sends the ticket back to `ready`, a failing test sends its output into the dev thread, and both are bounded (`retry.maxThreadAttempts`, `retry.maxTestAttempts`). Configuration errors and reviewer rejections are not retried blindly — see the table in [docs/usage.md](docs/usage.md#when-something-fails-and-how-it-comes-back).
 
 ## Release and push policy
 
@@ -318,6 +320,7 @@ docs/           architecture, API, operations
 | [RESEARCH.md](RESEARCH.md) | why the design looks like this, with the measured facts behind it |
 | [REVIEW.md](REVIEW.md) | two-axis review (standards and spec) over the whole repository |
 | [AGENTS.md](AGENTS.md) | invariants an agent must keep when changing this code |
+| [docs/autonomy.md](docs/autonomy.md) | the autonomous loop: decisions, enforcement, out of scope |
 | [CHANGELOG.md](CHANGELOG.md) | released versions |
 
 ## Known limitations
@@ -325,9 +328,9 @@ docs/           architecture, API, operations
 1. **A repository without a remote cannot release.** The stage fails loudly instead of skipping; CI runs on GitHub Actions for `main`.
 2. **No pull-request creation.** The push works; opening the PR needs `gh` or a token. The compare link and `T-xxxx.pr.md` are provided instead.
 3. **No deploy step.** The pipeline ends at a pushed branch; there is no deploy target or rollback path.
-4. **Wall-clock budget only.** No token accounting, no provider quota guard, no cost report.
+4. **Wall-clock budget only.** No token accounting, no provider quota guard, no cost report. Retries are bounded by counts (`retry.*`), not by spend.
 5. **Tickets cannot be edited or deleted** once created; a wrong profile or test command means a new ticket.
-6. **Attachments are paths, not uploads.** `t3 thread send` accepts text only, so an image cannot travel with a ticket; a path to a file on this machine can.
+6. **Attachments are paths, not uploads.** `t3 thread send` accepts text only, so an image cannot travel with a ticket; a path to a file on this machine can. The finished report is delivered to Telegram as a markdown document, not a PDF.
 7. **Telegram-only approvals.** WhatsApp was planned as a fallback and is not implemented.
 8. **No metrics.** There is a `/healthz` endpoint for the container healthcheck, and failures are reported by `OnFailure=` and by the bridge, but nothing exports metrics.
 9. **Model options are not applied per ticket.** The catalogue shows `thinking`/`variant`/`effort`,

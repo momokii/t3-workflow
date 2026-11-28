@@ -51,6 +51,8 @@ T3 remains the owner of projects, threads and runs. This repository reads `state
 | `verify_provider`, `verify_model`, `verify_attempt` | text, integer | who reviews, and how many attempts were used |
 | `verify_verdict`, `verify_findings` | text | `ACCEPT`/`REJECT`/`FAILED`/`TIMEOUT`, and the reviewer's words |
 | `verify_started_at`, `verify_finished_at`, `verify_baseline` | text | budget, and the tree fingerprint the verdict belongs to |
+| `dev_attempts`, `test_attempts` | integer | retry budgets: thread failures and failing tests |
+| `dev_run_id` | text | resume anchor: the run the dev thread was on when findings were sent |
 | `note` | text | last human or stage note |
 | `created_at`, `updated_at` | text | ISO-8601 UTC |
 
@@ -129,6 +131,22 @@ sequenceDiagram
 ```
 
 A ticket without `test_cmd` cannot advance: the stage records that fact and sends it back to `in-progress`.
+
+### Retry and resume
+
+A failure that a second attempt can plausibly fix goes back into the queue, counted on the ticket:
+
+| Failure | Action | Limit |
+|---|---|---|
+| `thread start`/`send` raised or returned rc≠0, or its JSON was unusable | `in-progress → ready` with `retry` event | `retry.maxThreadAttempts` |
+| Dev thread reported `failed`/`cancelled`/`interrupted`/`rolled_back` | same retry | `retry.maxThreadAttempts` |
+| Test failed (or timed out) | output tail sent into the dev thread, `in-progress`, findings event | `retry.maxTestAttempts` |
+| Test command empty | `blocked` (a retry cannot fix a missing command) | — |
+
+When findings are sent, the watcher stores the thread's current `latestRunId` as `dev_run_id`. The sync
+stage refuses `completed`/`idle` → `testing` while the thread is still on that run, so the code that just
+failed cannot be tested again before the agent has started working. A successful start or a passing test
+resets both budgets (`reset_attempts`).
 
 ### Verification stage
 

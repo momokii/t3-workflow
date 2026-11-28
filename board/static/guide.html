@@ -114,8 +114,26 @@
       <li><a href="#approval">Approvals</a></li>
       <li><a href="#adopt">Creating, adopting and registering</a></li>
       <li><a href="#limits">Limits, failures and overrides</a></li>
+      <li><a href="#retries">When something fails</a></li>
       <li><a href="#telegram">Driving it from Telegram</a></li>
       <li><a href="#data">Where the data lives</a></li>
+  <section id="retries">
+    <h2>When something fails</h2>
+    <p>Failures a retry can fix do not stop the queue; they go back into the loop with a counter on the ticket.</p>
+    <table>
+      <thead><tr><th>Failure</th><th>What happens</th><th>Limit</th></tr></thead>
+      <tbody>
+        <tr><td>Test fails</td><td>the output tail is sent into the dev thread; the ticket returns to <code>in-progress</code> and testing waits for the thread's next run</td><td><code>retry.maxTestAttempts</code></td></tr>
+        <tr><td>Thread reports failed / cancelled / interrupted</td><td>ticket back to <code>ready</code> for another attempt</td><td><code>retry.maxThreadAttempts</code></td></tr>
+        <tr><td>A T3 call crashes, times out or returns unusable JSON</td><td>same retry, with the exit code in the note</td><td><code>retry.maxThreadAttempts</code></td></tr>
+        <tr><td>Review rejects</td><td>findings into the dev thread, one review attempt spent</td><td><code>verification.maxAttempts</code></td></tr>
+        <tr><td>No test command, unknown model, missing remote, no verdict</td><td><code>blocked</code>: a retry would loop forever</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p>Telegram announces the work as it moves — acknowledged when claimed, a retry notice, the verdict, and on
+    <code>done</code> the markdown report as a document.</p>
+  </section>
+
       <li><a href="#gaps">What is not built yet</a></li>
     </ol>
   </nav>
@@ -338,6 +356,8 @@ npm test -- --run</code></pre>
       instead.</li>
       <li><strong>Pull-request creation and deploy.</strong> Release stops at a pushed branch, a compare link and
       a PR body file.</li>
+      <li><strong>A PDF report.</strong> The report exists as markdown and is delivered as a Telegram document;
+      a PDF renderer would add a dependency this machine does not need.</li>
     </ul>
   </section>
 </main>

@@ -13,6 +13,22 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **The loop repairs itself.** A failing test now sends its output tail into the dev thread and the
+  ticket returns to `in-progress`, bounded by `retry.maxTestAttempts`; a crashed `t3` call or a dead
+  thread returns the ticket to `ready`, bounded by `retry.maxThreadAttempts`. Counters live on the
+  ticket (`test_attempts`, `dev_attempts`) and `dev_run_id` stops `testing` from re-running against the
+  code that just failed. A missing test command, an unknown model, a missing remote and a review
+  rejection never retry blindly. `docs/autonomy.md` is the decision record.
+- **Telegram acknowledges the work and delivers the report.** The bridge announces a claimed ticket, a
+  retry, the review verdict, and uploads the markdown report as a document on `done` (stdlib multipart
+  upload, no new dependency).
+- **The review outcome is visible where you look.** A card carries `review accept 1/2` (or reject,
+  failed, timeout) with text as well as colour; `tickets/cli.py show` prints the verdict, reviewer and
+  findings. `GET /api/tickets` adds `verification: {enabled, maxAttempts}` and keeps `verify_findings`,
+  `verify_baseline` and `verify_run_id` private.
+
 ### Fixed
 
 - **The review verdict is anchored to the run that produced it.** The stage stored `verify_run_id` and
