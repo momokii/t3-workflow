@@ -29,6 +29,7 @@ SPEC.loader.exec_module(board)
 CONFIG = {
     "models": {"fast": {"provider": "pi", "model": "opencode-go/deepseek-v4.1-flash"}},
     "defaults": {"profile": "fast"},
+    "projects": {"t3-workflow": {"test_cmd": "make check", "profile": "fast"}},
 }
 
 
@@ -160,6 +161,45 @@ class BoardApiTests(unittest.TestCase):
         for hidden in ("verify_findings", "verify_baseline", "verify_run_id"):
             self.assertNotIn(hidden, ticket)
         self.assertEqual(payload["verification"]["maxAttempts"], 2)
+
+    def test_project_defaults_fill_a_new_ticket(self) -> None:
+        response, raw = self.request("GET", "/api/tickets")
+        payload = json.loads(raw)
+        self.assertEqual(payload["projectDefaults"]["t3-workflow"]["test_cmd"], "make check")
+        response, raw = self.request(
+            "POST", "/api/tickets",
+            {"title": "one line", "project": "t3-workflow", "profile": "fast"},
+            token="secret",
+        )
+        self.assertEqual(response.status, 200, raw)
+        ticket = json.loads(raw)["ticket"]
+        self.assertEqual(ticket["test_cmd"], "make check")
+
+    def test_edit_endpoint_updates_a_ticket(self) -> None:
+        response, raw = self.request(
+            "POST", "/api/tickets/T-0001/edit",
+            {"title": "edited", "priority": 1}, token="secret",
+        )
+        self.assertEqual(response.status, 200, raw)
+        self.assertEqual(json.loads(raw)["ticket"]["title"], "edited")
+
+    def test_delete_requires_confirm_and_keeps_the_report(self) -> None:
+        response, raw = self.request("POST", "/api/tickets/T-0001/delete", {}, token="secret")
+        self.assertEqual(response.status, 400)
+        response, raw = self.request(
+            "POST", "/api/tickets/T-0001/delete", {"confirm": True}, token="secret"
+        )
+        self.assertEqual(response.status, 200, raw)
+        self.assertEqual(json.loads(raw)["deleted"]["id"], "T-0001")
+        report, body = self.request("GET", "/api/report/T-0001")
+        self.assertEqual(report.status, 200)
+        self.assertIn("T-0001", body)
+
+    def test_the_board_offers_edit_and_delete(self) -> None:
+        response, raw = self.request("GET", "/")
+        self.assertEqual(response.status, 200)
+        for needle in ("/edit", "/delete", "Delete", "confirm: true", "edit", "Save changes"):
+            self.assertIn(needle, raw)
 
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")

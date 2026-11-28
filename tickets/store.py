@@ -129,6 +129,20 @@ def load_config(path: Path | None = None) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def project_defaults(config: dict, project: str) -> dict:
+    """The defaults a project carries in config, so a ticket can be one line.
+
+    Matching is by the T3 project title, which is what a ticket stores. A ticket still
+    wins: these only fill what the caller left empty.
+    """
+    entries = config.get("projects") or {}
+    value = entries.get(project)
+    if value is None:
+        lowered = (project or "").lower()
+        value = next((item for key, item in entries.items() if key.lower() == lowered), None)
+    return dict(value or {})
+
+
 def resolve_profile(config: dict, name: str | None) -> dict:
     """Return {provider, model, options, name} for a ticket's profile.
 
@@ -237,6 +251,66 @@ class TicketStore:
         if status == "done":
             self.write_report(ticket_id)
         return self.get(ticket_id)
+
+    EDITABLE_FIELDS = (
+        "title", "body", "test_cmd", "priority", "requires_approval", "attachment_path",
+        "model_profile", "provider", "model", "project",
+    )
+
+    def update(self, ticket_id: str, force: bool = False, **fields) -> dict:
+        """Edit the human-owned fields of a ticket, with history.
+
+        A finished ticket is final: its report already exists as evidence. A ticket that a
+        stage is working on needs `force`, the same human override the state machine uses.
+        """
+        ticket = self.get(ticket_id)
+        if ticket["status"] == "done":
+            raise TicketError("a finished ticket cannot be edited; its report is the record")
+        if ticket["status"] in ("in-progress", "testing", "review") and not force:
+            raise TicketError(
+                f"ticket {ticket_id} is {ticket['status']}; use force to edit it mid-flight"
+            )
+        changes = {key: value for key, value in fields.items()
+                   if key in self.EDITABLE_FIELDS and value is not None}
+        if not changes:
+            raise TicketError("no editable field was given")
+        if "title" in changes and not str(changes["title"]).strip():
+            raise TicketError("ticket title is empty")
+        if "priority" in changes:
+            priority = int(changes["priority"])
+            if priority < 1 or priority > 5:
+                raise TicketError("priority must be 1..5")
+            changes["priority"] = priority
+        if "requires_approval" in changes:
+            changes["requires_approval"] = 1 if changes["requires_approval"] else 0
+        if changes.get("model_profile"):
+            resolve_profile(load_config(self.config_path), changes["model_profile"])
+        columns = ", ".join(f"{key}=?" for key in changes)
+        self.con.execute(
+            f"update tickets set {columns}, updated_at=? where id=?",
+            (*changes.values(), now(), ticket_id),
+        )
+        self._event(ticket_id, "edited", ", ".join(sorted(changes)))
+        self.con.commit()
+        return self.get(ticket_id)
+
+    def delete(self, ticket_id: str) -> dict:
+        """Delete a ticket, keeping its evidence reachable.
+
+        The report is written first (so it can still be served after the row is gone) and a
+        snapshot of the row goes into the append-only event history, which is what makes the
+        deletion auditable instead of silent.
+        """
+        ticket = self.get(ticket_id)
+        try:
+            self.write_report(ticket_id)
+        except OSError:
+            pass
+        snapshot = json.dumps(ticket, ensure_ascii=False)[:4000]
+        self._event(ticket_id, "deleted", snapshot)
+        self.con.execute("delete from tickets where id=?", (ticket_id,))
+        self.con.commit()
+        return {"id": ticket_id, "title": ticket["title"], "status": ticket["status"]}
 
     def write_pr_body(self, ticket_id: str, branch: str, remote_url: str) -> str:
         """PR body summary: what changed, the test evidence, and the link."""

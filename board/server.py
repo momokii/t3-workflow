@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -34,6 +35,7 @@ from store import (  # noqa: E402
     TicketError,
     TicketStore,
     load_config,
+    project_defaults,
 )
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -210,6 +212,7 @@ class Handler(BaseHTTPRequestHandler):
                         "enabled": bool((config.get("verification") or {}).get("enabled", True)),
                         "maxAttempts": int((config.get("verification") or {}).get("maxAttempts", 2) or 2),
                     },
+                    "projectDefaults": config.get("projects") or {},
                 })
             finally:
                 store.close()
@@ -220,7 +223,16 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 text = store.report(ticket_id)
             except TicketError as exc:
-                self._json(404, {"error": str(exc)})
+                # A deleted ticket keeps its report: the file is the evidence that outlives
+                # the row, and the delete path writes it before removing anything.
+                reports = Path(os.environ.get(
+                    "T3_REPORTS_DIR", Path.home() / ".local/state/t3-workflow/reports"
+                ))
+                fallback = reports / f"{ticket_id}.md"
+                if fallback.is_file():
+                    self._send(200, fallback.read_bytes(), "text/markdown; charset=utf-8")
+                else:
+                    self._json(404, {"error": str(exc)})
                 return
             finally:
                 store.close()
@@ -260,12 +272,14 @@ class Handler(BaseHTTPRequestHandler):
                     return
             store = self._store()
             try:
+                project = str(payload.get("project", ""))
+                defaults = project_defaults(load_config(Path(self.config_path)), project)
                 ticket = store.add(
                     title=str(payload.get("title", "")),
-                    project=str(payload.get("project", "")),
+                    project=project,
                     body=str(payload.get("body", "")),
-                    model_profile=str(payload.get("profile", "")),
-                    test_cmd=str(payload.get("test_cmd", "")),
+                    model_profile=str(payload.get("profile", "")) or defaults.get("profile", ""),
+                    test_cmd=str(payload.get("test_cmd", "")) or defaults.get("test_cmd", ""),
                     priority=int(payload.get("priority", 3) or 3),
                     status=str(payload.get("status", "backlog")),
                     requires_approval=bool(payload.get("requires_approval", False)),
@@ -373,8 +387,51 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 store.close()
             return
-        if not (path.startswith("/api/tickets/") and path.endswith("/move")):
+        editing = path.startswith("/api/tickets/") and (
+            path.endswith("/edit") or path.endswith("/delete")
+        )
+        if not editing and not (path.startswith("/api/tickets/") and path.endswith("/move")):
             self._json(404, {"error": "not found"})
+            return
+        if editing:
+            if not self._authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            payload = self._payload()
+            if payload is None:
+                return
+            ticket_id = path.split("/")[3]
+            store = self._store()
+            try:
+                if path.endswith("/delete"):
+                    if not payload.get("confirm"):
+                        self._json(400, {"error": "deleting needs confirm: true"})
+                        return
+                    self._json(200, {"deleted": store.delete(ticket_id)})
+                    return
+                provider = str(payload.get("provider", "")).strip()
+                model = str(payload.get("model", "")).strip()
+                if provider or model:
+                    try:
+                        resolve_selection(
+                            load_catalog_cached(
+                                Path(self.catalog_dir),
+                                config=load_config(Path(self.config_path)),
+                            ),
+                            provider, model,
+                        )
+                    except CatalogError as exc:
+                        self._json(409, {"error": str(exc)})
+                        return
+                fields = {key: payload[key] for key in store.EDITABLE_FIELDS if key in payload}
+                ticket = store.update(ticket_id, force=bool(payload.get("force", False)), **fields)
+                self._json(200, {"ticket": ticket})
+            except TicketError as exc:
+                self._json(409, {"error": str(exc)})
+            except ValueError as exc:
+                self._json(400, {"error": str(exc)})
+            finally:
+                store.close()
             return
         if not self._authorised():
             self._json(401, {"error": "invalid token"})

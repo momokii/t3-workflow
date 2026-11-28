@@ -100,6 +100,9 @@
   .tag.verdict.timeout, .tag.verdict.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
   a.thread { font-size: 11px; color: var(--accent); text-decoration: none; }
   a.thread:hover { text-decoration: underline; }
+  button.act { font: inherit; font-size: 11px; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; }
+  button.act:hover { text-decoration: underline; }
+  button.act.danger { color: var(--danger); }
   .move { margin-top: 10px; display: flex; gap: 6px; align-items: center; }
   .move label { font-size: 11px; color: var(--ink-soft); }
   .move select { font: inherit; font-size: 12px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
@@ -122,6 +125,8 @@
   .btn.guide svg { width: 15px; height: 15px; flex: none; }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.danger { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); color: var(--danger); }
+  .btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border-color: var(--danger); color: var(--danger); }
   .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
   dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); max-height: 88vh; overflow: auto; box-shadow: var(--shadow); }
   dialog::backdrop { background: rgba(12, 14, 20, .45); }
@@ -189,7 +194,7 @@
     <label>Attachment (path on this machine) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
     <p class="hint">The attachment is not uploaded; its path is passed to the agent so it can read it directly.</p>
     <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
-    <p class="hint">Run by the watcher in the project folder after the agent finishes: exit code 0 is the proof, anything else sends the ticket back. <a href="/guide#test-command">Why this field exists</a>.</p>
+    <p class="hint">Run by the watcher in the project folder after the agent finishes: exit code 0 is the proof, anything else sends the ticket back. Prefilled from the project's defaults when configured. <a href="/guide#test-command">Why this field exists</a>.</p>
     <label>Priority <select name="priority">
       <option value="1">1 — Urgent (do first)</option>
       <option value="2">2 — High</option>
@@ -200,7 +205,7 @@
     <p class="hint">The watcher always takes the lowest number first, then the oldest wait.</p>
     <label class="check"><input type="checkbox" name="requires_approval"> Needs my approval before work starts</label>
     <p class="hint">Tick this when the ticket touches something sensitive; the watcher waits for /approve before starting.</p>
-    <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Create ticket</button></div>
+    <div class="row"><button class="btn danger" id="delete-ticket" type="button" hidden>Delete</button><span class="spacer"></span><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit" id="ticket-submit">Create ticket</button></div>
   </form>
 </dialog>
 
@@ -253,6 +258,7 @@
   const LABELS = { backlog:'Backlog', ready:'Ready', 'in-progress':'In progress', testing:'Testing', review:'Review', done:'Done', blocked:'Blocked' };
   const ORDER = ['backlog','ready','in-progress','testing','review','done','blocked'];
   let state = { tickets: [], transitions: {}, profiles: [], statuses: ORDER, catalog: null };
+  let editingId = null;
   const TOKEN = (document.querySelector('meta[name="board-token"]') || {}).content || '';
 
   const say = (msg, isError=false) => {
@@ -337,6 +343,15 @@
     report.href = `/api/report/${t.id}`;
     report.textContent = 'report';
     meta.appendChild(report);
+    if (t.status !== 'done') {
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'act';
+      edit.textContent = 'edit';
+      edit.setAttribute('aria-label', `Edit ${t.id}`);
+      edit.addEventListener('click', () => openEditDialog(t));
+      meta.appendChild(edit);
+    }
     el.appendChild(meta);
 
     // Single-pointer + keyboard alternative to dragging.
@@ -535,6 +550,17 @@
       : 'This model has no extra options.';
   }
 
+  function applyProjectDefaults(form) {
+    const defaults = ((state.projectDefaults || {})[form.project.value]) || {};
+    if (defaults.test_cmd && !form.test_cmd.value.trim()) {
+      form.test_cmd.value = defaults.test_cmd;
+    }
+    if (defaults.profile && !form.profile.value) {
+      form.profile.value = defaults.profile;
+      form.profile.dispatchEvent(new Event('change'));
+    }
+  }
+
   function fillProfiles(select) {
     const details = state.profileDetails || [];
     select.innerHTML = details.length
@@ -549,6 +575,11 @@
     const form = document.getElementById('form-ticket');
     const note = document.getElementById('ticket-load');
     const submit = form.querySelector('button[type="submit"]');
+    editingId = null;
+    form.reset();
+    document.getElementById('dlg-ticket-title').textContent = 'New ticket';
+    submit.textContent = 'Create ticket';
+    document.getElementById('delete-ticket').hidden = true;
     form.project.innerHTML = '<option value="">Loading projects…</option>';
     form.provider.innerHTML = '<option value="">Loading harnesses…</option>';
     form.model.innerHTML = '<option value="">…</option>';
@@ -570,6 +601,7 @@
       if (preferred) form.provider.value = preferred.provider;
       fillModels(form, preferred ? preferred.model : '');
       if (projectSel.value) form.project.value = projectSel.value;
+      applyProjectDefaults(form);
       ready = enabledProviders().length > 0 && titles.length > 0;
       note.textContent = ready
         ? ''
@@ -608,6 +640,44 @@
     } finally {
       submit.disabled = !ready;
       dlg.removeAttribute('aria-busy');
+    }
+  }
+
+  async function openEditDialog(ticket) {
+    const dlg = document.getElementById('dlg-ticket');
+    const form = document.getElementById('form-ticket');
+    const note = document.getElementById('ticket-load');
+    editingId = ticket.id;
+    form.reset();
+    document.getElementById('dlg-ticket-title').textContent = `Edit ${ticket.id}`;
+    document.getElementById('ticket-submit').textContent = 'Save changes';
+    document.getElementById('delete-ticket').hidden = false;
+    form.title.value = ticket.title || '';
+    form.body.value = ticket.body || '';
+    form.test_cmd.value = ticket.test_cmd || '';
+    form.priority.value = String(ticket.priority || 3);
+    form.attachment_path.value = ticket.attachment_path || '';
+    note.textContent = 'Loading the model list…';
+    dlg.showModal();  // the ticket data is already here; only the pickers need the catalogue
+    try {
+      const projects = await api('/api/projects');
+      const titles = (projects.projects || []).map(p => p.title);
+      form.project.innerHTML = titles.map(title => `<option value="${title}">${title}</option>`).join('');
+      if (titles.includes(ticket.project)) form.project.value = ticket.project;
+      await ensureCatalog();
+      fillPresets(form.profile);
+      fillHarness(form.provider);
+      form.profile.value = ticket.model_profile || '';
+      if (ticket.provider) form.provider.value = ticket.provider;
+      if (ticket.model) {
+        fillModels(form, ticket.model);
+        form.model.value = ticket.model;
+      } else {
+        fillModels(form, '');
+      }
+      note.textContent = '';
+    } catch (err) {
+      note.textContent = 'Could not load the pickers: ' + (err.message || err);
     }
   }
 
@@ -671,6 +741,7 @@
   document.getElementById('adopt-thread').addEventListener('click', () =>
     openAdoptDialog().catch(err => say(err.message, true)));
   const ticketForm = document.getElementById('form-ticket');
+  ticketForm.project.addEventListener('change', () => applyProjectDefaults(ticketForm));
   ticketForm.profile.addEventListener('change', () => {
     const preset = ((state.catalog && state.catalog.presets) || []).find(p => p.name === ticketForm.profile.value);
     if (!preset) return;
@@ -699,10 +770,33 @@
       requires_approval: form.requires_approval.checked,
     };
     try {
-      const data = await api('/api/tickets', { method: 'POST', body: JSON.stringify(body) });
-      form.closest('dialog').close();
+      if (editingId) {
+        await api(`/api/tickets/${editingId}/edit`, {
+          method: 'POST', body: JSON.stringify({ ...body, force: true }),
+        });
+        form.closest('dialog').close();
+        say(`${editingId} updated`);
+      } else {
+        const data = await api('/api/tickets', { method: 'POST', body: JSON.stringify(body) });
+        form.closest('dialog').close();
+        say(`${data.ticket.id} created`);
+      }
       form.reset();
-      say(`${data.ticket.id} created`);
+      editingId = null;
+      await load();
+    } catch (err) { say(err.message, true); }
+  });
+
+  document.getElementById('delete-ticket').addEventListener('click', async () => {
+    if (!editingId) return;
+    if (!window.confirm(`Delete ${editingId}? The report is kept; this cannot be undone.`)) return;
+    try {
+      await api(`/api/tickets/${editingId}/delete`, {
+        method: 'POST', body: JSON.stringify({ confirm: true }),
+      });
+      document.getElementById('dlg-ticket').close();
+      say(`${editingId} deleted; its report is kept`);
+      editingId = null;
       await load();
     } catch (err) { say(err.message, true); }
   });

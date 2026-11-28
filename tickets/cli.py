@@ -25,6 +25,7 @@ from store import (  # noqa: E402
     TicketError,
     TicketStore,
     load_config,
+    project_defaults,
     resolve_profile,
 )
 
@@ -90,6 +91,22 @@ def main() -> int:
     backup.add_argument("--out", default=str(Path.home() / ".local/state/t3-workflow/backups"))
     backup.add_argument("--keep", type=int, default=7, help="how many recent backups to keep (0 = all)")
 
+    edit = sub.add_parser("edit", help="change the human-owned fields of a ticket")
+    edit.add_argument("ticket")
+    edit.add_argument("--title")
+    edit.add_argument("--body")
+    edit.add_argument("--test", dest="test_cmd")
+    edit.add_argument("--priority", type=int)
+    edit.add_argument("--profile")
+    edit.add_argument("--provider")
+    edit.add_argument("--model")
+    edit.add_argument("--attachment")
+    edit.add_argument("--force", action="store_true", help="edit a ticket a stage is working on")
+
+    delete = sub.add_parser("delete", help="delete a ticket, keeping its report and history")
+    delete.add_argument("ticket")
+    delete.add_argument("--yes", action="store_true", help="required: deletion is irreversible")
+
     report = sub.add_parser("report", help="write the markdown report for one ticket")
     report.add_argument("ticket")
     report.add_argument("--out", default="", help="target path; empty = print to stdout")
@@ -105,12 +122,13 @@ def main() -> int:
                 mark = " (default)" if name == (config.get("defaults") or {}).get("profile") else ""
                 print(f"{name}{mark}: {profile.get('provider')} / {profile.get('model')}")
         elif args.command == "add":
+            defaults = project_defaults(load_config(Path(args.config)), args.project)
             ticket = store.add(
                 title=args.title,
                 project=args.project,
                 body=args.body,
-                model_profile=args.profile,
-                test_cmd=args.test_cmd,
+                model_profile=args.profile or defaults.get("profile", ""),
+                test_cmd=args.test_cmd or defaults.get("test_cmd", ""),
                 priority=args.priority,
                 status=args.status,
             )
@@ -145,6 +163,26 @@ def main() -> int:
                             shutil.rmtree(old, ignore_errors=True)
                             print(f"pruned: {old.name}")
             print(f"backup: {target}")
+        elif args.command == "edit":
+            ticket = store.update(
+                args.ticket,
+                force=args.force,
+                title=args.title,
+                body=args.body,
+                test_cmd=args.test_cmd,
+                priority=args.priority,
+                model_profile=args.profile,
+                provider=args.provider,
+                model=args.model,
+                attachment_path=args.attachment,
+            )
+            print_ticket(ticket)
+        elif args.command == "delete":
+            if not args.yes:
+                print("refusing to delete without --yes", file=sys.stderr)
+                return 2
+            removed = store.delete(args.ticket)
+            print(f"deleted {removed['id']} · {removed['title']} (report kept)")
         elif args.command == "report":
             text = store.report(args.ticket)
             if args.out:

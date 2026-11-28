@@ -28,6 +28,7 @@ CONFIG = {
         "deep": {"provider": "pi", "model": "opencode-go/qwen3.8-max"},
     },
     "defaults": {"profile": "fast"},
+    "projects": {"t3-workflow": {"test_cmd": "make check", "profile": "deep"}},
     "t3": {"cli": "/bin/true"},
 }
 
@@ -90,6 +91,77 @@ class StoreTests(unittest.TestCase):
         profile = resolve_profile(CONFIG, "")
         self.assertEqual(profile["name"], "fast")
         self.assertEqual(profile["provider"], "pi")
+
+
+class EditDeleteTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="edit-"))
+        os.environ["T3_REPORTS_DIR"] = str(self.tmp / "reports")
+        self.config = self.tmp / "config.json"
+        self.config.write_text(json.dumps(CONFIG))
+        self.store = TicketStore(self.tmp / "t.sqlite", self.config)
+        self.ticket = self.store.add("before", "/tmp/p", model_profile="fast", status="backlog")
+
+    def tearDown(self) -> None:
+        self.store.close()
+
+    def test_update_changes_fields_and_records_history(self) -> None:
+        updated = self.store.update(
+            self.ticket["id"], title="after", test_cmd="make check", priority=1
+        )
+        self.assertEqual(updated["title"], "after")
+        self.assertEqual(updated["test_cmd"], "make check")
+        self.assertEqual(updated["priority"], 1)
+        kinds = [event["kind"] for event in self.store.events(self.ticket["id"])]
+        self.assertIn("edited", kinds)
+
+    def test_a_finished_ticket_is_final(self) -> None:
+        self.store.move(self.ticket["id"], "ready")
+        self.store.claim(self.ticket["id"], "w")
+        self.store.move(self.ticket["id"], "testing")
+        self.store.move(self.ticket["id"], "review")
+        self.store.move(self.ticket["id"], "done")
+        with self.assertRaises(TicketError):
+            self.store.update(self.ticket["id"], title="late")
+
+    def test_a_ticket_in_flight_needs_force(self) -> None:
+        self.store.move(self.ticket["id"], "ready")
+        self.store.claim(self.ticket["id"], "w")
+        with self.assertRaises(TicketError) as ctx:
+            self.store.update(self.ticket["id"], title="mid")
+        self.assertIn("force", str(ctx.exception))
+        self.assertEqual(self.store.update(self.ticket["id"], force=True, title="mid")["title"], "mid")
+
+    def test_delete_keeps_the_report_and_the_snapshot(self) -> None:
+        self.store.attach_proof(self.ticket["id"], True, "ok")
+        removed = self.store.delete(self.ticket["id"])
+        self.assertEqual(removed["id"], self.ticket["id"])
+        with self.assertRaises(TicketError):
+            self.store.get(self.ticket["id"])
+        report = Path(os.environ["T3_REPORTS_DIR"]) / f"{self.ticket['id']}.md"
+        self.assertTrue(report.is_file())
+        events = [e for e in self.store.con.execute(
+            "select kind, detail from events where ticket_id=?", (self.ticket["id"],)
+        )]
+        kinds = [event[0] for event in events]
+        self.assertIn("deleted", kinds)
+        snapshot = next(event[1] for event in events if event[0] == "deleted")
+        self.assertIn('"title"', snapshot)
+
+
+class CliAddTests(unittest.TestCase):
+    def test_add_without_test_or_profile_uses_the_project_defaults(self) -> None:
+        tmp = Path(tempfile.mkdtemp(prefix="cli-add-"))
+        config = tmp / "config.json"
+        config.write_text(json.dumps(CONFIG))
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "tickets/cli.py"), "--db", str(tmp / "t.sqlite"),
+             "--config", str(config), "add", "one line", "--project", "t3-workflow"],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("make check", proc.stdout)
+        self.assertIn("deep", proc.stdout)
 
 
 class CliShowTests(unittest.TestCase):
