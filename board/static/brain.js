@@ -11,6 +11,7 @@
   if (!view) return;
 
   const TOKEN = (document.querySelector('meta[name="board-token"]') || {}).content || '';
+  const VAULT_NAME = (document.querySelector('meta[name="brain-vault"]') || {}).content || 'brain';
   const $ = (id) => document.getElementById(id);
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const ZONE_COLORS = ['#4f46e5', '#0f766e', '#b45309', '#b91c1c', '#7c3aed', '#0369a1', '#4d7c0f', '#9d174d',
@@ -37,6 +38,7 @@
   const depthSel = $('brain-depth');
   const labelsToggle = $('brain-labels');
   const arrowsToggle = $('brain-arrows');
+  const colorSel = $('brain-color');
   const statusEl = $('brain-status');
   const table = document.querySelector('.brain-table');
   const tableWrap = document.querySelector('.brain-table-wrap');
@@ -119,9 +121,10 @@
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  function groupFor(node) {
+  function colorGroup(node) {
+    if (colorSel.value === 'type') return `Type · ${node.type || 'note'}`;
     // `10 Projects` is one zone holding every project's generated notes; colouring the
-    // zone would paint 340 of 363 nodes the same colour. Split it by project instead.
+    // zone would paint most nodes the same colour. Split it by project instead.
     if (node.zone === '10 Projects') {
       return node.project ? `Project · ${node.project}` : '10 Projects · unassigned';
     }
@@ -335,9 +338,9 @@
           type: node.type || '',
           project: node.project || '',
           zone: node.zone || 'root',
-          group: groupFor(node),
+          group: colorGroup(node),
           degree: Number(node.degree) || 0,
-          color: colorForGroup(groupFor(node)),
+          color: colorForGroup(colorGroup(node)),
         },
       });
     });
@@ -463,14 +466,14 @@
       legend = document.createElement('div');
       legend.id = 'brain-legend';
       legend.className = 'brain-legend';
-      legend.setAttribute('aria-label', 'Graph colours by zone');
+      legend.setAttribute('aria-label', 'Graph colours by group');
       const pane = $('brain-graph-pane');
       pane.appendChild(legend);
     }
     legend.replaceChildren();
     const counts = new Map();
     state.graph.nodes.forEach((node) => {
-      const group = groupFor(node);
+      const group = colorGroup(node);
       counts.set(group, (counts.get(group) || 0) + 1);
     });
     [...counts.entries()]
@@ -655,7 +658,7 @@
     $('note-frontmatter').replaceChildren();
     renderLinkList($('note-outlinks'), [], 'None');
     renderLinkList($('note-backlinks'), [], 'None');
-    $('note-obsidian').href = `obsidian://open?vault=brain&file=${encodeURIComponent(path.replace(/\.md$/i, ''))}`;
+    $('note-obsidian').href = `obsidian://open?vault=${encodeURIComponent(VAULT_NAME)}&file=${encodeURIComponent(path.replace(/\.md$/i, ''))}`;
     $('note-copy').disabled = true;
     if (!noteDialog.open) noteDialog.showModal();
     $('note-close').focus();
@@ -742,37 +745,72 @@
       showGraphMessage('Loading graph…', false);
     }
     const suffix = refresh ? '?refresh=1' : '';
-    try {
-      const [notes, graph] = await Promise.all([
-        api(`/api/brain/notes${suffix}`),
-        api(`/api/brain/graph${suffix}`),
-      ]);
-      if (!Array.isArray(notes)) throw new Error('the notes response is not a list');
-      if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
-        throw new Error('the graph response is malformed');
-      }
-      state.notes = notes;
-      state.graph = {
-        nodes: graph.nodes,
-        edges: graph.edges,
-        unresolved: Array.isArray(graph.unresolved) ? graph.unresolved : [],
-        stats: graph.stats || {},
-      };
+    let notes = null;
+    let graph = null;
+    let notesError = '';
+    let graphError = '';
+    const failure = (result) => (result.status === 'rejected' && result.reason && result.reason.message)
+      ? result.reason.message : 'unexpected response';
+
+    // The list is the text alternative. Render it as soon as its request returns; do not
+    // make it wait for the graph, and keep it when only the graph fails.
+    const notesPromise = api(`/api/brain/notes${suffix}`).then((value) => {
+      if (!Array.isArray(value)) throw new Error('the notes response is not a list');
+      notes = value;
+      state.notes = value;
       state.loaded = true;
       renderFilters();
       renderList();
-      updateSummary();
-      if (!state.selected || !notes.some((note) => note.path === state.selected)) state.selected = '';
-      renderGraph(true);
-      setStatus(`Loaded ${notes.length} notes.`);
+      if (!state.selected || !value.some((note) => note.path === state.selected)) state.selected = '';
+      setStatus(`Loaded ${value.length} notes; loading graph…`);
+      return value;
+    }).catch((err) => {
+      notesError = err && err.message ? err.message : String(err);
+      if (!state.loaded) showListError(`Could not load notes: ${notesError}`);
+      throw err;
+    });
+    const graphPromise = api(`/api/brain/graph${suffix}`).then((value) => {
+      if (!value || !Array.isArray(value.nodes) || !Array.isArray(value.edges)) {
+        throw new Error('the graph response is malformed');
+      }
+      graph = value;
+      return value;
+    }).catch((err) => {
+      graphError = err && err.message ? err.message : String(err);
+      throw err;
+    });
+
+    try {
+      const [notesResult, graphResult] = await Promise.allSettled([notesPromise, graphPromise]);
+      if (!notes) notesError = notesError || failure(notesResult);
+      if (!graph) graphError = graphError || failure(graphResult);
+
+      if (graph && notes) {
+        state.graph = {
+          nodes: graph.nodes,
+          edges: graph.edges,
+          unresolved: Array.isArray(graph.unresolved) ? graph.unresolved : [],
+          stats: graph.stats || {},
+        };
+        updateSummary();
+        renderGraph(true);
+      } else if (notes) {
+        showGraphMessage(`Could not load the graph: ${graphError}`, true);
+        graphSummaryEl.textContent = 'The list is still available; retry the graph when ready.';
+      } else {
+        showGraphMessage('The notes list failed to load; the graph is paused too.', true);
+      }
+
+      if (notes && graph) setStatus(`Loaded ${notes.length} notes.`);
+      else if (notes) setStatus(`Loaded ${notes.length} notes; graph unavailable: ${graphError}`, true);
+      else setStatus(`Could not load the vault: ${notesError}`, true);
     } catch (err) {
-      const message = `Could not load the vault: ${err.message}`;
+      const message = `Could not finish loading the vault: ${err.message}`;
       setStatus(message, true);
-      if (!state.loaded) {
+      if (notes) showGraphMessage(message, true);
+      else {
         showListError(message);
         showGraphMessage(message, true);
-      } else {
-        toast(message, true);
       }
     } finally {
       state.loading = false;
@@ -784,8 +822,8 @@
 
   function setMobilePane(pane) {
     view.dataset.mobilePane = pane;
-    $('brain-tab-list').setAttribute('aria-selected', String(pane === 'list'));
-    $('brain-tab-graph').setAttribute('aria-selected', String(pane === 'graph'));
+    $('brain-tab-list').setAttribute('aria-pressed', String(pane === 'list'));
+    $('brain-tab-graph').setAttribute('aria-pressed', String(pane === 'graph'));
     if (pane === 'graph' && state.loaded) {
       const cy = ensureGraph();
       if (cy) {
@@ -869,6 +907,19 @@
   $('brain-graph-list').addEventListener('click', () => setMobilePane('list'));
   labelsToggle.addEventListener('change', applyGraphToggles);
   arrowsToggle.addEventListener('change', applyGraphToggles);
+  colorSel.addEventListener('change', () => {
+    if (state.cy) {
+      const byId = new Map(state.graph.nodes.map((node) => [node.id, node]));
+      state.cy.nodes().forEach((element) => {
+        const node = byId.get(element.id());
+        if (!node) return;
+        const group = colorGroup(node);
+        element.data('group', group);
+        element.data('color', colorForGroup(group));
+      });
+    }
+    renderLegend();
+  });
   localToggle.addEventListener('change', () => {
     if (localToggle.checked && !state.selected) {
       setStatus('Select a note to use the local graph.');

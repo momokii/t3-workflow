@@ -399,7 +399,7 @@
       border: 1px solid var(--line); border-radius: 9px; }
     .brain-tabs button { font: inherit; font-size: 12px; border: 0; background: transparent; color: var(--ink-soft);
       padding: 5px 12px; border-radius: 7px; cursor: pointer; }
-    .brain-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; }
+    .brain-tabs button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; }
     .brain-split { grid-template-columns: 1fr; }
     .brain-view[data-mobile-pane="list"] .brain-graph-pane { display: none; }
     .brain-view[data-mobile-pane="graph"] .brain-list-pane { display: none; }
@@ -492,9 +492,9 @@
         <h1 id="brain-title">Second Brain</h1>
         <p class="brain-summary" id="brain-summary">Notes and links from the vault. Notes only: attachments and tags are not nodes.</p>
       </div>
-      <div class="brain-tabs" role="tablist" aria-label="Second Brain view">
-        <button type="button" role="tab" id="brain-tab-list" aria-controls="brain-list-pane" aria-selected="true">List</button>
-        <button type="button" role="tab" id="brain-tab-graph" aria-controls="brain-graph-pane" aria-selected="false">Graph</button>
+      <div class="brain-tabs" role="group" aria-label="Second Brain view">
+        <button type="button" id="brain-tab-list" aria-controls="brain-list-pane" aria-pressed="true">List</button>
+        <button type="button" id="brain-tab-graph" aria-controls="brain-graph-pane" aria-pressed="false">Graph</button>
       </div>
       <div class="brain-head-actions">
         <button class="btn" id="brain-refresh" type="button">Refresh</button>
@@ -516,6 +516,12 @@
       <div class="brain-options-body">
         <label class="brain-check"><input type="checkbox" id="brain-labels"> Labels</label>
         <label class="brain-check"><input type="checkbox" id="brain-arrows"> Arrows</label>
+        <label class="brain-inline">Colour
+          <select id="brain-color">
+            <option value="group">Project / zone</option>
+            <option value="type">Type</option>
+          </select>
+        </label>
         <label class="brain-check"><input type="checkbox" id="brain-local"> Local graph</label>
         <label class="brain-inline">Depth
           <select id="brain-depth"><option value="1">1</option><option value="2">2</option></select>

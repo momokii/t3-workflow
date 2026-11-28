@@ -164,10 +164,12 @@ class BoardApiTests(unittest.TestCase):
             f"base = Path({str(self.brain_dir)!r})\n"
             f"expected_vault = {str(vault)!r}\n"
             "args = sys.argv[1:]\n"
-            "if args[-1:] != ['--json']:\n"
+            "if '--json' not in args:\n"
             "    print('missing --json', file=sys.stderr); raise SystemExit(2)\n"
             "if os.environ.get('BRAIN_VAULT') != expected_vault:\n"
             "    print('wrong BRAIN_VAULT', file=sys.stderr); raise SystemExit(2)\n"
+            "if 'T3_BOARD_TOKEN' in os.environ:\n"
+            "    print('board token leaked', file=sys.stderr); raise SystemExit(2)\n"
             "cmd = args[0] if args else ''\n"
             "if cmd == 'list':\n"
             "    print((base / 'list.json').read_text())\n"
@@ -175,7 +177,8 @@ class BoardApiTests(unittest.TestCase):
             "    print((base / 'graph.json').read_text())\n"
             "elif cmd == 'get':\n"
             "    data = json.loads((base / 'note.json').read_text())\n"
-            "    if len(args) < 2 or args[1] != data['path']:\n"
+            "    ref = args[args.index('--') + 1] if '--' in args else (args[1] if len(args) > 1 else '')\n"
+            "    if ref != data['path']:\n"
             "        print('note not found', file=sys.stderr)\n"
             "        raise SystemExit(1)\n"
             "    print(json.dumps(data))\n"
@@ -245,6 +248,32 @@ class BoardApiTests(unittest.TestCase):
         fresh, raw = self.request("GET", "/api/brain/notes?refresh=1", token="secret")
         self.assertEqual(fresh.status, 200)
         self.assertEqual(len(json.loads(raw)), 1)
+
+    def test_brain_token_is_not_forwarded_to_the_cli(self) -> None:
+        os.environ["T3_BOARD_TOKEN"] = "must-not-leak"
+        try:
+            response, _ = self.request("GET", "/api/brain/notes", token="secret")
+        finally:
+            os.environ.pop("T3_BOARD_TOKEN", None)
+        self.assertEqual(response.status, 200)
+
+    def test_brain_empty_vault_setting_falls_back_to_the_default(self) -> None:
+        self.assertEqual(board.brain_vault_path(""), Path.home() / "brain")
+        self.assertEqual(board.brain_vault_path("   "), Path.home() / "brain")
+
+    def test_brain_route_timeout_is_503(self) -> None:
+        slow = self.tmp / "slow-brain-route"
+        slow.write_text("#!/bin/sh\nsleep 2\n")
+        slow.chmod(0o755)
+        board.Handler.brain_bin = str(slow)
+        board.Handler.brain_timeout = 0.05
+        board._BRAIN_CACHE.clear()
+        try:
+            response, raw = self.request("GET", "/api/brain/notes", token="secret")
+        finally:
+            board.Handler.brain_timeout = 10.0
+        self.assertEqual(response.status, 503)
+        self.assertIn("timed out", json.loads(raw)["error"])
 
     def test_brain_timeout_is_503(self) -> None:
         slow = self.tmp / "slow-brain"
@@ -324,6 +353,7 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         for marker in ("Second Brain", 'href="#brain"', 'id="brain-view"',
                        'id="brain-list-pane"', 'id="brain-graph"', 'data-mobile-pane="list"',
+                       'id="brain-color"', 'aria-pressed="true"',
                        "/static/brain.js", "/static/vendor/cytoscape.min.js"):
             self.assertIn(marker, raw, marker)
         script, js = self.request("GET", "/static/brain.js")
@@ -346,6 +376,7 @@ class BoardApiTests(unittest.TestCase):
         response, raw = self.request("GET", "/")
         self.assertEqual(response.status, 200)
         self.assertIn('href="/guide"', raw)
+        self.assertIn('name="brain-vault" content="vault"', raw)
 
     def test_guide_embeds_screenshots_that_exist(self) -> None:
         response, raw = self.request("GET", "/guide")

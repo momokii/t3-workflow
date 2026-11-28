@@ -26,6 +26,19 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Docs**: `docs/second-brain.md`, new API sections, a usage section, README security/board notes, the
   operations runbook and a Guide section.
 
+### Fixed
+
+- **The note list no longer waits for the graph, or disappears with it.** It renders as soon as
+  `/api/brain/notes` returns, and a `503`/malformed `/api/brain/graph` leaves the list usable with a
+  graph-specific retry.
+- **The brain CLI gets a minimal environment.** Only `PATH`, `HOME`, locale and `BRAIN_VAULT` are
+  forwarded, so the board token and the rest of the service environment are not exposed. An empty
+  `BRAIN_VAULT`/`--brain-vault` falls back to `~/brain` rather than the current directory, and the
+  Obsidian deep link uses the configured vault folder name.
+- **Graph colour can follow type as well as project/zone**, and the mobile List/Graph controls use
+  pressed-button semantics instead of an incomplete tab pattern. The checked-in screenshots are from a
+  small demo vault, not the owner's live vault.
+
 ## [0.1.1] — 2026-11-26
 
 ### Fixed

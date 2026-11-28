@@ -424,19 +424,25 @@ npm test -- --run</code></pre>
     <figure class="shot">
       <img src="/static/shots/brain.png" alt="The Second Brain view: a sortable note list on the left and the vault graph on the right, with search, zone, type and project filters." width="1440" height="900" loading="lazy" decoding="async">
       <figcaption>Notes on the left, links on the right. The list is the text alternative to the canvas
-      graph, so every note is reachable by keyboard and screen reader.</figcaption>
+      graph, so every note is reachable by keyboard and screen reader. The screenshots use a small demo
+      vault.</figcaption>
     </figure>
     <h3>What the graph shows</h3>
     <p>Nodes are notes and lines are the vault's resolved <code>[[wikilinks]]</code>, exactly as the brain
     CLI reports them; the board does not parse links. Node size follows the note's degree. Colour follows
-    the project inside <code>10 Projects</code> and the zone elsewhere. Hover highlights a note's
+    the project inside <code>10 Projects</code> and the zone elsewhere, or the note type when
+    <strong>Colour</strong> is switched to Type. Hover highlights a note's
     neighbours, click opens its detail, and the options row offers labels, arrows, orphan filtering, a
     local graph at depth 1 or 2, fit, reset, re-layout and zoom buttons.</p>
     <h3>List and phone layout</h3>
     <figure class="shot">
-      <img src="/static/shots/brain-mobile.png" alt="The Second Brain graph on a phone, with the List and Graph tabs above it and a colour legend below." width="390" height="844" loading="lazy" decoding="async">
+      <img src="/static/shots/brain-mobile-list.png" alt="The Second Brain list on a phone: search, zone, type and project filters above a sortable note table, with a Graph switch." width="390" height="844" loading="lazy" decoding="async">
+      <figcaption>The list comes first on a phone and carries every note without the canvas.</figcaption>
+    </figure>
+    <figure class="shot">
+      <img src="/static/shots/brain-mobile.png" alt="The Second Brain graph on a phone, with a List switch above it and a colour legend below." width="390" height="844" loading="lazy" decoding="async">
       <figcaption>The phone layout uses List and Graph tabs; the graph is the same canvas, fitted to the
-      small viewport.</figcaption>
+      small viewport. The screenshots use a small demo vault.</figcaption>
     </figure>
     <p>On a wide screen the list sits left and the graph right. On a phone, <strong>List</strong> and
     <strong>Graph</strong> tabs switch between them, list first. The list searches title, path, project,

@@ -80,7 +80,8 @@ are cached for 10 seconds; the **Refresh** button sends `?refresh=1`. Vault chan
 without restarting the board. Python changes still need `systemctl --user restart t3-board`.
 
 The integration is read-only by construction: there is no `brain put` call, and note bodies are inserted
-as text. Verify after an upgrade with `git -C ~/brain status`; it must stay clean with respect to board
+as text. The CLI receives a minimal environment (`PATH`, `HOME`, locale and `BRAIN_VAULT`), not the
+board's `T3_BOARD_TOKEN` or the rest of the service environment. Verify after an upgrade with `git -C ~/brain status`; it must stay clean with respect to board
 activity.
 
 ## Backup

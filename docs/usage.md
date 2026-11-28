@@ -381,9 +381,10 @@ screen reader without touching the graph.
   phone the table shows title and project; the other columns remain on wider screens and in the note
   detail.
 - **Graph**: node size follows `degree`; colour groups follow the project inside `10 Projects` and the
-  zone elsewhere, because colouring the whole `10 Projects` zone would paint almost every note the
-  same colour. Drag to pan, wheel or the **− / +** buttons to zoom, **Fit** to frame the visible
-  nodes, **Reset view** to return to 100%, **Re-layout** to run the force layout again.
+  zone elsewhere by default, or the note type when the **Colour** control is set to Type. Colouring
+  the whole `10 Projects` zone would paint almost every note the same colour. Drag to pan, wheel or
+  the **− / +** buttons to zoom, **Fit** to frame the visible nodes, **Reset view** to return to
+  100%, **Re-layout** to run the force layout again.
 - **Filters** drive both views at once: the same search, zone, type, project and orphan choice hides
   notes in the list and nodes in the graph. **Local graph** keeps the selected note and its neighbours
   at depth 1 or 2; **Global graph** is the same checkbox off. Hover highlights neighbours; click a node

@@ -46,9 +46,9 @@ environment.
   states. It is the keyboard-accessible text alternative to the canvas graph, as WCAG 2.2 SC 1.1.1
   requires.
 - **Graph**: Cytoscape.js 3.35.0 (MIT, vendored at `board/static/vendor/cytoscape.min.js`) with a cose
-  layout; node size by degree, colour by project inside `10 Projects` and by zone elsewhere; pan, wheel
-  and button zoom, Fit, Reset view, Re-layout, labels and arrows toggles, local graph depth 1–2, and a
-  legend. Hover highlights neighbours; click selects and opens the note.
+  layout; node size by degree; colour by project inside `10 Projects` and by zone elsewhere, or by
+  note type via the Colour control; pan, wheel and button zoom, Fit, Reset view, Re-layout, labels and
+  arrows toggles, local graph depth 1–2, and a legend. Hover highlights neighbours; click selects and opens the note.
 - **Note detail**: frontmatter, raw Markdown in a read-only `<pre>`, outlinks and backlinks computed
   from the loaded graph, Copy Markdown, and an `obsidian://open` convenience link. Note content is
   inserted with `textContent`, never `innerHTML`.
@@ -59,6 +59,7 @@ usable when the graph library fails to load.
 ## Limits
 
 - Notes and `[[wikilinks]]` only; attachments and tags are not graph nodes.
+- **Open in Obsidian** uses the vault folder name (default `brain`) as the Obsidian vault name.
 - No editing, no tag nodes, no server-side full-text search, no clustering for very large vaults.
 - The board host must be able to execute the brain CLI and read the vault.
 - `git -C ~/brain status` must stay clean with respect to this feature: the view never writes.

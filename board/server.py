@@ -14,6 +14,7 @@ token when one is configured.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import shutil
@@ -53,8 +54,14 @@ FS_BLOCKED_ROOTS = ("/proc", "/sys", "/dev", "/root", "/boot", "/run")
 
 T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
 CATALOG_DIR = Path.home() / ".t3/caches"
-BRAIN_VAULT = Path(os.environ.get("BRAIN_VAULT", Path.home() / "brain"))
-BRAIN_BIN = os.environ.get("BRAIN_BIN", str(Path.home() / "brain/bin/brain"))
+def brain_vault_path(value: str | Path | None = None) -> Path:
+    """An empty value must not turn into the current directory."""
+    raw = str(value).strip() if value is not None else os.environ.get("BRAIN_VAULT", "").strip()
+    return Path(raw).expanduser() if raw else Path.home() / "brain"
+
+
+BRAIN_VAULT = brain_vault_path()
+BRAIN_BIN = os.environ.get("BRAIN_BIN") or str(Path.home() / "brain/bin/brain")
 BRAIN_CACHE_TTL = 10.0
 _BRAIN_CACHE: dict[str, tuple[float, dict | list]] = {}
 _BRAIN_CACHE_LOCK = threading.Lock()
@@ -192,10 +199,17 @@ def brain_json(binary: str, vault: Path, args: list[str], timeout: float = 10.0)
     ok, reason = brain_available(binary)
     if not ok:
         return 503, {"error": reason}
-    env = {**os.environ, "BRAIN_VAULT": str(vault)}
+    env = {"BRAIN_VAULT": str(vault), "PATH": os.environ.get("PATH", "")}
+    for key in ("HOME", "LANG", "LC_ALL", "TZ", "PYTHONUTF8", "PYTHONIOENCODING",
+                "XDG_CONFIG_HOME", "XDG_CACHE_HOME"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    argv = [binary, *args]
+    if "--json" not in args:
+        argv.append("--json")
     try:
         proc = subprocess.run(
-            [binary, *args, "--json"],
+            argv,
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=timeout, env=env, shell=False,
         )
@@ -216,14 +230,15 @@ def brain_json(binary: str, vault: Path, args: list[str], timeout: float = 10.0)
         return 503, {"error": f"brain {args[0] if args else ''} returned invalid JSON"}
 
 
-def brain_cached(key: str, binary: str, vault: Path, args: list[str], refresh: bool) -> tuple[int, object]:
+def brain_cached(key: str, binary: str, vault: Path, args: list[str], refresh: bool,
+                 timeout: float = 10.0) -> tuple[int, object]:
     key = f"{vault.resolve()}::{key}"
     now = time.monotonic()
     with _BRAIN_CACHE_LOCK:
         cached = _BRAIN_CACHE.get(key)
         if not refresh and cached and now - cached[0] < BRAIN_CACHE_TTL:
             return 200, cached[1]
-    status, payload = brain_json(binary, vault, args)
+    status, payload = brain_json(binary, vault, args, timeout=timeout)
     if status == 200:
         with _BRAIN_CACHE_LOCK:
             _BRAIN_CACHE[key] = (time.monotonic(), payload)
@@ -242,8 +257,6 @@ def brain_note_path(vault: Path, raw: str) -> tuple[str, str]:
         return "", "path traversal is not allowed"
     if candidate.suffix.lower() != ".md":
         return "", "only .md notes are served"
-    if any(part.startswith("-") for part in parts):
-        return "", "note names may not start with a dash"
     vault_resolved = vault.resolve()
     current = vault_resolved
     for part in parts:
@@ -325,6 +338,7 @@ class Handler(BaseHTTPRequestHandler):
     catalog_dir = CATALOG_DIR
     brain_vault = BRAIN_VAULT
     brain_bin = BRAIN_BIN
+    brain_timeout = 10.0
     token = ""
     inject_token = True
     max_upload_bytes = 20 * 1024 * 1024
@@ -397,7 +411,6 @@ class Handler(BaseHTTPRequestHandler):
             else "image/svg+xml" if name.endswith(".svg")
             else "image/png" if name.endswith(".png")
             else "text/javascript; charset=utf-8" if name.endswith(".js")
-            else "text/css; charset=utf-8" if name.endswith(".css")
             else "application/octet-stream"
         )
         self._send(200, target.read_bytes(), kind)
@@ -429,9 +442,14 @@ class Handler(BaseHTTPRequestHandler):
         load this page. The token keeps scripts and stray POSTs honest.
         """
         raw = (STATIC / "index.html").read_bytes()
+        metas = []
+        vault_name = Path(self.brain_vault).name or "brain"
+        metas.append(f'<meta name="brain-vault" content="{html.escape(vault_name, quote=True)}">')
         if self.token and self.inject_token:
-            meta = f'<meta name="board-token" content="{self.token}">'.encode()
-            raw = raw.replace(b"</head>", meta + b"</head>", 1)
+            metas.insert(0, f'<meta name="board-token" content="{html.escape(self.token, quote=True)}">')
+        if metas:
+            block = "".join(metas).encode()
+            raw = raw.replace(b"</head>", block + b"</head>", 1)
         return raw
 
     def log_message(self, fmt: str, *args) -> None:  # concise
@@ -517,7 +535,8 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             refresh = (query.get("refresh") or [""])[0] in ("1", "true")
             status, payload = brain_cached(
-                "notes", self.brain_bin, Path(self.brain_vault), ["list"], refresh
+                "notes", self.brain_bin, Path(self.brain_vault), ["list"], refresh,
+                timeout=self.brain_timeout,
             )
             self._json(status, payload)
             return
@@ -528,7 +547,8 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             refresh = (query.get("refresh") or [""])[0] in ("1", "true")
             status, payload = brain_cached(
-                "graph", self.brain_bin, Path(self.brain_vault), ["graph"], refresh
+                "graph", self.brain_bin, Path(self.brain_vault), ["graph"], refresh,
+                timeout=self.brain_timeout,
             )
             self._json(status, payload)
             return
@@ -543,7 +563,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": error})
                 return
             status, payload = brain_json(
-                self.brain_bin, Path(self.brain_vault), ["get", relative]
+                self.brain_bin, Path(self.brain_vault), ["get", "--json", "--", relative],
+                timeout=self.brain_timeout,
             )
             self._json(status, payload)
             return
@@ -1041,8 +1062,8 @@ def main() -> int:
     Handler.token = args.token or __import__("os").environ.get("T3_BOARD_TOKEN", "")
     Handler.t3_db_path = Path(args.t3_db)
     Handler.catalog_dir = Path(args.catalog_dir)
-    Handler.brain_vault = Path(args.brain_vault)
-    Handler.brain_bin = args.brain_bin
+    Handler.brain_vault = brain_vault_path(args.brain_vault)
+    Handler.brain_bin = args.brain_bin or BRAIN_BIN
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"board on http://{args.host}:{args.port}  (db={args.db})", flush=True)
