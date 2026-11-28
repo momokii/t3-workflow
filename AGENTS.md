@@ -25,7 +25,8 @@ schema or state machine → `docs/architecture.md`, procedures → `docs/operati
    answer wins across all channels.
 5. **Test stage decides from exit codes**, not from prose. No output, no advance.
 6. **Reports are evidence.** Do not hand-edit `~/.local/state/t3-workflow/reports/`;
-   regenerate them from the ticket.
+   regenerate them from the ticket. A deleted ticket keeps its report file and a `deleted` event
+   with a row snapshot; deletion never destroys evidence.
 7. **Release pushes only a ticket branch.** The base branch is never pushed, and a ticket
    without a `[PASS]` proof is refused.
 8. **Board writes need the token.** Every `POST` passes through `X-Board-Token`; `GET` is

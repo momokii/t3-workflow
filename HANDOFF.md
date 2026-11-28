@@ -142,7 +142,8 @@ From `AGENTS.md`, repeated because they are the ones that get broken:
 
 | # | Task | Acceptance criteria | Why first |
 |---|---|---|---|
-| 1 | **Edit and delete a ticket** (title, context, test command, profile/provider/model, priority) through the board and `tickets/cli.py`, with history | API tests for edit and delete; a deleted ticket leaves its report; UI has an edit dialog; `docs/api.md` updated | the most common real friction today is a wrong ticket that must be recreated |
+| 1 | ~~Edit and delete a ticket~~ | delivered: store + API + CLI + board dialog; a deleted ticket keeps its report and an audit snapshot | done |
+| 2 | **Plan acknowledgement** — forward the dev thread's first plan as a Telegram message | a plan arrives before execution; tests for the bridge notice | next |
 | 2 | **Per-ticket cost evidence** — investigate what T3 exposes per run before building | a documented finding: where token/usage data lives, or a clear "not available"; then the smallest honest feature | wall-clock budget is the only guard now |
 | 3 | **Deploy + rollback** for one real target | a documented target, a deploy command, a tested rollback, prove with one release | pipeline stops at a pushed branch today |
 | 4 | **Pull-request automation** | needs `gh` or a GitHub token; until then the compare link + `T-xxxx.pr.md` stand | explicitly deferred by the owner |

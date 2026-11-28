@@ -13,6 +13,20 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- **Edit and delete a ticket**, with history. `store.update()` edits the human-owned fields (title,
+  context, test command, priority, attachment, preset, provider/model, project), refuses a `done`
+  ticket and requires `force` while a stage is working; `store.delete()` writes the report first,
+  records a `deleted` event with a row snapshot and removes the ticket, and `/api/report/<id>` keeps
+  serving the file. Exposed as `POST /api/tickets/<id>/edit`, `POST /api/tickets/<id>/delete`
+  (`confirm: true`), a board edit dialog with a delete confirmation, and
+  `tickets/cli.py edit|delete`.
+- **Project defaults** (`projects.<title>` in config): the ticket dialog prefills the test command and
+  preset from the selected project, and `tickets/cli.py add` uses them when `--test`/`--profile` are
+  omitted, so a ticket can be a title plus a target. The map ships in `GET /api/tickets` as
+  `projectDefaults`.
+
 ### Fixed
 
 - **The watcher crashed in production while polling a thread.** The service calls `sync_threads()`

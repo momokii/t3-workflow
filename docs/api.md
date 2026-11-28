@@ -5,6 +5,8 @@ The board is a single Python file (`board/server.py`) serving one page and a sma
 ```
 POST /api/tickets                      create a ticket
 POST /api/tickets/<id>/move            move a ticket
+POST /api/tickets/<id>/edit            edit a ticket's fields
+POST /api/tickets/<id>/delete          delete a ticket (report kept)
 POST /api/approvals/<id>/decide        approve or reject
 POST /api/projects                     register a T3 project
 POST /api/threads/<thread>/adopt       adopt a T3 thread as a ticket
@@ -153,7 +155,9 @@ Returns `{"ticket": {…}}`. Rejections with `409`:
 - a provider without a model — `provider and model must be set together`.
 
 An explicit `provider`/`model` pair takes precedence over `profile`; a ticket with neither falls back
-to `defaults.profile`.
+to `defaults.profile`. A project may carry defaults (`projects.<title>` in config); `test_cmd`, `profile`,
+`provider` and `model` left out of the request are filled from them, and `GET /api/tickets` returns the
+map as `projectDefaults` so the board can prefill its dialog.
 
 ## GET /api/catalog
 
@@ -187,6 +191,31 @@ curl -s http://127.0.0.1:8787/api/catalog | python3 -m json.tool | head -30
 
 Providers that T3 reports as `enabled: false` are still listed (with their models) so the API can
 explain why a pick fails; the board only offers the enabled ones.
+
+## POST /api/tickets/<id>/edit
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/api/tickets/T-0001/edit \
+  -H "X-Board-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Better title","test_cmd":"make check","priority":2,"force":true}'
+```
+
+Editable fields: `title`, `body`, `test_cmd`, `priority`, `requires_approval`, `attachment_path`,
+`model_profile`, `provider`, `model`, `project`. A `done` ticket is refused (`409`); a ticket a stage is
+working on (`in-progress`, `testing`, `review`) needs `"force": true`, which is the human override and is
+recorded as an `edited` event. An explicit provider/model pair is validated against the catalogue like
+creation.
+
+## POST /api/tickets/<id>/delete
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/api/tickets/T-0001/delete \
+  -H "X-Board-Token: $TOKEN" -H 'Content-Type: application/json' -d '{"confirm": true}'
+```
+
+Returns `200 {"deleted": {"id": "T-0001", …}}`. Without `"confirm": true` it returns `400`; the report is
+written before deletion, a `deleted` event stores a snapshot of the row, and `GET /api/report/<id>` keeps
+serving the file afterwards.
 
 ## POST /api/tickets/<id>/move
 

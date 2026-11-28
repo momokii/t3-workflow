@@ -113,6 +113,7 @@
       <li><a href="#priority">Priority</a></li>
       <li><a href="#approval">Approvals</a></li>
       <li><a href="#adopt">Creating, adopting and registering</a></li>
+      <li><a href="#edit">Editing and deleting</a></li>
       <li><a href="#limits">Limits, failures and overrides</a></li>
       <li><a href="#retries">When something fails</a></li>
       <li><a href="#telegram">Driving it from Telegram</a></li>
@@ -251,6 +252,22 @@ npm test -- --run</code></pre>
     verdict if the tree moved. The measurements are in <code>docs/readonly-verifier.md</code>.</p>
   </section>
 
+  <section id="edit">
+    <h2>Editing and deleting</h2>
+    <p>Every card that is not <code>done</code> has an <strong>edit</strong> control. It opens the same
+    dialog, prefilled, and saves through <code>POST /api/tickets/&lt;id&gt;/edit</code>: title, context, test
+    command, priority, attachment, preset and harness/model. A ticket a stage is working on needs the human
+    override (the board sends it); a <code>done</code> ticket is final, because its report is the record.</p>
+    <p><strong>Delete</strong> lives inside that dialog and asks for confirmation. The report is written before
+    the row is removed, a <code>deleted</code> event stores a snapshot of the ticket, and
+    <code>GET /api/report/&lt;id&gt;</code> keeps serving the file — the evidence outlives the ticket.</p>
+    <h3>Project defaults</h3>
+    <p>A project can carry a test command and a preset in <code>~/.config/t3-workflow/config.json</code>
+    (<code>projects.&lt;title&gt;</code>). The dialog prefills them when you pick the project, and
+    <code>tickets/cli.py add</code> uses them when the flags are omitted, so a ticket can be just a title and
+    a target. Defaults remove the typing, not the proof: a ticket with no test command still blocks.</p>
+  </section>
+
   <section id="priority">
     <h2>Priority</h2>
     <table>
@@ -349,8 +366,6 @@ npm test -- --run</code></pre>
   <section id="gaps">
     <h2>What is not built yet</h2>
     <ul>
-      <li><strong>Editing or deleting a ticket</strong> from the board or the CLI. Today a wrong ticket is moved
-      with Force move, or recreated.</li>
       <li><strong>Per-ticket model options</strong> (thinking, variant, effort): no CLI flag exists.</li>
       <li><strong>Images as attachments.</strong> <code>t3 thread send</code> accepts text; a path is passed
       instead.</li>

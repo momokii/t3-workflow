@@ -39,7 +39,7 @@ Everything runs on one machine, without a daemon on the target side of T3 and wi
 
 | Piece | Responsibility |
 |---|---|
-| `tickets/store.py` | SQLite source of truth: tickets, allowed transitions, atomic claim, approvals, proofs, reports |
+| `tickets/store.py` | SQLite source of truth: tickets, allowed transitions, atomic claim, approvals, proofs, reports, edits and deletions |
 | `watcher.py` | Four stages: start a thread for `ready` tickets, test `testing` tickets, review `review` tickets with a fresh thread, release on `VERDICT: ACCEPT` |
 | `bridge/t3_bridge.py` | Telegram ⇄ T3 over long polling: read, send, create tickets, decide approvals |
 | `board/` | Local kanban on the tailnet: drag and drop, per-card move control, approvals, ticket and project creation, thread adoption |
@@ -330,7 +330,7 @@ docs/           architecture, API, operations
 2. **No pull-request creation.** The push works; opening the PR needs `gh` or a token. The compare link and `T-xxxx.pr.md` are provided instead.
 3. **No deploy step.** The pipeline ends at a pushed branch; there is no deploy target or rollback path.
 4. **Wall-clock budget only.** No token accounting, no provider quota guard, no cost report. Retries are bounded by counts (`retry.*`), not by spend.
-5. **Tickets cannot be edited or deleted** once created; a wrong profile or test command means a new ticket.
+5. **Editing is bounded.** A `done` ticket is final (its report is the record); a ticket a stage is working on needs `force`. Deleting keeps the report and an audit snapshot — there is no undelete.
 6. **Attachments are paths, not uploads.** `t3 thread send` accepts text only, so an image cannot travel with a ticket; a path to a file on this machine can. The finished report is delivered to Telegram as a markdown document, not a PDF.
 7. **Telegram-only approvals.** WhatsApp was planned as a fallback and is not implemented.
 8. **No metrics.** There is a `/healthz` endpoint for the container healthcheck, and failures are reported by `OnFailure=` and by the bridge, but nothing exports metrics.

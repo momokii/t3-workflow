@@ -56,11 +56,16 @@ T3 remains the owner of projects, threads and runs. This repository reads `state
 | `note` | text | last human or stage note |
 | `created_at`, `updated_at` | text | ISO-8601 UTC |
 
-`events` — append-only history: `created`, `moved`, `forced`, `claimed`, `thread`, `continued`, `proof`, `approval-requested`, `approval-decided`, `branch`, `report`, `pr-body`, `verify-started`, `verify-accept`, `verify-reject`, `verify-failed`, `verify-timeout`.
+`events` — append-only history: `created`, `moved`, `forced`, `claimed`, `thread`, `continued`, `proof`, `approval-requested`, `approval-decided`, `branch`, `report`, `pr-body`, `edited`, `deleted`, `verify-started`, `verify-accept`, `verify-reject`, `verify-failed`, `verify-timeout`.
 
 `approvals` — `approval_id`, `ticket_id`, `question`, `status` (`pending`/`approved`/`rejected`), `created_at`, `decided_at`, `decided_by`, `note`.
 
 Migrations run on open (`MIGRATIONS` in `store.py`); a column is added with `alter table` when missing, so an older database keeps working.
+
+A deleted ticket is removed from `tickets` after the report is written and a `deleted` event stores a
+snapshot of the row; its events stay in the append-only history and `GET /api/report/<id>` serves the
+file, so deletion is auditable and the evidence outlives the row. `store.update()` edits the
+human-owned fields, refuses a `done` ticket, and needs `force` while a stage is working on it.
 
 ## State machine
 

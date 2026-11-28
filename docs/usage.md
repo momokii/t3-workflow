@@ -216,6 +216,31 @@ The watcher takes the lowest number first, then the oldest ticket at that priori
 | The same topic but a different deliverable | create a new ticket; keep the old thread as history |
 | A thread that is still running | adopt it — the watcher queues the prompt as the next turn |
 
+### Project defaults (one-line tickets)
+
+A project can carry its own defaults, so creating a ticket is title + project:
+
+```json
+"projects": {
+  "t3-workflow": { "test_cmd": "make check", "profile": "fast" }
+}
+```
+
+The board prefills the test command and preset when the project is selected, and `tickets/cli.py add`
+uses them when `--test` / `--profile` are omitted. Anything you type still wins; a provider/model pair
+in the defaults is validated like an explicit choice. A ticket without a test command still blocks —
+defaults remove the typing, not the proof.
+
+### Editing and deleting
+
+- **Edit** changes the human-owned fields: title, context, test command, priority, attachment, preset,
+  provider/model and project. It goes through `store.update()`, is refused on a `done` ticket, needs
+  `force` while a stage is working on it, and is recorded as an `edited` event.
+- **Delete** (board button with a confirmation, `tickets/cli.py delete T-0001 --yes`, `POST
+  /api/tickets/<id>/delete` with `{"confirm": true}`) writes the report first, records a `deleted`
+  event with a snapshot of the row, then removes it. `GET /api/report/<id>` keeps serving the file, so
+  the evidence outlives the ticket.
+
 ## 5. Walkthrough: adopt a running thread
 
 ```
@@ -249,7 +274,10 @@ The test failed. The output tail is in the ticket's proof and in the report. Fix
 `testing` again (or let the watcher pick it up after you push a fix into the thread).
 
 **Can I edit a ticket?**
-Not yet. Create a new one, or move it with **Force move** and add the note. Editing is a known gap.
+Yes, from the card (`edit`) or `tickets/cli.py edit T-0001 --title … --test …`, while the ticket is not
+finished. A ticket a stage is working on needs `--force` (the board sends it), and a `done` ticket is
+final: its report is the record. Deleting asks for confirmation, keeps the report on disk, and writes a
+`deleted` event with a snapshot of the row, so history is not lost.
 
 **Why is the priority a dropdown and not a checkbox?**
 A checkbox only carries two levels. Five levels let the queue stay meaningful; the labels in the
