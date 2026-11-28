@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Second Brain destination.** The board gains a `#brain` route with a searchable, sortable list of every
+  note in `~/brain` and an interactive Cytoscape.js graph (node size by degree, zone/project colours,
+  pan/zoom, hover neighbours, filters, local graph at depth 1–2, fit/reset/re-layout). Desktop splits list
+  and graph; mobile has List/Graph tabs. The list is the keyboard-accessible text alternative to the
+  canvas and opens a detail dialog with frontmatter, raw Markdown, outlinks, backlinks, Copy Markdown and
+  an Obsidian deep link.
+- **Read-only, token-guarded brain API.** `GET /api/brain/notes`, `/api/brain/graph` and
+  `/api/brain/note?path=…` proxy the brain CLI with a 10-second cache and a `?refresh=1` escape hatch.
+  Note paths are validated against traversal, non-`.md` suffixes and symlink components; failures return
+  a one-line `503`; a missing note returns `404`. No vault file is written and no wikilink is parsed in
+  board code.
+- **Vendored Cytoscape.js 3.35.0** (MIT) under `board/static/vendor/`, with its license; no runtime CDN
+  and no build step.
+- **Tests** for token `401` on all brain routes, passthrough shapes, note detail, traversal/absolute/
+  encoded/symlink rejection, missing `404`, CLI `503` and timeout, cache refresh, and the static
+  nav/mount/library contract; `tests/test_board.py` also gains a fixture vault and a fake brain CLI.
+  Existing board tests stay green.
+- **Docs**: `docs/second-brain.md`, new API sections, a usage section, README security/board notes, the
+  operations runbook and a Guide section.
+
 ## [0.1.1] — 2026-11-26
 
 ### Fixed

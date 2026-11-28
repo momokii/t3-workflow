@@ -16,8 +16,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
+import threading
+import time
 import uuid
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,6 +53,11 @@ FS_BLOCKED_ROOTS = ("/proc", "/sys", "/dev", "/root", "/boot", "/run")
 
 T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
 CATALOG_DIR = Path.home() / ".t3/caches"
+BRAIN_VAULT = Path(os.environ.get("BRAIN_VAULT", Path.home() / "brain"))
+BRAIN_BIN = os.environ.get("BRAIN_BIN", str(Path.home() / "brain/bin/brain"))
+BRAIN_CACHE_TTL = 10.0
+_BRAIN_CACHE: dict[str, tuple[float, dict | list]] = {}
+_BRAIN_CACHE_LOCK = threading.Lock()
 
 
 def project_test_command(config: dict, title: str, workspace_root: str) -> dict:
@@ -166,6 +174,91 @@ def thread_log(db_path: Path, thread_id: str, messages: int = 12, activity: int 
     }
 
 
+def brain_available(binary: str) -> tuple[bool, str]:
+    resolved = binary if os.sep in binary else shutil.which(binary)
+    if not resolved:
+        return False, "the brain CLI is not executable"
+    path = Path(resolved)
+    if not path.exists() or not os.access(path, os.X_OK):
+        return False, "the brain CLI is not executable"
+    return True, ""
+
+
+def brain_json(binary: str, vault: Path, args: list[str], timeout: float = 10.0) -> tuple[int, object]:
+    """Run the brain CLI without a shell and return (status, payload).
+
+    The board never imports brain internals and never parses wikilinks; this is the only seam.
+    """
+    ok, reason = brain_available(binary)
+    if not ok:
+        return 503, {"error": reason}
+    env = {**os.environ, "BRAIN_VAULT": str(vault)}
+    try:
+        proc = subprocess.run(
+            [binary, *args, "--json"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout, env=env, shell=False,
+        )
+    except subprocess.TimeoutExpired:
+        return 503, {"error": f"brain {args[0] if args else ''} timed out after {timeout:g}s"}
+    except OSError as exc:
+        return 503, {"error": f"brain unavailable: {type(exc).__name__}"}
+    if proc.returncode != 0:
+        detail = ((proc.stdout or "") + (proc.stderr or "")).strip().splitlines()
+        message = detail[0] if detail else f"brain exited {proc.returncode}"
+        # `brain get` uses exit 1 for a missing note and 2 for an ambiguous reference.
+        # The path was validated first, so both mean "not a note the board can serve".
+        not_found = bool(args) and args[0] == "get" and proc.returncode in (1, 2)
+        return (404 if not_found else 503), {"error": message[:300]}
+    try:
+        return 200, json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return 503, {"error": f"brain {args[0] if args else ''} returned invalid JSON"}
+
+
+def brain_cached(key: str, binary: str, vault: Path, args: list[str], refresh: bool) -> tuple[int, object]:
+    key = f"{vault.resolve()}::{key}"
+    now = time.monotonic()
+    with _BRAIN_CACHE_LOCK:
+        cached = _BRAIN_CACHE.get(key)
+        if not refresh and cached and now - cached[0] < BRAIN_CACHE_TTL:
+            return 200, cached[1]
+    status, payload = brain_json(binary, vault, args)
+    if status == 200:
+        with _BRAIN_CACHE_LOCK:
+            _BRAIN_CACHE[key] = (time.monotonic(), payload)
+    return status, payload
+
+
+def brain_note_path(vault: Path, raw: str) -> tuple[str, str]:
+    """Validate a vault-relative note path; return (relative, error)."""
+    if not raw or "\x00" in raw:
+        return "", "empty note path"
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        return "", "absolute paths are not allowed"
+    parts = candidate.parts
+    if any(part in ("..", ".") for part in parts):
+        return "", "path traversal is not allowed"
+    if candidate.suffix.lower() != ".md":
+        return "", "only .md notes are served"
+    if any(part.startswith("-") for part in parts):
+        return "", "note names may not start with a dash"
+    vault_resolved = vault.resolve()
+    current = vault_resolved
+    for part in parts:
+        current = current / part
+        if current.is_symlink():
+            return "", "symbolic links are not served"
+    try:
+        resolved = (vault / candidate).resolve(strict=False)
+    except OSError:
+        return "", "invalid note path"
+    if resolved != vault_resolved and vault_resolved not in resolved.parents:
+        return "", "note path escapes the vault"
+    return candidate.as_posix(), ""
+
+
 def read_heartbeat(store_path: Path) -> dict | None:
     path = Path(store_path).with_name("watcher.json")
     if not path.is_file():
@@ -230,6 +323,8 @@ class Handler(BaseHTTPRequestHandler):
     config_path = CONFIG_PATH
     t3_db_path = T3_DB
     catalog_dir = CATALOG_DIR
+    brain_vault = BRAIN_VAULT
+    brain_bin = BRAIN_BIN
     token = ""
     inject_token = True
     max_upload_bytes = 20 * 1024 * 1024
@@ -301,6 +396,8 @@ class Handler(BaseHTTPRequestHandler):
             "text/html; charset=utf-8" if name.endswith(".html")
             else "image/svg+xml" if name.endswith(".svg")
             else "image/png" if name.endswith(".png")
+            else "text/javascript; charset=utf-8" if name.endswith(".js")
+            else "text/css; charset=utf-8" if name.endswith(".css")
             else "application/octet-stream"
         )
         self._send(200, target.read_bytes(), kind)
@@ -320,6 +417,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self.token:
             return True
         return self.headers.get("X-Board-Token", "") == self.token
+
+    def _brain_authorised(self) -> bool:
+        """Note bodies are private: unlike the rest of GET, this never opens without a token."""
+        return bool(self.token) and self.headers.get("X-Board-Token", "") == self.token
 
     def _page(self) -> bytes:
         """Serve the page, embedding the token when one is configured.
@@ -408,6 +509,43 @@ class Handler(BaseHTTPRequestHandler):
                 "threads": threads,
                 "ticket": {"id": ticket["id"], "status": ticket["status"], "note": ticket["note"]},
             })
+            return
+        if path == "/api/brain/notes":
+            if not self._brain_authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            query = parse_qs(urlparse(self.path).query)
+            refresh = (query.get("refresh") or [""])[0] in ("1", "true")
+            status, payload = brain_cached(
+                "notes", self.brain_bin, Path(self.brain_vault), ["list"], refresh
+            )
+            self._json(status, payload)
+            return
+        if path == "/api/brain/graph":
+            if not self._brain_authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            query = parse_qs(urlparse(self.path).query)
+            refresh = (query.get("refresh") or [""])[0] in ("1", "true")
+            status, payload = brain_cached(
+                "graph", self.brain_bin, Path(self.brain_vault), ["graph"], refresh
+            )
+            self._json(status, payload)
+            return
+        if path == "/api/brain/note":
+            if not self._brain_authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            query = parse_qs(urlparse(self.path).query)
+            raw = (query.get("path") or [""])[0]
+            relative, error = brain_note_path(Path(self.brain_vault), raw)
+            if error:
+                self._json(400, {"error": error})
+                return
+            status, payload = brain_json(
+                self.brain_bin, Path(self.brain_vault), ["get", relative]
+            )
+            self._json(status, payload)
             return
         if path == "/api/projects":
             config = load_config(Path(self.config_path))
@@ -894,6 +1032,8 @@ def main() -> int:
     parser.add_argument("--config", default=str(CONFIG_PATH))
     parser.add_argument("--t3-db", default=str(T3_DB))
     parser.add_argument("--catalog-dir", default=str(CATALOG_DIR))
+    parser.add_argument("--brain-vault", default=str(BRAIN_VAULT))
+    parser.add_argument("--brain-bin", default=BRAIN_BIN)
     args = parser.parse_args()
 
     Handler.store_path = Path(args.db)
@@ -901,6 +1041,8 @@ def main() -> int:
     Handler.token = args.token or __import__("os").environ.get("T3_BOARD_TOKEN", "")
     Handler.t3_db_path = Path(args.t3_db)
     Handler.catalog_dir = Path(args.catalog_dir)
+    Handler.brain_vault = Path(args.brain_vault)
+    Handler.brain_bin = args.brain_bin
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"board on http://{args.host}:{args.port}  (db={args.db})", flush=True)

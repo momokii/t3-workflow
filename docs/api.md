@@ -23,14 +23,19 @@ GET  /api/projects                     T3 projects
 GET  /api/threads                      recent T3 threads (up to 200)
 GET  /api/fs?path=<dir>                folder picker: names under a directory (token)
 GET  /api/tickets/<id>/live            thread status and last messages (token)
+GET  /api/brain/notes                  every note row from the brain CLI (token)
+GET  /api/brain/graph                  note graph: nodes, edges, unresolved links (token)
+GET  /api/brain/note?path=<note.md>    one note's frontmatter and body (token)
 POST /api/watcher/run                  run one watcher step now (token)
 POST /api/attachments                  upload a file for a ticket (token, 20 MB)
 ```
 
 Authentication: `X-Board-Token: <token>` on every `POST`, and on `GET /api/fs` — that route lists
-filenames from this machine, so it is not open like the rest of `GET`. The token comes from `--token`, or
+filenames from this machine — and on every `/api/brain/*` route, because note bodies are private. The token comes from `--token`, or
 `T3_BOARD_TOKEN` in the environment (the systemd unit reads it from
 `~/.config/t3-workflow/board.env`). A missing or wrong token returns `401 {"error": "invalid token"}`.
+The brain routes refuse every request when no token is configured, even if the rest of the board runs
+in its tokenless development mode.
 
 Start it:
 
@@ -406,6 +411,57 @@ The resulting ticket has `status=in-progress`, `thread_id` set to the adopted th
 { "events": [ { "event_id": 1, "ticket_id": "T-0001", "at": "…", "kind": "created", "detail": "status=backlog profile=fast" } ] }
 ```
 
+## GET /api/brain/notes
+
+The **Second Brain** menu's note index. It proxies `brain list --json` from the vault CLI; the board
+never parses Markdown or wikilinks itself. Token required. The payload is the CLI array unchanged:
+
+```json
+[ { "path": "00 Inbox/Inbox Guide.md", "basename": "Inbox Guide", "type": "note",
+    "title": "Inbox Guide", "project": "", "zone": "00 Inbox", "generated": false,
+    "updated": "", "modified": "2026-11-28T07:34:55Z", "size": 520 } ]
+```
+
+The list and the graph are cached in-process for 10 seconds. Add `?refresh=1` (the UI's Refresh button)
+to bypass the cache entry for that route. `503` when the CLI is missing, fails, times out (10 s), or returns invalid
+JSON; the body is a one-line `{"error": "…"}`, never a traceback.
+
+The vault and binary default to `~/brain` and `~/brain/bin/brain`, override with `BRAIN_VAULT` and
+`BRAIN_BIN`, or with `--brain-vault` / `--brain-bin` when starting the server.
+
+## GET /api/brain/graph
+
+The graph document, unchanged from `brain graph --json`:
+
+```json
+{ "version": 1,
+  "nodes": [ { "id": "00 Inbox/Inbox Guide.md", "label": "Inbox Guide", "type": "note",
+               "project": "", "zone": "00 Inbox", "generated": false, "degree": 0 } ],
+  "edges": [ { "source": "00 Inbox/A.md", "target": "00 Inbox/B.md" } ],
+  "unresolved": [ { "target": "missing note", "count": 1 } ],
+  "stats": { "nodes": 365, "edges": 375, "unresolved": 0 } }
+```
+
+Edges are undirected for display and `degree` counts both directions. Unresolved links appear in
+`unresolved` but are not nodes; attachments and tags are not nodes in v1. Token required; same cache,
+refresh and `503` behaviour as `/api/brain/notes`.
+
+## GET /api/brain/note?path=<relative path>
+
+One note, read-only, from `brain get <path> --json`:
+
+```json
+{ "path": "00 Inbox/Inbox Guide.md", "basename": "Inbox Guide",
+  "frontmatter": { "type": "note", "title": "Inbox Guide" },
+  "body": "# Inbox Guide\n" }
+```
+
+`path` is not trusted. Before the CLI runs, the board rejects empty paths, absolute paths, `..` or `.`
+segments, anything whose suffix is not `.md`, a path that resolves outside the vault, and any path with
+a symlink component (`400`). A note the vault does not contain is `404`. A missing or failing CLI is
+`503`. The response keeps the vault-relative path; the local absolute path is never returned. Token
+required.
+
 ## Errors
 
 | Status | Meaning |
@@ -414,6 +470,7 @@ The resulting ticket has `status=in-progress`, `thread_id` set to the adopted th
 | `401` | missing or wrong `X-Board-Token` |
 | `404` | unknown ticket, report, or static file |
 | `409` | the store refused the operation (invalid transition, unknown profile, second decision) |
+| `503` | the brain CLI is missing, failed, timed out, or returned invalid JSON |
 
 All error bodies are `{"error": "<message>"}`; the message is written for the operator, not for a machine.
 The examples above quote those messages verbatim, so a few are not in English —

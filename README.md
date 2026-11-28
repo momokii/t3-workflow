@@ -42,14 +42,14 @@ Everything runs on one machine, without a daemon on the target side of T3 and wi
 | `tickets/store.py` | SQLite source of truth: tickets, allowed transitions, atomic claim, approvals, proofs, reports, edits and deletions |
 | `watcher.py` | Four stages: start a thread for `ready` tickets, test `testing` tickets, review `review` tickets with a fresh thread, release on `VERDICT: ACCEPT` |
 | `bridge/t3_bridge.py` | Telegram ⇄ T3 over long polling: read, send, create tickets, decide approvals |
-| `board/` | Local kanban on the tailnet: drag and drop, per-card move control, approvals, ticket and project creation, thread adoption |
+| `board/` | Local kanban on the tailnet: drag and drop, per-card move control, approvals, ticket and project creation, thread adoption, and a read-only **Second Brain** view of the vault |
 | `scripts/alert.py` | One Telegram message when a `t3-*` unit fails |
 
 T3 keeps owning threads and projects; this repository owns the queue, the evidence and the release step. The board reads T3's `statev2.sqlite` to list projects and recent threads, and can adopt an existing thread as an `in-progress` ticket.
 
 ## Quick start
 
-Requirements: Linux, Python 3.12 (standard library only), a running T3 Code server, and `t3` on `PATH`.
+Requirements: Linux, Python 3.12 (standard library only), a running T3 Code server, and `t3` on `PATH`. The Second Brain view additionally needs the brain CLI and read access to its vault; its graph library is vendored, so there is still no build step.
 
 ```bash
 git clone https://github.com/momokii/t3-workflow.git
@@ -150,6 +150,10 @@ journalctl --user -u t3-watcher -f
 - **Report** opens a tabbed reader (Summary, Test command, What was asked, Evidence, Independent review,
   History) with the raw markdown one click away; `/#list`, `/#live-T-xxxx` and `/#report-T-xxxx` are deep
   links. Blocked cards offer **retry**, open cards **delete** (the report and a snapshot are kept).
+- **Second Brain** (`/#brain`) is a separate destination: a searchable note list plus an interactive
+  graph of `~/brain`, read-only and token-guarded. Desktop splits list and graph; mobile offers List and
+  Graph tabs. The list is the keyboard-accessible text alternative to the canvas. See
+  [docs/second-brain.md](docs/second-brain.md).
 
 ### From the terminal
 
@@ -269,10 +273,13 @@ Full runbook — pause, rotate the board token, restore a backup, read a failure
 ## Security model
 
 - **Telegram is untrusted input.** Only chat ids in `telegram.allowChatIds` are served; everything else is logged and dropped.
-- **Board writes require a token.** Every `POST` needs `X-Board-Token`; the page receives it in a `<meta>` tag, scripts must send it. `GET` is open to the tailnet, which is the actual access boundary.
+- **Board writes require a token.** Every `POST` needs `X-Board-Token`; the page receives it in a `<meta>` tag, scripts must send it. `GET` is open to the tailnet, which is the actual access boundary, except `/api/fs` and all `/api/brain/*` routes, which need the token.
+- **The Second Brain view is read-only.** It proxies the brain CLI with a fixed argument vector and
+  `shell=False`, never calls `brain put`, and never writes to `~/brain`; note paths are validated against
+  traversal and symlinks.
 - **The release stage never pushes the base branch** and refuses a ticket without passing proof.
 - **`test_cmd` runs through a shell** in the project directory. Ticket creation is gated by the allowlist, so the blast radius is "the owner's own account", but a hijacked Telegram session becomes code execution as this user. Keep the bot token private and review tickets before moving them to `ready`.
-- **No third-party dependencies**: the attack surface is the standard library plus the T3 CLI.
+- **No Python dependencies**: the attack surface is the standard library plus the T3 CLI. The browser side vendors one MIT graph library, `board/static/vendor/cytoscape.min.js`, served from this repository rather than a CDN; it is not a runtime service.
 
 ## Testing
 
@@ -317,6 +324,7 @@ docs/           architecture, API, operations
 | [docs/usage.md](docs/usage.md) | how to use it, which workflow to pick, model and priority guidance, FAQ |
 | [docs/handoff-template.md](docs/handoff-template.md) | how to hand work to another thread without losing state |
 | [docs/api.md](docs/api.md) | board HTTP API with payloads and curl examples |
+| [docs/second-brain.md](docs/second-brain.md) | the read-only vault view: data seam, path validation, graph behaviour, limits |
 | [docs/operations.md](docs/operations.md) | runbook: services, backup/restore, incidents, troubleshooting |
 | [docs/docker.md](docs/docker.md) | container deployment: mounts, host networking, verification, troubleshooting |
 | [RESEARCH.md](RESEARCH.md) | why the design looks like this, with the measured facts behind it |

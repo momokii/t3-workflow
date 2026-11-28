@@ -14,6 +14,8 @@ flowchart LR
     WT --> T3[t3 CLI]
     BR --> T3
     BD --> T3DB[(T3 statev2.sqlite<br/>read only)]
+    BD --> BRAIN[brain CLI]
+    BRAIN --> VAULT[(~/brain<br/>read only)]
     ST --> REP[reports/]
     T3 --> SERVER[T3 Code server]
 ```
@@ -25,11 +27,26 @@ flowchart LR
 | `bridge/t3_bridge.py` | Telegram commands, audit log, approval notices, plan/verdict/report delivery | answer a T3 approval request itself |
 | `board/static/index.html` | queue, dialogs, live thread view, watcher heartbeat, attachments | write a ticket outside the store API |
 | `board/server.py` + `index.html` | HTTP API and the single-page board | write a ticket outside `store.move`/`store.add` |
+| `board/static/brain.js` + `/api/brain/*` | the read-only Second Brain list, graph and note detail | parse wikilinks, write to `~/brain`, or serve a note path without validation |
 | `scripts/alert.py` | one Telegram alert per failing unit | retry, restart, or decide anything |
 
 T3 remains the owner of projects, threads and runs. This repository reads `statev2.sqlite` read-only
 (`mode=ro`, `query_only`) for three things: the project list, recent threads, and the latest run and turn
 item per thread so a card can say what is happening now. Nothing is ever written to it.
+
+## Second Brain seam
+
+The board's **Second Brain** destination reads the vault through the brain CLI, not through its own
+parser. `GET /api/brain/notes` and `/api/brain/graph` proxy `brain list --json` and `brain graph --json`
+with a 10-second in-process cache; `GET /api/brain/note?path=…` proxies `brain get`. All three are
+token-guarded. A note path is validated against traversal, non-`.md` suffixes and symlink components
+before the CLI sees it, and the CLI runs with an argument vector, `shell=False`, a 10-second timeout and
+`BRAIN_VAULT` in its environment.
+
+This keeps one definition of a link (brain's), keeps the board free of a second Markdown parser, and
+keeps the vault immutable from this side: the view never calls `brain put`. The browser holds the list
+as the text alternative to the canvas graph; Cytoscape.js 3.35.0 is vendored, so there is no runtime CDN
+and no build step. Details and limits: [second-brain.md](second-brain.md).
 
 ## Data model
 

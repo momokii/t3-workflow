@@ -110,6 +110,83 @@ class BoardApiTests(unittest.TestCase):
         }))
         board.Handler.catalog_dir = self.catalog_dir
 
+        # Second Brain fixtures: a small vault, a fake brain CLI and fixed JSON documents.
+        # Tests must not depend on the live ~/brain vault.
+        self.brain_dir = self.tmp / "brain"
+        vault = self.brain_dir / "vault"
+        (vault / "00 Inbox").mkdir(parents=True)
+        (vault / "Home.md").write_text("# Home\n")
+        (vault / "00 Inbox" / "Alpha.md").write_text("# Alpha\n\nLinks to [[Beta]].\n")
+        (vault / "00 Inbox" / "Beta.md").write_text("# Beta\n")
+        outside = self.tmp / "outside.md"
+        outside.write_text("# Secret\n")
+        (vault / "escape.md").symlink_to(outside)
+        self.brain_notes = [
+            {"path": "Home.md", "basename": "Home", "type": "index", "title": "Home",
+             "project": "", "zone": "root", "generated": True, "updated": "",
+             "modified": "2026-11-28T07:00:00Z", "size": 8},
+            {"path": "00 Inbox/Alpha.md", "basename": "Alpha", "type": "note", "title": "Alpha",
+             "project": "demo", "zone": "00 Inbox", "generated": False, "updated": "",
+             "modified": "2026-11-28T08:00:00Z", "size": 30},
+            {"path": "00 Inbox/Beta.md", "basename": "Beta", "type": "note", "title": "Beta",
+             "project": "demo", "zone": "00 Inbox", "generated": False, "updated": "",
+             "modified": "2026-11-28T09:00:00Z", "size": 8},
+        ]
+        self.brain_graph = {
+            "version": 1,
+            "nodes": [
+                {"id": "Home.md", "label": "Home", "type": "index", "project": "",
+                 "zone": "root", "generated": True, "degree": 0},
+                {"id": "00 Inbox/Alpha.md", "label": "Alpha", "type": "note", "project": "demo",
+                 "zone": "00 Inbox", "generated": False, "degree": 1},
+                {"id": "00 Inbox/Beta.md", "label": "Beta", "type": "note", "project": "demo",
+                 "zone": "00 Inbox", "generated": False, "degree": 1},
+            ],
+            "edges": [
+                {"source": "00 Inbox/Alpha.md", "target": "00 Inbox/Beta.md"},
+            ],
+            "unresolved": [],
+            "stats": {"nodes": 3, "edges": 1, "unresolved": 0},
+        }
+        self.brain_note = {
+            "path": "00 Inbox/Alpha.md", "basename": "Alpha",
+            "frontmatter": {"type": "note", "title": "Alpha", "project": "demo", "tags": ["one", "two"]},
+            "body": "# Alpha\n\nLinks to [[Beta]].\n",
+        }
+        (self.brain_dir / "list.json").write_text(json.dumps(self.brain_notes))
+        (self.brain_dir / "graph.json").write_text(json.dumps(self.brain_graph))
+        (self.brain_dir / "note.json").write_text(json.dumps(self.brain_note))
+        self.brain_cli = self.tmp / "fake-brain"
+        self.brain_cli.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys\n"
+            "from pathlib import Path\n"
+            f"base = Path({str(self.brain_dir)!r})\n"
+            f"expected_vault = {str(vault)!r}\n"
+            "args = sys.argv[1:]\n"
+            "if args[-1:] != ['--json']:\n"
+            "    print('missing --json', file=sys.stderr); raise SystemExit(2)\n"
+            "if os.environ.get('BRAIN_VAULT') != expected_vault:\n"
+            "    print('wrong BRAIN_VAULT', file=sys.stderr); raise SystemExit(2)\n"
+            "cmd = args[0] if args else ''\n"
+            "if cmd == 'list':\n"
+            "    print((base / 'list.json').read_text())\n"
+            "elif cmd == 'graph':\n"
+            "    print((base / 'graph.json').read_text())\n"
+            "elif cmd == 'get':\n"
+            "    data = json.loads((base / 'note.json').read_text())\n"
+            "    if len(args) < 2 or args[1] != data['path']:\n"
+            "        print('note not found', file=sys.stderr)\n"
+            "        raise SystemExit(1)\n"
+            "    print(json.dumps(data))\n"
+            "else:\n"
+            "    raise SystemExit(2)\n"
+        )
+        self.brain_cli.chmod(0o755)
+        board.Handler.brain_vault = vault
+        board.Handler.brain_bin = str(self.brain_cli)
+        board._BRAIN_CACHE.clear()
+
     @classmethod
     def tearDownClass(cls) -> None:
         cls.server.shutdown()
@@ -125,6 +202,138 @@ class BoardApiTests(unittest.TestCase):
         raw = response.read().decode()
         conn.close()
         return response, raw
+
+    # ---------------------------------------------------------------- Second Brain
+
+    def test_brain_routes_require_the_token(self) -> None:
+        for path in ("/api/brain/notes", "/api/brain/graph",
+                     "/api/brain/note?path=Home.md"):
+            without, _ = self.request("GET", path)
+            self.assertEqual(without.status, 401, path)
+            wrong, _ = self.request("GET", path, token="wrong")
+            self.assertEqual(wrong.status, 401, path)
+
+    def test_brain_routes_stay_closed_without_a_configured_token(self) -> None:
+        configured = board.Handler.token
+        board.Handler.token = ""
+        try:
+            response, _ = self.request("GET", "/api/brain/notes")
+            self.assertEqual(response.status, 401)
+            response, _ = self.request("GET", "/api/brain/note?path=Home.md")
+            self.assertEqual(response.status, 401)
+        finally:
+            board.Handler.token = configured
+
+    def test_brain_notes_and_graph_are_proxied_unchanged(self) -> None:
+        response, raw = self.request("GET", "/api/brain/notes", token="secret")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(raw), self.brain_notes)
+        response, raw = self.request("GET", "/api/brain/graph", token="secret")
+        self.assertEqual(response.status, 200)
+        graph = json.loads(raw)
+        self.assertEqual(graph, self.brain_graph)
+        self.assertEqual(graph["stats"], {"nodes": 3, "edges": 1, "unresolved": 0})
+
+    def test_brain_refresh_bypasses_the_cache(self) -> None:
+        first, raw = self.request("GET", "/api/brain/notes", token="secret")
+        self.assertEqual(first.status, 200)
+        self.assertEqual(len(json.loads(raw)), 3)
+        (self.brain_dir / "list.json").write_text(json.dumps(self.brain_notes[:1]))
+        cached, raw = self.request("GET", "/api/brain/notes", token="secret")
+        self.assertEqual(cached.status, 200)
+        self.assertEqual(len(json.loads(raw)), 3)
+        fresh, raw = self.request("GET", "/api/brain/notes?refresh=1", token="secret")
+        self.assertEqual(fresh.status, 200)
+        self.assertEqual(len(json.loads(raw)), 1)
+
+    def test_brain_timeout_is_503(self) -> None:
+        slow = self.tmp / "slow-brain"
+        slow.write_text("#!/bin/sh\nsleep 2\n")
+        slow.chmod(0o755)
+        status, payload = board.brain_json(
+            str(slow), self.brain_dir / "vault", ["list"], timeout=0.05
+        )
+        self.assertEqual(status, 503)
+        self.assertIn("timed out", payload["error"])
+
+    def test_brain_empty_vault_returns_empty_documents(self) -> None:
+        (self.brain_dir / "list.json").write_text("[]")
+        (self.brain_dir / "graph.json").write_text(json.dumps({
+            "version": 1, "nodes": [], "edges": [], "unresolved": [],
+            "stats": {"nodes": 0, "edges": 0, "unresolved": 0},
+        }))
+        board._BRAIN_CACHE.clear()
+        response, raw = self.request("GET", "/api/brain/notes", token="secret")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(raw), [])
+        response, raw = self.request("GET", "/api/brain/graph", token="secret")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(raw)["nodes"], [])
+
+    def test_brain_missing_binary_is_503(self) -> None:
+        board.Handler.brain_bin = str(self.tmp / "no-such-brain")
+        response, raw = self.request("GET", "/api/brain/note?path=Home.md", token="secret")
+        self.assertEqual(response.status, 503)
+        self.assertIn("not executable", json.loads(raw)["error"])
+
+    def test_brain_note_returns_frontmatter_and_body(self) -> None:
+        response, raw = self.request(
+            "GET", "/api/brain/note?path=00%20Inbox%2FAlpha.md", token="secret"
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(json.loads(raw), self.brain_note)
+
+    def test_brain_note_rejects_traversal_and_non_markdown(self) -> None:
+        cases = (
+            "../outside.md",
+            "%2e%2e%2foutside.md",
+            "/etc/passwd",
+            "00%20Inbox%2F..%2F..%2Foutside.md",
+            "Home.txt",
+            "",
+        )
+        for case in cases:
+            response, raw = self.request("GET", f"/api/brain/note?path={case}", token="secret")
+            self.assertEqual(response.status, 400, case)
+            self.assertIn("error", json.loads(raw), case)
+
+    def test_brain_note_rejects_a_symlink_escape(self) -> None:
+        response, raw = self.request("GET", "/api/brain/note?path=escape.md", token="secret")
+        self.assertEqual(response.status, 400)
+        self.assertIn("symbolic", json.loads(raw)["error"])
+
+    def test_brain_missing_note_is_404(self) -> None:
+        response, raw = self.request("GET", "/api/brain/note?path=nothere.md", token="secret")
+        self.assertEqual(response.status, 404)
+        self.assertIn("error", json.loads(raw))
+
+    def test_brain_cli_failure_is_503_not_a_traceback(self) -> None:
+        failing = self.tmp / "failing-brain"
+        failing.write_text("#!/bin/sh\necho 'brain exploded' >&2\nexit 1\n")
+        failing.chmod(0o755)
+        board.Handler.brain_bin = str(failing)
+        board._BRAIN_CACHE.clear()
+        response, raw = self.request("GET", "/api/brain/notes", token="secret")
+        self.assertEqual(response.status, 503)
+        payload = json.loads(raw)
+        self.assertEqual(payload["error"], "brain exploded")
+        self.assertNotIn("Traceback", raw)
+
+    def test_brain_page_mounts_nav_list_graph_and_vendored_library(self) -> None:
+        response, raw = self.request("GET", "/")
+        self.assertEqual(response.status, 200)
+        for marker in ("Second Brain", 'href="#brain"', 'id="brain-view"',
+                       'id="brain-list-pane"', 'id="brain-graph"', 'data-mobile-pane="list"',
+                       "/static/brain.js", "/static/vendor/cytoscape.min.js"):
+            self.assertIn(marker, raw, marker)
+        script, js = self.request("GET", "/static/brain.js")
+        self.assertEqual(script.status, 200)
+        self.assertIn("javascript", script.headers.get("Content-Type", ""))
+        self.assertNotIn("innerHTML", js)
+        vendor, _ = self.request("GET", "/static/vendor/cytoscape.min.js")
+        self.assertEqual(vendor.status, 200)
+        self.assertIn("javascript", vendor.headers.get("Content-Type", ""))
+        self.assertTrue((board.STATIC / "vendor" / "cytoscape.LICENSE").is_file())
 
     def test_guide_page_is_served(self) -> None:
         response, raw = self.request("GET", "/guide")

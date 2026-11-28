@@ -55,6 +55,34 @@ systemctl --user restart t3-board
 
 The page embeds the token at serve time, so a reload picks up the new one. Any script holding the old token gets `401` immediately.
 
+## Second Brain configuration
+
+The board's **Second Brain** view reads the vault through the brain CLI; it never writes. The board
+process must run as a user that can execute the CLI and read the vault (the default is `~/brain`).
+
+| Setting | Default | Override |
+|---|---|---|
+| vault | `~/brain` | `BRAIN_VAULT` or `--brain-vault` |
+| CLI | `~/brain/bin/brain` | `BRAIN_BIN` or `--brain-bin` |
+
+Check the seam without opening the browser:
+
+```bash
+TOKEN=$(grep -o '[0-9a-f]\{32\}' ~/.config/t3-workflow/board.env)
+curl -s -H "X-Board-Token: $TOKEN" http://127.0.0.1:8787/api/brain/notes | head
+curl -s -H "X-Board-Token: $TOKEN" http://127.0.0.1:8787/api/brain/graph | head
+```
+
+Expected failure modes: `401` without the token, including when the board was started without one;
+`400` for a path with traversal, a non-`.md` suffix or a symlink component; `404` for a missing note;
+`503` when the CLI is missing, fails, times out after 10 seconds or returns invalid JSON. List and graph
+are cached for 10 seconds; the **Refresh** button sends `?refresh=1`. Vault changes therefore appear
+without restarting the board. Python changes still need `systemctl --user restart t3-board`.
+
+The integration is read-only by construction: there is no `brain put` call, and note bodies are inserted
+as text. Verify after an upgrade with `git -C ~/brain status`; it must stay clean with respect to board
+activity.
+
 ## Backup
 
 Automatic: `t3-backup.timer` runs `tickets/cli.py backup --keep 7` daily at 03:20 (persistent, so a missed run happens after boot).

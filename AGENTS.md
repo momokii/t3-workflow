@@ -30,15 +30,19 @@ schema or state machine → `docs/architecture.md`, procedures → `docs/operati
 7. **Release pushes only a ticket branch.** The base branch is never pushed, and a ticket
    without a `[PASS]` proof is refused.
 8. **Board writes need the token.** Every `POST` passes through `X-Board-Token`, and so does
-   `GET /api/fs`, which lists filenames from this machine; the rest of `GET` is open to the tailnet,
-   which is the real boundary.
+   `GET /api/fs`, which lists filenames from this machine, and every `/api/brain/*` route, because
+   note bodies are private; the rest of `GET` is open to the tailnet, which is the real boundary.
 9. **T3 stays the owner of projects and threads.** Read `statev2.sqlite` read-only; create
    projects through `t3 project add` and remove them through `t3 project remove --force` (which
    deletes their threads), never by writing the database.
 10. **Review before release.** `review` releases only on a `VERDICT: ACCEPT` line from the review
     thread. A rejection sends its findings into the dev thread; a missing verdict, a failed reviewer
     or a tree that changed during the review blocks the ticket — prose is never read as approval.
-11. **Retries are bounded and only for transient failures.** A crashed `t3` call, a dead thread or a
+11. **Second Brain is a read-only proxy.** The board calls the brain CLI with an argument vector and
+    `shell=False`, caches list/graph for 10 seconds, and never writes to `~/brain` or parses wikilinks
+    itself. Every `/api/brain/*` route needs the token, and a note path is rejected for traversal,
+    non-`.md` suffixes and symlink components before the CLI runs.
+12. **Retries are bounded and only for transient failures.** A crashed `t3` call, a dead thread or a
     failing test goes back into the loop (findings into the dev thread) until `retry.maxThreadAttempts`
     / `retry.maxTestAttempts` is spent, then blocks. A usage limit schedules one bounded backoff
     (`retry.maxQuotaAttempts`, `retry.quotaBackoffMinutes`). A missing test command, an unknown model,
@@ -48,7 +52,8 @@ schema or state machine → `docs/architecture.md`, procedures → `docs/operati
 
 - Tests: `make test` (bridge suite + tickets/board/watcher suite). Keep them hermetic:
   no network, no real Telegram, no real T3 calls, and `T3_REPORTS_DIR` pointed at a temp dir.
-- Python 3.12, standard library only. Do not add third-party dependencies.
+- Python 3.12, standard library only. Do not add Python dependencies. The only browser dependency is
+  the vendored MIT Cytoscape.js 3.35.0; no runtime CDN and no build step.
 - The board binds the Tailscale interface; do not change it to `0.0.0.0`.
 - `make check` compiles every module and runs both suites; it is what CI runs.
 - Documentation is written in English. Quoted API messages stay verbatim even when the

@@ -266,6 +266,171 @@
   #toast .item.err { background: var(--danger); color: #fff; }
   footer { color: var(--ink-soft); font-size: 12px; padding: 8px 20px 28px; max-width: 1600px; margin: 0 auto; }
   kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; }
+
+  /* ------------------------------------------------ top-level navigation */
+  .app-nav { display: flex; gap: 2px; padding: 2px; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 10px; }
+  .app-nav a { color: var(--ink-soft); text-decoration: none; font-size: 13px; font-weight: 550;
+    padding: 5px 10px; border-radius: 8px; white-space: nowrap; }
+  .app-nav a:hover { color: var(--ink); }
+  .app-nav a[aria-current="page"] { background: var(--surface); color: var(--ink);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .08); }
+  .route-brain .controls, .route-brain .counts { display: none; }
+  .route-brain .board, .route-brain .list-wrap, .route-brain main > .hint { display: none !important; }
+  .route-brain footer { display: none; }
+
+  /* ------------------------------------------------ Second Brain */
+  .brain-view { display: block; }
+  .brain-head { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+  .brain-title { min-width: 0; flex: 1 1 320px; }
+  .brain-title h1 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
+  .brain-summary { margin: 3px 0 0; color: var(--ink-soft); font-size: 13px; }
+  .brain-head-actions { display: flex; gap: 8px; align-items: center; }
+  .brain-tabs { display: none; }
+  .brain-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 10px 12px; margin-bottom: 10px; }
+  .brain-field { display: grid; gap: 3px; font-size: 11px; color: var(--ink-soft); min-width: 150px; }
+  .brain-field.grow { flex: 1 1 260px; }
+  .brain-field input, .brain-field select, .brain-inline select {
+    font: inherit; font-size: 13px; color: var(--ink); background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
+  .brain-options { background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    margin-bottom: 10px; }
+  .brain-options summary { cursor: pointer; padding: 8px 12px; font-size: 12px; color: var(--ink-soft);
+    border-radius: 10px; }
+  .brain-options summary:hover { color: var(--ink); }
+  .brain-options[open] summary { border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }
+  .brain-options-body { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 10px 12px; }
+  .brain-check, .brain-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--ink-soft); }
+  .brain-check input { width: auto; accent-color: var(--accent); }
+  .brain-inline select { width: auto; min-width: 82px; padding: 5px 7px; }
+  .brain-options-sep { width: 1px; align-self: stretch; background: var(--line); }
+  .brain-zoom-group { display: inline-flex; align-items: center; gap: 5px; }
+  .brain-status { min-height: 18px; margin: 0 0 8px; font-size: 12px; color: var(--ink-soft); }
+  .brain-status.is-error { color: var(--danger); }
+  .brain-split { display: grid; grid-template-columns: minmax(320px, 520px) minmax(0, 1fr);
+    gap: 12px; align-items: stretch; }
+  .brain-list-pane, .brain-graph-pane { position: relative; min-width: 0; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--radius); display: flex; flex-direction: column; }
+  .brain-list-pane { max-height: clamp(420px, calc(100vh - 355px), 775px); }
+  .brain-pane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .brain-pane-head h2 { margin: 0; font-size: 13px; letter-spacing: .02em; text-transform: uppercase;
+    color: var(--ink-soft); }
+  .brain-pane-head .hint { margin: 0; font-size: 11px; color: var(--ink-soft); text-align: right; }
+  .brain-mobile-switch { display: none; }
+  .brain-list-pane, .brain-graph-pane { scroll-margin-top: 132px; }
+  .brain-table-wrap { overflow: auto; min-height: 0; }
+  .brain-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
+  .brain-table th, .brain-table td { text-align: left; padding: 6px 5px; border-bottom: 1px solid var(--line);
+    vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brain-table th:nth-child(1), .brain-table td:nth-child(1) { width: 37%; white-space: normal; }
+  .brain-table th:nth-child(2), .brain-table td:nth-child(2) { width: 11%; }
+  .brain-table th:nth-child(3), .brain-table td:nth-child(3) { width: 16%; }
+  .brain-table th:nth-child(4), .brain-table td:nth-child(4) { width: 14%; }
+  .brain-table th:nth-child(5), .brain-table td:nth-child(5) { width: 12%; }
+  .brain-table th:nth-child(6), .brain-table td:nth-child(6) { width: 10%; }
+  .brain-table th { position: sticky; top: 0; z-index: 1; background: var(--surface-2); font-size: 11px;
+    color: var(--ink-soft); font-weight: 600; white-space: nowrap; }
+  .brain-table th:first-child, .brain-table td:first-child { padding-left: 12px; }
+  .brain-table tbody tr { cursor: pointer; }
+  .brain-table tbody tr:hover { background: var(--surface-2); }
+  .brain-sort { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center;
+    font: inherit; color: inherit; border-radius: 4px; }
+  .brain-sort:hover { color: var(--ink); }
+  .brain-sort:focus-visible { outline: var(--focus); outline-offset: 2px; }
+  th[aria-sort="ascending"] .brain-sort::after { content: "↑"; }
+  th[aria-sort="descending"] .brain-sort::after { content: "↓"; }
+  .brain-note-title { background: none; border: 0; padding: 0; font: inherit; font-weight: 600;
+    color: var(--ink); text-align: left; cursor: pointer; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .brain-note-title:hover { color: var(--accent); text-decoration: underline; }
+  .brain-note-title:focus-visible { outline: var(--focus); outline-offset: 2px; }
+  .brain-table .muted { color: var(--ink-soft); }
+  .brain-table td.path { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brain-list-empty { padding: 22px 16px; text-align: center; color: var(--ink-soft); font-size: 13px; }
+  .brain-list-empty p { margin: 0 0 10px; }
+  #brain-graph { flex: 1; min-height: clamp(380px, calc(100vh - 450px), 680px); width: 100%;
+    background-image: radial-gradient(circle, var(--line) 1px, transparent 1px);
+    background-size: 22px 22px; outline: none; }
+  #brain-graph:focus-visible { outline: var(--focus); outline-offset: -2px; }
+  .brain-graph-empty { position: absolute; inset: 42px 0 0; display: grid; place-content: center;
+    gap: 8px; text-align: center; color: var(--ink-soft); font-size: 13px; background:
+    color-mix(in srgb, var(--surface) 88%, transparent); padding: 20px; }
+  .brain-graph-empty p { margin: 0; max-width: 36ch; }
+  .brain-graph-empty .btn { justify-self: center; }
+  .brain-legend { display: flex; gap: 10px; flex-wrap: wrap; padding: 7px 12px; border-top: 1px solid var(--line);
+    font-size: 11px; color: var(--ink-soft); }
+  .brain-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 999px; margin-right: 4px; }
+
+  /* note detail */
+  dialog.note-dialog { width: min(1100px, 96vw); max-height: 92vh; overflow: hidden; }
+  .note-dialog-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .note-dialog-bar h3 { margin: 1px 0 0; font-size: 17px; }
+  .note-kicker { margin: 0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+  .note-dialog-body { display: grid; grid-template-columns: 268px minmax(0, 1fr); min-height: 0;
+    max-height: calc(92vh - 64px); }
+  .note-side { border-right: 1px solid var(--line); padding: 14px 16px; overflow: auto; }
+  .note-side h4, .note-body-head h4 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--ink-soft); }
+  .note-meta { margin: 0 0 10px; font-size: 12px; color: var(--ink-soft); overflow-wrap: anywhere; }
+  .note-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+  .note-frontmatter { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; font-size: 12px; }
+  .note-frontmatter dt { color: var(--ink-soft); }
+  .note-frontmatter dd { margin: 0; overflow-wrap: anywhere; }
+  .note-links { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+  .note-links button { background: none; border: 0; padding: 1px 0; font: inherit; font-size: 12px;
+    color: var(--accent); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+  .note-links button:hover { text-decoration: underline; }
+  .note-links .none { color: var(--ink-soft); font-size: 12px; }
+  .note-main { padding: 14px 16px; overflow: auto; min-width: 0; display: flex; flex-direction: column; }
+  .note-body-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .note-body-head h4 { margin: 0; }
+  .note-body { margin: 0; padding: 12px; background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 9px; font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 62vh; }
+
+  @media (max-width: 999px) {
+    .app-nav { order: 3; }
+    .brain-tabs { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface-2);
+      border: 1px solid var(--line); border-radius: 9px; }
+    .brain-tabs button { font: inherit; font-size: 12px; border: 0; background: transparent; color: var(--ink-soft);
+      padding: 5px 12px; border-radius: 7px; cursor: pointer; }
+    .brain-tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 600; }
+    .brain-split { grid-template-columns: 1fr; }
+    .brain-view[data-mobile-pane="list"] .brain-graph-pane { display: none; }
+    .brain-view[data-mobile-pane="graph"] .brain-list-pane { display: none; }
+    .brain-list-pane { max-height: none; }
+    .brain-pane-head .hint { display: none; }
+    .brain-mobile-switch { display: inline-flex; padding: 4px 9px; font-size: 11px; margin-left: auto; }
+    .note-dialog-body { grid-template-columns: 1fr; max-height: calc(100dvh - 64px); }
+    .note-side { border-right: 0; border-bottom: 1px solid var(--line); }
+    #brain-graph { min-height: 58vh; }
+    dialog.note-dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh;
+      margin: 0; border-radius: 0; inset: 0; }
+    .note-body { max-height: 52dvh; }
+  }
+  @media (max-width: 560px) {
+    .brain-toolbar { gap: 8px; }
+    .brain-field { min-width: 0; flex: 1 1 140px; }
+    .brain-field.grow { flex-basis: 100%; }
+    .brain-options-sep { display: none; }
+    .brain-head { align-items: flex-start; }
+    .brain-head-actions { flex: 1 1 100%; }
+    .note-dialog-bar, .note-side, .note-main { padding-left: 12px; padding-right: 12px; }
+    .brain-table th, .brain-table td { padding: 7px 6px; }
+    /* The table keeps every column where there is room; a phone shows title and project
+       instead, and the note dialog carries the rest of the metadata. */
+    .brain-table th:nth-child(2), .brain-table td:nth-child(2),
+    .brain-table th:nth-child(4), .brain-table td:nth-child(4),
+    .brain-table th:nth-child(5), .brain-table td:nth-child(5),
+    .brain-table th:nth-child(6), .brain-table td:nth-child(6) { display: none; }
+    .brain-table th:nth-child(1), .brain-table td:nth-child(1) { width: 64%; }
+    .brain-table th:nth-child(3), .brain-table td:nth-child(3) { width: 36%; }
+  }
 </style>
 </head>
 <body>
@@ -273,6 +438,10 @@
 <header class="top">
   <div class="bar">
     <div class="brand"><img src="/static/logo.svg" alt="" width="26" height="26">Ticket Board <span>· t3-workflow</span></div>
+    <nav class="app-nav" aria-label="Sections">
+      <a href="#board" id="nav-board" aria-current="page">Board</a>
+      <a href="#brain" id="nav-brain">Second Brain</a>
+    </nav>
     <div class="counts" id="counts" aria-label="Status summary"></div>
     <div class="spacer"></div>
     <div class="controls">
@@ -317,6 +486,104 @@
     Drag a card to another column, or use the <strong>Move</strong> control on the card (a single-pointer equivalent, per WCAG 2.2 SC 2.5.7).
     <kbd>Tab</kbd> to move focus, <kbd>Enter</kbd> on a control to change status.
   </p>
+  <section id="brain-view" class="brain-view" hidden aria-labelledby="brain-title" data-mobile-pane="list">
+    <div class="brain-head">
+      <div class="brain-title">
+        <h1 id="brain-title">Second Brain</h1>
+        <p class="brain-summary" id="brain-summary">Notes and links from the vault. Notes only: attachments and tags are not nodes.</p>
+      </div>
+      <div class="brain-tabs" role="tablist" aria-label="Second Brain view">
+        <button type="button" role="tab" id="brain-tab-list" aria-controls="brain-list-pane" aria-selected="true">List</button>
+        <button type="button" role="tab" id="brain-tab-graph" aria-controls="brain-graph-pane" aria-selected="false">Graph</button>
+      </div>
+      <div class="brain-head-actions">
+        <button class="btn" id="brain-refresh" type="button">Refresh</button>
+        <a class="btn guide" href="/guide#second-brain">Guide</a>
+      </div>
+    </div>
+
+    <div class="brain-toolbar" role="group" aria-label="Filter notes">
+      <label class="brain-field grow"><span>Search notes</span>
+        <input id="brain-search" type="search" placeholder="Title, path, project…" autocomplete="off">
+      </label>
+      <label class="brain-field"><span>Zone</span><select id="brain-zone"><option value="">All zones</option></select></label>
+      <label class="brain-field"><span>Type</span><select id="brain-type"><option value="">All types</option></select></label>
+      <label class="brain-field"><span>Project</span><select id="brain-project"><option value="">All projects</option></select></label>
+    </div>
+
+    <details class="brain-options">
+      <summary>Graph options</summary>
+      <div class="brain-options-body">
+        <label class="brain-check"><input type="checkbox" id="brain-labels" checked> Labels</label>
+        <label class="brain-check"><input type="checkbox" id="brain-arrows"> Arrows</label>
+        <label class="brain-check"><input type="checkbox" id="brain-local"> Local graph</label>
+        <label class="brain-inline">Depth
+          <select id="brain-depth"><option value="1">1</option><option value="2">2</option></select>
+        </label>
+        <label class="brain-inline">Orphans
+          <select id="brain-orphans">
+            <option value="all">Show all</option>
+            <option value="hide">Hide orphans</option>
+            <option value="only">Orphans only</option>
+          </select>
+        </label>
+        <span class="brain-options-sep" aria-hidden="true"></span>
+        <button class="btn" id="brain-fit" type="button">Fit</button>
+        <button class="btn" id="brain-reset" type="button">Reset view</button>
+        <button class="btn" id="brain-relayout" type="button">Re-layout</button>
+        <span class="brain-zoom-group">
+          <button class="btn icon" id="brain-zoom-out" type="button" aria-label="Zoom out">−</button>
+          <span class="chip" id="brain-zoom" aria-label="Graph zoom">100%</span>
+          <button class="btn icon" id="brain-zoom-in" type="button" aria-label="Zoom in">＋</button>
+        </span>
+      </div>
+    </details>
+
+    <p class="brain-status" id="brain-status" role="status" aria-live="polite"></p>
+
+    <div class="brain-split">
+      <section class="brain-list-pane" id="brain-list-pane" aria-labelledby="brain-list-title">
+        <div class="brain-pane-head">
+          <h2 id="brain-list-title">Notes</h2>
+          <span class="chip" id="brain-list-count">0</span>
+          <button class="btn brain-mobile-switch" id="brain-list-graph" type="button">Graph</button>
+        </div>
+        <div class="brain-table-wrap">
+          <table class="brain-table">
+            <caption class="sr-only">All notes in the Second Brain vault. Sort by title, modified date or size; open a note to read it.</caption>
+            <thead>
+              <tr>
+                <th scope="col" aria-sort="ascending"><button type="button" class="brain-sort" data-sort="title">Title</button></th>
+                <th scope="col"><button type="button" class="brain-sort" data-sort="type">Type</button></th>
+                <th scope="col"><button type="button" class="brain-sort" data-sort="project">Project</button></th>
+                <th scope="col"><button type="button" class="brain-sort" data-sort="zone">Zone</button></th>
+                <th scope="col"><button type="button" class="brain-sort" data-sort="modified">Modified</button></th>
+                <th scope="col"><button type="button" class="brain-sort" data-sort="size">Size</button></th>
+              </tr>
+            </thead>
+            <tbody id="brain-rows"></tbody>
+          </table>
+        </div>
+        <div class="brain-list-empty" id="brain-list-empty" hidden>
+          <p id="brain-empty-text">Loading notes…</p>
+          <button class="btn" id="brain-retry" type="button">Retry</button>
+        </div>
+      </section>
+
+      <section class="brain-graph-pane" id="brain-graph-pane" aria-labelledby="brain-graph-title">
+        <div class="brain-pane-head">
+          <h2 id="brain-graph-title">Graph</h2>
+          <span class="hint" id="brain-graph-summary">The list is the keyboard-accessible alternative to this canvas.</span>
+          <button class="btn brain-mobile-switch" id="brain-graph-list" type="button">List</button>
+        </div>
+        <div id="brain-graph" role="region" aria-label="Note graph. Use the note list for the keyboard-accessible view."></div>
+        <div class="brain-graph-empty" id="brain-graph-empty" hidden>
+          <p id="brain-graph-empty-text">Loading graph…</p>
+          <button class="btn" id="brain-graph-retry" type="button">Retry</button>
+        </div>
+      </section>
+    </div>
+  </section>
   <div id="live" class="sr-only" aria-live="polite"></div>
 </main>
 <footer id="foot"></footer>
@@ -537,8 +804,41 @@
   </form>
 </dialog>
 
+<dialog id="dlg-note" class="wide note-dialog" aria-labelledby="note-title">
+  <div class="note-dialog-bar">
+    <div>
+      <p class="note-kicker" id="note-kicker">Note</p>
+      <h3 id="note-title">Note</h3>
+    </div>
+    <button class="btn icon" type="button" id="note-close" aria-label="Close note">×</button>
+  </div>
+  <div class="note-dialog-body">
+    <div class="note-side">
+      <p class="note-meta" id="note-meta"></p>
+      <div class="note-actions">
+        <a class="btn" id="note-obsidian" href="#" target="_blank" rel="noopener">Open in Obsidian</a>
+        <button class="btn" id="note-copy" type="button">Copy Markdown</button>
+      </div>
+      <h4>Properties</h4>
+      <dl class="note-frontmatter" id="note-frontmatter"></dl>
+      <h4>Outlinks</h4>
+      <ul class="note-links" id="note-outlinks"></ul>
+      <h4>Backlinks</h4>
+      <ul class="note-links" id="note-backlinks"></ul>
+    </div>
+    <div class="note-main">
+      <div class="note-body-head">
+        <h4>Markdown</h4>
+        <span class="hint">Read-only. Rendered as text, never as HTML.</span>
+      </div>
+      <pre class="note-body" id="note-body" tabindex="0"></pre>
+    </div>
+  </div>
+</dialog>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
+<script src="/static/vendor/cytoscape.min.js"></script>
 <script>
 (() => {
   const board = document.getElementById('board');
@@ -2081,14 +2381,19 @@
   if (location.hash === '#list') {
     viewMode = 'list';
     render();
+  } else if (location.hash === '#board') {
+    viewMode = 'board';
+    render();
   }
   const liveHash = location.hash.match(/^#live-(T-\d+)$/);
   if (liveHash) openLive({ id: liveHash[1] });
   const reportHash = location.hash.match(/^#report-(T-\d+)$/);
   if (reportHash) openReport({ id: reportHash[1] });
-  if (deepLinks[location.hash]) {
+  function openDeepLink(hash) {
+    const opener = deepLinks[hash];
+    if (!opener) return;
     try {
-      const opened = deepLinks[location.hash]();
+      const opened = opener();
       if (opened && typeof opened.catch === 'function') {
         opened.catch((err) => say(err.message || String(err), true));
       }
@@ -2096,12 +2401,34 @@
       say(err.message || String(err), true);
     }
   }
+  openDeepLink(location.hash);
 
   q.addEventListener('input', render);
   projectSel.addEventListener('change', render);
+  // Hash navigation happens in the same document: keep #list, #report-…, #live-… and the
+  // dialog deep links working when they are reached from the Second Brain route.
+  window.addEventListener('hashchange', () => {
+    if (location.hash === '#list') {
+      viewMode = 'list';
+      localStorage.setItem('boardView', 'list');
+    } else if (location.hash === '#board') {
+      viewMode = 'board';
+      localStorage.setItem('boardView', 'board');
+    }
+    render();
+    const liveHash = location.hash.match(/^#live-(T-\d+)$/);
+    if (liveHash) openLive({ id: liveHash[1] });
+    const reportHash = location.hash.match(/^#report-(T-\d+)$/);
+    if (reportHash) openReport({ id: reportHash[1] });
+    openDeepLink(location.hash);
+  });
   load().catch(err => say('load failed: ' + err.message, true));
-  setInterval(() => load().catch(() => {}), 15000);
+  setInterval(() => {
+    if (document.body.classList.contains('route-brain')) return;
+    load().catch(() => {});
+  }, 15000);
 })();
 </script>
+<script src="/static/brain.js"></script>
 </body>
 </html>

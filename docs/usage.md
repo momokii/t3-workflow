@@ -360,7 +360,49 @@ A usage limit is retried automatically: the ticket blocks with a time, and the w
 `ready` after `retry.quotaBackoffMinutes` (default 60) until `retry.maxQuotaAttempts` (default 3) windows
 are spent — then it waits for you. Any other blocked ticket is retried from its card: **Move → Ready**.
 
-## 6. FAQ
+## 6. Second Brain
+
+The header's **Second Brain** tab (`/#brain`, bookmarkable) opens the read-only view of the `~/brain`
+vault. It is a separate destination, not a dialog: the ticket toolbar is hidden, the brand and Guide
+link stay, and **Board** returns to the queue without losing the selected list or board view.
+
+The data comes from the brain CLI (`brain list`, `brain graph`, `brain get`), proxied by the board.
+The board does not parse wikilinks or Markdown links, and it never writes to the vault. The notes,
+links and degree values are exactly what `brain graph --json` reports, so a broken link is fixed in
+brain, once, and both views agree.
+
+**Desktop** shows the note list on the left and the graph on the right. **Mobile** offers List and
+Graph tabs, list first; the graph tab scrolls the graph into view. The list is the text alternative to
+the canvas graph (WCAG 2.2 SC 1.1.1), so every note can be reached and opened with a keyboard and a
+screen reader without touching the graph.
+
+- **List**: search by title, path, project, zone or type; filter by zone, type and project; sort by
+  title, type, project, zone, modified date or size. Enter or Space on a title opens the note. On a
+  phone the table shows title and project; the other columns remain on wider screens and in the note
+  detail.
+- **Graph**: node size follows `degree`; colour groups follow the project inside `10 Projects` and the
+  zone elsewhere, because colouring the whole `10 Projects` zone would paint almost every note the
+  same colour. Drag to pan, wheel or the **− / +** buttons to zoom, **Fit** to frame the visible
+  nodes, **Reset view** to return to 100%, **Re-layout** to run the force layout again.
+- **Filters** drive both views at once: the same search, zone, type, project and orphan choice hides
+  notes in the list and nodes in the graph. **Local graph** keeps the selected note and its neighbours
+  at depth 1 or 2; **Global graph** is the same checkbox off. Hover highlights neighbours; click a node
+  to select it and open its detail.
+- **Note detail** shows the title, path, frontmatter as a definition list, outlinks and backlinks
+  (computed from the loaded graph, no extra request), and the raw Markdown in a read-only `<pre>` with
+  **Copy Markdown**. **Open in Obsidian** is a convenience deep link; it is not the only way to read
+  the note. The body is rendered as text, never as HTML.
+- **Refresh** asks the board to bypass its 10-second cache (`?refresh=1`). Loading and failure are
+  visible; the list stays usable when the graph library or the CLI fails, and a retry control is
+  offered.
+
+Limits: notes and `[[wikilinks]]` only — attachments and tags are not nodes; no editing, no full-text
+search, and no clustering for a vault of tens of thousands of notes. The board host must be able to
+run the brain CLI and read the vault. All `/api/brain/*` routes need the board token, including note
+bodies; `GET /api/brain/note` validates every path and refuses traversal and symlinks. The vault must
+remain clean: this view never calls `brain put`.
+
+## 7. FAQ
 
 **Does everything happen on the same thread?**
 The agent's work does. Tests run outside the thread by design, and the release is git, not an agent
@@ -370,8 +412,10 @@ task. One ticket never gets a second thread.
 No. T3 owns thread state; the watcher only reads it (`thread show`) and moves the ticket accordingly.
 
 **What if the agent asks me something mid-thread?**
-T3 reports the thread as waiting. The watcher leaves the ticket alone; answer in the T3 UI. Approval
-requests inside a run are not answered from Telegram (the CLI has no such command).
+T3 reports the thread as waiting. The watcher leaves the ticket alone, and the card's live modal shows
+an answer box for the waiting thread: send the reply there and the ticket returns to `ready` and is
+claimed without re-sending the ticket prompt. Approval requests inside a run are not answered from
+Telegram (the CLI has no such command).
 
 **Why did my ticket go back to `in-progress`?**
 The test failed. The output tail is in the ticket's proof and in the report. Fix, then move it to
@@ -397,7 +441,7 @@ Yes, within the limits: `watcher.maxConcurrent` keeps one ticket in flight, and
 `limits.maxInProgressMinutes` moves a stuck ticket to `blocked`. Push is automatic to a ticket branch;
 merging remains yours.
 
-## 7. Do and do not
+## 8. Do and do not
 
 - **Do** write a test command that fails before the change and passes after it.
 - **Do** adopt a thread instead of duplicating work.
