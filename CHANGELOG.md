@@ -15,6 +15,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Remove a project from the board, with a typed confirmation.** `POST /api/projects/<id>/remove`
+  requires `confirm` to equal the project title, then runs `t3 project remove --force` — the only
+  thread deletion T3's CLI offers. The Register-project dialog lists existing projects and warns that
+  tickets and reports are kept (their cards show **project missing**) while the project and all its
+  threads are deleted.
 - **Autonomous ticket loop.** A ticket is acknowledged, executed in a T3 thread, proved by the host's
   test command, reviewed by a second thread in a fresh context, repaired from the reviewer's findings
   (bounded), then pushed and reported. Telegram carries the acknowledgement, the plan, retries, the

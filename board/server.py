@@ -424,6 +424,40 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"message": (proc.stdout or "project ditambahkan").strip()[:300],
                              "projects": t3_projects(Path(self.t3_db_path))})
             return
+        if path.startswith("/api/projects/") and path.endswith("/remove"):
+            if not self._authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            payload = self._payload()
+            if payload is None:
+                return
+            project_id = path.split("/")[3]
+            projects = t3_projects(Path(self.t3_db_path))
+            project = next((item for item in projects if item["project_id"] == project_id), None)
+            if project is None:
+                self._json(404, {"error": "unknown project"})
+                return
+            if str(payload.get("confirm", "")).strip() != project["title"]:
+                self._json(400, {"error": "confirm must be the exact project title"})
+                return
+            config = load_config(Path(self.config_path))
+            cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+            try:
+                proc = subprocess.run(
+                    [cli, "project", "remove", project_id, "--force"],
+                    capture_output=True, text=True, timeout=120,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+                return
+            if proc.returncode != 0:
+                self._json(409, {"error": (proc.stderr or proc.stdout or "failed").strip()[:300]})
+                return
+            self._json(200, {
+                "removed": {"project_id": project_id, "title": project["title"]},
+                "projects": t3_projects(Path(self.t3_db_path)),
+            })
+            return
         if path.startswith("/api/approvals/") and path.endswith("/decide"):
             if not self._authorised():
                 self._json(401, {"error": "invalid token"})

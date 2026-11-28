@@ -33,7 +33,8 @@ schema or state machine → `docs/architecture.md`, procedures → `docs/operati
    `GET /api/fs`, which lists filenames from this machine; the rest of `GET` is open to the tailnet,
    which is the real boundary.
 9. **T3 stays the owner of projects and threads.** Read `statev2.sqlite` read-only; create
-   projects through `t3 project add`, never by writing the database.
+   projects through `t3 project add` and remove them through `t3 project remove --force` (which
+   deletes their threads), never by writing the database.
 10. **Review before release.** `review` releases only on a `VERDICT: ACCEPT` line from the review
     thread. A rejection sends its findings into the dev thread; a missing verdict, a failed reviewer
     or a tree that changed during the review blocks the ticket — prose is never read as approval.

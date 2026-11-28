@@ -9,6 +9,7 @@ POST /api/tickets/<id>/edit            edit a ticket's fields
 POST /api/tickets/<id>/delete          delete a ticket (report kept)
 POST /api/approvals/<id>/decide        approve or reject
 POST /api/projects                     register a T3 project
+POST /api/projects/<id>/remove         remove a project and all of its threads (confirm = title)
 POST /api/threads/<thread>/adopt       adopt a T3 thread as a ticket
 
 GET  /                                 the board page
@@ -266,6 +267,22 @@ curl -s -X POST http://127.0.0.1:8787/api/projects \
 ```
 
 Validation: `title` non-empty, `path` absolute and an existing directory (`400` otherwise), then `t3 project add <path> --title <title>`. A non-zero exit from the CLI returns `409` with its stderr.
+
+## POST /api/projects/<id>/remove
+
+Irreversible, and the only way to delete threads from here: T3's CLI has no per-thread delete, and
+`t3 project remove --force` deletes the project together with every thread in it.
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/api/projects/a5655872-…/remove \
+  -H "X-Board-Token: $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"confirm": "e2e-loop-1795834852"}'
+```
+
+`confirm` must equal the project's title exactly, so a stray click cannot delete anything. Responses:
+`200 {"removed": {"project_id", "title"}, "projects": […]}`; `400` when `confirm` is missing or differs;
+`401` without the token; `404` for an unknown id; `409` when the CLI refuses. Tickets that pointed at the
+project are kept, their reports stay on disk, and their cards show **project missing**.
 
 ## GET /api/projects
 

@@ -46,7 +46,13 @@ class BoardApiTests(unittest.TestCase):
         """A fresh database per test so test order cannot interfere."""
         self.tmp = Path(tempfile.mkdtemp(prefix="board-"))
         self.config = self.tmp / "config.json"
-        self.config.write_text(json.dumps(CONFIG))
+        self.fake_cli = self.tmp / "fake-t3"
+        self.args_file = self.tmp / "t3-args.txt"
+        self.fake_cli.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$T3_ARGS_FILE\"\n")
+        self.fake_cli.chmod(0o755)
+        config = json.loads(json.dumps(CONFIG))
+        config["t3"] = {"cli": str(self.fake_cli)}
+        self.config.write_text(json.dumps(config))
         self.db = self.tmp / "t.sqlite"
         store = TicketStore(self.db, self.config)
         store.add("ticket one", "t3-workflow", model_profile="fast", test_cmd="true", status="backlog")
@@ -229,8 +235,33 @@ class BoardApiTests(unittest.TestCase):
 
     def test_the_board_has_readers_for_reports_threads_and_folders(self) -> None:
         _, raw = self.request("GET", "/")
-        for needle in ("dlg-report", "dlg-thread", "dlg-fs", "data-browse", "test-warning"):
+        for needle in ("dlg-report", "dlg-thread", "dlg-fs", "data-browse", "test-warning",
+                       "project-rows", "ALL of its threads"):
             self.assertIn(needle, raw)
+
+    def test_removing_a_project_needs_the_exact_title_and_runs_force(self) -> None:
+        os.environ["T3_ARGS_FILE"] = str(self.args_file)
+        response, _ = self.request("POST", "/api/projects/p1/remove", {}, token="secret")
+        self.assertEqual(response.status, 400)
+        response, _ = self.request(
+            "POST", "/api/projects/p1/remove", {"confirm": "wrong title"}, token="secret"
+        )
+        self.assertEqual(response.status, 400)
+        response, raw = self.request(
+            "POST", "/api/projects/p1/remove", {"confirm": "t3-workflow"}, token="secret"
+        )
+        self.assertEqual(response.status, 200, raw)
+        args = self.args_file.read_text().split()
+        self.assertEqual(args[:3], ["project", "remove", "p1"])
+        self.assertIn("--force", args)
+        response, _ = self.request(
+            "POST", "/api/projects/missing/remove", {"confirm": "x"}, token="secret"
+        )
+        self.assertEqual(response.status, 404)
+
+    def test_project_removal_needs_the_token(self) -> None:
+        response, _ = self.request("POST", "/api/projects/p1/remove", {"confirm": "t3-workflow"})
+        self.assertEqual(response.status, 401)
 
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")

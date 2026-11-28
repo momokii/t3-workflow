@@ -373,6 +373,9 @@ npm test -- --run</code></pre>
     <p>A usage limit retries itself: the ticket blocks with a retry time and the watcher puts it back in
     <code>ready</code> after the backoff window, a bounded number of times. Any other blocked ticket comes
     back with <strong>Move → Ready</strong> on its card.</p>
+    <p><strong>Register project → Existing projects</strong> can remove a project: it asks you to type the
+    project title, then runs <code>t3 project remove --force</code>, which deletes the project and all of its
+    threads. Tickets and reports are kept and marked <strong>project missing</strong>.</p>
     <p class="note">Deletion is not mirrored 1:1, and cannot be: T3's CLI has no per-thread delete
     (<code>t3 thread --help</code> lists only <code>list|start|send|show</code>), so a board action cannot
     remove a thread. Only <code>t3 project remove --force</code> deletes a project's threads, and that is
