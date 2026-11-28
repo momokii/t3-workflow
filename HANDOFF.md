@@ -108,7 +108,10 @@ started. The sync stage moves a ticket to `testing` when T3 reports the thread `
    rejection sends the findings into the dev thread and spends one of `maxAttempts` (2). A missing
    verdict, a failed reviewer, a timeout or a tree that changed mid-review blocks the ticket. The guard
    is a tree fingerprint, because T3 0.1.9 has no read-only mode (`docs/readonly-verifier.md`).
-7. **End-to-end proven on a throwaway project.** `T-0004` (real dev thread, real reviewer thread,
+7. **Plan acknowledgement.** The bridge forwards the first assistant message of the dev run (up to 900
+   characters) after the "in progress" ack, once per run (`plannedRuns` in its state file). A run that
+   has not produced an assistant message yet is retried on the next poll.
+8. **End-to-end proven on a throwaway project.** `T-0004` (real dev thread, real reviewer thread,
    same model) went ticket → thread → `completed` → test PASS → review `ACCEPT` in one attempt →
    `ticket/t-0004-…` pushed to a local bare origin → `done`, with the report on disk (including the
    independent review and its findings) and delivered to Telegram. The run also exposed a production
@@ -143,7 +146,8 @@ From `AGENTS.md`, repeated because they are the ones that get broken:
 | # | Task | Acceptance criteria | Why first |
 |---|---|---|---|
 | 1 | ~~Edit and delete a ticket~~ | delivered: store + API + CLI + board dialog; a deleted ticket keeps its report and an audit snapshot | done |
-| 2 | **Plan acknowledgement** — forward the dev thread's first plan as a Telegram message | a plan arrives before execution; tests for the bridge notice | next |
+| 2 | ~~Plan acknowledgement~~ | delivered: the bridge forwards the first assistant message of the run, once per run (`plannedRuns` in the bridge state) | done |
+| 3 | **Scheduler for a quota window** — wake a `blocked` ticket after a known reset | only if T3 ever exposes a reset time; today the note carries the message | blocked on T3 |
 | 2 | **Per-ticket cost evidence** — investigate what T3 exposes per run before building | a documented finding: where token/usage data lives, or a clear "not available"; then the smallest honest feature | wall-clock budget is the only guard now |
 | 3 | **Deploy + rollback** for one real target | a documented target, a deploy command, a tested rollback, prove with one release | pipeline stops at a pushed branch today |
 | 4 | **Pull-request automation** | needs `gh` or a GitHub token; until then the compare link + `T-xxxx.pr.md` stand | explicitly deferred by the owner |

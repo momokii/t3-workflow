@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **The plan arrives on Telegram.** After the "in progress" acknowledgement the bridge forwards the dev
+  thread's first assistant message of the run (trimmed to 900 characters), once per run, keyed by
+  `thread:latestRunId` in its state file. It is read from the thread T3 already keeps, not asked for.
+
+### Fixed
+
 - **Edit and delete a ticket**, with history. `store.update()` edits the human-owned fields (title,
   context, test command, priority, attachment, preset, provider/model, project), refuses a `done`
   ticket and requires `force` while a stage is working; `store.delete()` writes the report first,

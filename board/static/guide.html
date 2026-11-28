@@ -342,6 +342,7 @@ npm test -- --run</code></pre>
         <tr><td><code>/ctx &lt;thread&gt; [n]</code></td><td>Title, status, model, link and the last messages of a thread.</td></tr>
         <tr><td><code>/send &lt;thread&gt; &lt;text&gt;</code></td><td>Send to a thread; a busy thread takes it as the next turn.</td></tr>
         <tr><td><code>/new &lt;project&gt; &lt;text&gt;</code></td><td>Start a T3 thread directly, without a ticket.</td></tr>
+      <tr><td>notifications</td><td>The bridge announces a claimed ticket, the agent's plan (once per run), a retry, the review verdict, and the report as a document on <code>done</code>.</td></tr>
       </tbody>
     </table>
     <p>Only allowlisted chats get answers; anything else is logged and ignored. Read commands work with the T3

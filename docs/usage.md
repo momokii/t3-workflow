@@ -141,8 +141,9 @@ watcher from testing the code that just failed, and every retry is counted on th
 The classification comes from T3's own error item (`failure.class` and `failure.message`), read
 read-only; the measured taxonomy is in `docs/retry-evidence.md`.
 
-Telegram announces the work as it moves: an acknowledgement when a ticket is claimed, a retry notice, the
-review verdict, and on `done` the markdown report as a document, so the evidence arrives with the news.
+Telegram announces the work as it moves: an acknowledgement when a ticket is claimed, the agent's plan
+(the first assistant message of the run, once per run), a retry notice, the review verdict, and on `done`
+the markdown report as a document, so the evidence arrives with the news.
 
 ## 4. Recommendations
 

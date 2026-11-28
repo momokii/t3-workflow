@@ -165,6 +165,38 @@ class TicketCommandTests(unittest.TestCase):
         finally:
             bridge.reply = original
 
+    def test_the_plan_is_forwarded_once_per_run(self) -> None:
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow one")
+        sent: list[str] = []
+        original_reply = bridge.reply
+        original_run = bridge.t3_run
+        bridge.reply = lambda config, chat, text: sent.append(text)
+        bridge.t3_run = lambda config, args, stdin=None: (
+            0,
+            json.dumps({
+                "thread": {"status": "running", "latestRunId": "run-1"},
+                "messages": [
+                    {"role": "user", "runId": "run-1", "text": "do it"},
+                    {"role": "assistant", "runId": "run-1", "text": "Plan: read, patch, test."},
+                ],
+            }),
+        )
+        try:
+            state = {"ticketStates": {}}
+            bridge.notify_ticket_states(self.config, state)          # seed backlog
+            store = self.store_cls(self.db, self.wf_config)
+            store.move("T-0001", "ready", force=True)
+            store.claim("T-0001", "watcher")
+            store.attach_thread("T-0001", "thread-plan")
+            store.close()
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 2)
+            self.assertIn("in-progress", sent[0])
+            self.assertIn("Plan: read, patch, test.", sent[1])
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)
+        finally:
+            bridge.reply = original_reply
+            bridge.t3_run = original_run
+
     def test_multipart_body_carries_the_file(self) -> None:
         body, content_type = bridge.multipart_body(
             {"chat_id": "1"}, "document", "T-0001.md", b"# report\n"

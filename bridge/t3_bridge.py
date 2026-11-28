@@ -597,6 +597,46 @@ NOTIFY_STATUSES = ("in-progress", "ready", "review", "done", "blocked")
 STATUS_ICON = {"in-progress": "▶", "ready": "↻", "review": "🔍", "done": "✅", "blocked": "⛔"}
 
 
+def announce_plan(config: dict, state: dict, ticket: dict) -> int:
+    """Forward the thread's first plan message once, keyed by the run that produced it.
+
+    The ack says "in progress"; the plan says what the agent intends to do. It is read from
+    the thread T3 already keeps, not asked for again, and each run gets at most one message.
+    """
+    thread_id = (ticket.get("thread_id") or "").strip()
+    if not thread_id:
+        return 0
+    code, out = t3_run(config, ["thread", "show", thread_id, "--json", "--messages", "6"])
+    if code != 0:
+        return 0
+    try:
+        payload = json.loads(out)
+    except json.JSONDecodeError:
+        return 0
+    thread = payload.get("thread") or {}
+    latest = str(thread.get("latestRunId") or "")
+    messages = payload.get("messages") or []
+    assistant = [
+        item for item in messages
+        if (item.get("role") or "").lower() == "assistant" and (item.get("text") or "").strip()
+        and (not latest or str(item.get("runId") or "") == latest)
+    ]
+    if not assistant:
+        return 0
+    key = f"{thread_id}:{latest or 'unknown'}"
+    seen = set(state.get("plannedRuns") or [])
+    if key in seen:
+        return 0
+    text = assistant[0]["text"].strip()
+    if len(text) > 900:
+        text = text[:900].rstrip() + " …"
+    reply(config, str(config["telegram"]["allowChatIds"][0]), f"🧭 {ticket['id']} plan:\n{text}")
+    seen.add(key)
+    state["plannedRuns"] = sorted(seen)[-200:]
+    save_state(state)
+    return 1
+
+
 def notify_ticket_states(config: dict, state: dict) -> int:
     """Acknowledge work, report the review verdict, and deliver the report.
 
@@ -641,6 +681,8 @@ def notify_ticket_states(config: dict, state: dict) -> int:
             f"{icon} {ticket['id']} → {ticket['status']}: {ticket['title']}{verdict}{note}{link}",
         )
         sent += 1
+        if ticket["status"] == "in-progress" and ticket.get("thread_id"):
+            sent += announce_plan(config, state, ticket)
         report = (ticket.get("report_path") or "").strip()
         if ticket["status"] == "done" and report:
             send_document(config, str(chats[0]), Path(report), f"{ticket['id']} report")
