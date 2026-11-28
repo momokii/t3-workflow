@@ -10,14 +10,13 @@ what is the right accessible pattern for a tabbed report and a list view?** Badg
 - `[spec]` — quoted from a normative/canonical page fetched during this research (URL in `sources`).
 - `[inference]` — reasoning, not verified here. Never presented as fact.
 
-Snapshot: repository at `2f9a8ad` **plus an uncommitted working tree** (`board/server.py`,
-`board/static/index.html`, `tickets/store.py`, `tests/test_board.py`). The card's state line, the
-report tabs and the list view described below exist **only in that dirty tree** — `git log -S
-"thread_state" -- board/server.py` returns nothing, so no commit contains them `[measured]`. The
-board process on `:8787` was started `16:22:09 WIB`, i.e. from committed code without
-`thread_snapshots`, so the live `GET /api/tickets` carries **no** `thread_state`/`review_state` today
-`[measured]` (see `risks`). Every T3 read used `?mode=ro` + `PRAGMA query_only=ON`; no thread was
-started and nothing was written to T3.
+Snapshot: the code described here **landed while this research ran** — `46ed640` "feat(board): per-card
+live state, tabbed reports and a list view" at `16:40:43`, `75fb1f8` at `16:44:32`, then `acb4366`
+"fix(board): answer the standards review of card state and reports" at `16:47:54` `[measured]`. The tree
+below is `acb4366`. The board process was restarted `16:39:18 WIB`, so it predates all three commits
+while already serving the then-uncommitted code: `thread_state`/`review_state` are **live in
+`GET /api/tickets` right now** `[measured]`. Every T3 read used `?mode=ro` + `PRAGMA query_only=ON`;
+no thread was started and nothing was written to T3.
 
 Database as measured: `statev2.sqlite` **1.75 GB** with a **48.9 MB** `-wal`, holding
 `threads 328`, `runs 1,232`, `turn_items ≈51.9 k`, `runtime_requests 98` `[measured]`. Live tables grow
@@ -91,10 +90,11 @@ JSON for the state block          : 626 B
 EXPLAIN                           : SCAN runs + USE TEMP B-TREE for RIGHT PART OF ORDER BY
 ```
 
-The window-function form that produces that set (`row_number() over (partition by thread_id order by
-ordinal desc)`) plans as `SCAN r USING INDEX orchestration_v2_projection_runs_thread_ordinal_idx`
-plus `USE TEMP B-TREE FOR RIGHT PART OF ORDER BY`; at 1,232 rows it costs microseconds `[measured]`. To ask **only** "who is working now", the partial index
-already exists and is cheaper still `[schema]` + `[measured]`:
+The window-function form that produces that set plans as `SCAN r USING INDEX
+orchestration_v2_projection_runs_thread_ordinal_idx` plus `USE TEMP B-TREE FOR RIGHT PART OF ORDER BY`;
+at 1,232 rows it still costs microseconds, because runs are few compared with turn items `[measured]`.
+To ask **only** "who is working now", the partial index already exists and is cheaper still
+`[schema]` + `[measured]`:
 
 ```sql
 select r.thread_id, r.status, r.ordinal
@@ -115,23 +115,94 @@ Its index predicate is `WHERE status IN ('queued','preparing','starting','runnin
 
 ### Cost of the same information at board scale
 
-Same statement, warm connection, 100 thread ids (the 100 busiest threads, including both running
-ones) `[measured]`:
+Same question, 100 thread ids (the 100 busiest threads, including the running ones), warm connection
+`[measured]`:
 
-| Shape | Statement count | Rows | Median | JSON |
-|---|---|---|---|---|
-| one grouped query | 1 | 100 | **1.61 ms** | 27,006 B (compact keys) / 34,714 B (the working tree's `last_type`/`last_state`/`last_at` keys) |
-| the loop in `thread_snapshots` | 200 (2 per thread) | 100 | 1.85 ms | same |
-| fresh connection, as the board does per request | 1 | 4 | connect **0.17 ms** + query **1.40 ms** | 865 B |
-| fresh connection, 100 ids | 1 | 100 | connect **0.17 ms** + query **4.05–4.29 ms** (3 runs) | 27,006 B |
+| Shape | Statements | Rows | Median (100 ids) | Median (4 ids) | JSON |
+|---|---|---|---|---|---|
+| the query above (correlated `order by … limit 1`) | 1 | 100 | **1.27–1.61 ms** | **0.021 ms** | 27,006 B compact / 34,714 B `last_*` keys |
+| **shipped** `thread_snapshots` at `acb4366` (two `row_number()` windows) | 2 | 100 | **137.6 ms** | **39.5 ms** | 24,008 B |
+| join on `max(ordinal)` | 1 | 100 | 14.9 ms | — | — |
+| window function + `INDEXED BY …thread_ordinal_idx` | 1 | 100 | 160.0 ms | — | — |
+| the pre-`acb4366` 2-per-thread loop | 200 | 100 | 1.85 ms | — | same |
+| fresh connection, as the board does per request | 2 | 4 | connect **0.17 ms** + query **1.40 ms** (grouped form) | — | 865 B |
 
-So the honest cost is **~4 ms per `GET /api/tickets` on a 100-ticket board**, because the handler
-opens a new read-only handle each request `[code]` + `[measured]`. The grouped query is **1.1–1.3×
-faster** than the current per-thread loop, not dramatically so — at this row count both are index
-seeks. The grouped form wins on statement count (1 vs 200) and on round trips, not on raw median
-`[measured]` + `[inference]`.
+The shipped shape is the slow one, and the plan says why `[measured]`:
+
+```
+CO-ROUTINE (subquery-1)
+CO-ROUTINE (subquery-3)
+SEARCH orchestration_v2_projection_turn_items
+  USING INDEX orchestration_v2_projection_turn_items_thread_run_idx (thread_id=?)
+USE TEMP B-TREE FOR RIGHT PART OF ORDER BY
+SCAN (subquery-3)
+SCAN (subquery-1)
+```
+
+`thread_run_idx` is `(thread_id, run_id)`, so `order by ordinal desc` inside `row_number()` has no
+usable order: SQLite reads **every turn item of the thread** — up to ~1,110 for a busy one — and sorts
+them in a temp B-tree to pick `rank = 1`. A ticket's thread is that expensive to re-rank on every
+15 s poll. Forcing the ordinal index with `INDEXED BY` does not help (160 ms) because the sort is
+over rows, not over indexes `[measured]`.
+
+What does help `[measured]`: a correlated `order by … desc limit 1`, which the ordinal index answers
+by reading one entry per thread (`SEARCH … USING INDEX …thread_ordinal_idx (thread_id=?)`), at
+**1.27 ms for 100 ids and 0.021 ms for the 4 ids a real board has today**. A `join on max(ordinal)`
+also avoids the temp B-tree (14.9 ms) but is 10× the correlated form.
+
+The window function is fine for `runs` (2.6 ms for 99 ids) because a thread has tens of runs, not
+thousands of turn items — the cost is in `turn_items` alone `[measured]`.
 
 ### The one line, and the words it may use
+
+What ships now is `stageLine()` `[code]`:
+
+```js
+function stageLine(ticket) {
+  if (ticket.status === 'ready') return { dot: '', text: 'queued for the watcher' };
+  if (ticket.status === 'testing') return { dot: 'running', text: 'running the test command…' };
+  if (ticket.status === 'review') {
+    if (ticket.review_state) {
+      const status = ticket.review_state.status || 'unknown';
+      return { dot: dotFor(status), text: `reviewer ${status}${stepSuffix(ticket.review_state)}` };
+    }
+    return { dot: 'running', text: 'review queued — starting the reviewer…' };
+  }
+  if (ticket.status === 'in-progress') {
+    if (ticket.thread_state) {
+      return { dot: dotFor(ticket.thread_state.status), text:
+        `thread ${ticket.thread_state.status}${stepSuffix(ticket.thread_state)}` };
+    }
+    return { dot: 'running', text: 'claimed — starting the thread…' };
+  }
+  if (ticket.thread_state) {           // ← any other status, including done and blocked
+    const status = ticket.thread_state.status || 'unknown';
+    return { dot: dotFor(status), text: `thread ${status}${stepSuffix(ticket.thread_state)}` };
+  }
+  return null;
+}
+```
+
+`stepSuffix()` appends `· <type with underscores spaced> · <relative time>` `[code]`. That last
+fallback is the one defect with measured evidence `[measured]`: **a terminal ticket still gets a live
+line, and a shared thread makes it say something false.**
+
+Observed on the live board while writing this page (`GET /api/tickets`, 3 tickets, 5,593 B)
+`[measured]`:
+
+| Ticket | Ticket status | Shared `thread_id` | `thread_state.status` | Card would read |
+|---|---|---|---|---|
+| `T-0001` | `done` | `mcp:72b322c1-…` | `running` | `thread running · reasoning · 12s ago` |
+| `T-0002` | `done` | `mcp:72b322c1-…` (same thread) | `running` | the same line, on a second finished card |
+| `T-0003` | `done` | `mcp:dc80cd16-…` | `completed` | `thread completed · checkpoint · 145m ago` |
+
+Both `done` tickets were adopted from one thread, and that thread's run 51 was `running` at measurement
+time (`ordinal 51, requested_at 09:46:08.155Z, completed_at null`, last item `reasoning/running`
+`09:47:50.563Z`) because somebody is using it for new work — not for `T-0001` `[measured]`.
+
+So the rule is not cosmetic `[inference]`: show the line for `in-progress`, `testing` and `review`
+only; drop the final fallback, or guard it with `['in-progress','testing','review'].includes(t.status)`.
+A finished card needs no liveness claim, and a thread shared by two tickets can never supply one.
 
 `turn_items.type` is a closed vocabulary in this projection `[measured]`, whole table at
 51,875 rows (the database is live, so every count below drifts by a handful between statements):
@@ -149,21 +220,27 @@ compaction 19 · handoff 12 · approval_request 12 · secret_request 5
 at measurement time.
 
 The honest line is `run_status` first, `type` second, elapsed last — and it is **only** shown while
-the run is active `[inference]`:
+the run is active `[inference]`. The shipped string uses T3's status word raw (`thread running`,
+`reviewer completed`); the table below is the wording this research recommends, keyed by the
+**ticket** status the card already knows:
 
-| `run_status` | `last_type` | Card line | Why it is honest |
+| Ticket status | Card line (recommended) | `last_type` | Why it is honest |
 |---|---|---|---|
-| `running` | `command_execution` | `working · running a command · 12s ago` | both facts are the latest row T3 wrote |
-| `running` | `reasoning` | `working · thinking · 40s ago` | "thinking" is `reasoning`; no tokens, no percentage |
-| `running` | `file_change` | `working · editing files · 2m ago` | — |
-| `running` | `subagent` | `working · waiting on a sub-agent · 3m ago` | — |
-| `running` | `approval_request` / `user_input_request` / `secret_request` | `needs an answer · …` | a request item is the agent asking |
-| `waiting` | any | `waiting for an answer · 6m ago` | `waiting` is in T3's own run vocabulary; zero such rows observed |
-| `queued` / `preparing` / `starting` | — | `queued · not started yet` | — |
-| `completed` / `idle` | any | **no line** | the column and the ticket status already say it |
-| `failed` / `cancelled` / `interrupted` / `rolled_back` | any | **no line** if the ticket is already `blocked` | the ticket note carries the reason |
+| `ready` | `queued for the watcher` | — | the ticket row says it; no T3 read needed |
+| `in-progress`, run `running` | `working · running a command · 12s ago` | `command_execution` | both facts are the latest row T3 wrote |
+| `in-progress`, run `running` | `working · thinking · 40s ago` | `reasoning` | "thinking" is `reasoning`; no tokens, no percentage |
+| `in-progress`, run `running` | `working · editing files · 2m ago` | `file_change` | — |
+| `in-progress`, run `running` | `working · waiting on a sub-agent · 3m ago` | `subagent` | — |
+| `in-progress`, run `running` | `needs an answer · …` | `approval_request` / `user_input_request` / `secret_request` | a request item is the agent asking |
+| `in-progress`, run `waiting` | `waiting for an answer · 6m ago` | any | `waiting` is in T3's own run vocabulary; zero such rows observed |
+| `in-progress`, run `queued`/`preparing`/`starting` | `queued · not started yet` | — | — |
+| `testing` | `running the test command…` | — | the host runs it, not the thread |
+| `review`, run active | `reviewer running · …` | any | see `reviewer state` |
+| `review`, run ended, no verdict | `reviewer finished · verdict pending` | any | measured to last 64 s |
+| `done` / `blocked` / `backlog` | **no line** | — | the column, the ticket note and the report already say it |
+| any, run `failed`/`cancelled`/`interrupted`/`rolled_back` | **no line** if the ticket is already `blocked` | any | the ticket note carries the reason |
 
-Two measured reasons for that last rule `[measured]`:
+Two measured reasons for dropping the line on a finished card `[measured]`:
 
 1. **`last_type` is nearly always `checkpoint` on a finished thread.** Of the 100 busiest threads,
    `checkpoint 85`, `run_interrupt_request 6`, `command_execution 5`, `file_change 1`,
@@ -251,8 +328,8 @@ answered but the watcher has not looked yet. The ticket row cannot separate them
 
 Columns behind the last three rows: `orchestration_v2_projection_runs.status` and `.ordinal` for the
 reviewer's `thread_id` = `tickets.verify_thread_id` `[schema]`. The phrase comes from two rows the
-board already holds, so **no new query is needed** — the existing grouped query covers the reviewer
-thread too, because `thread_snapshots` is called with the dev **and** verify ids together `[code]`:
+board already holds, so **no new query is needed** — the snapshot read is called with the dev **and**
+verify ids together `[code]` (`board/server.py` at `acb4366`):
 
 ```python
 snapshots = thread_snapshots(
@@ -331,14 +408,15 @@ covers `ArrowRight`, `ArrowLeft`, `Home`, `End` with `preventDefault()`, moves f
 Sections come from `store.report_sections()` (`summary`, `test`, `description`, `evidence`, …), so
 tab ids are stable and `aria-controls` always resolves `[code]`.
 
-Two gaps, both small `[spec]` + `[code]`:
+Gap that was open during this research and is now fixed `[measured]`: **the panel was not focusable.**
+APG: `Tab` from the tab list lands on *the tabpanel* "unless the first element containing meaningful
+content inside the tabpanel is focusable". The Summary panel is a `<dl>` with no focusable child, so a
+keyboard user tabbed past the report body to *Open raw markdown*. `acb4366` added `panel.tabIndex = 0`
+(`board/static/index.html:1141`), which is the pattern's answer and is harmless when the panel does
+contain a link.
 
-1. **The panel is not focusable.** APG: `Tab` from the tab list lands on *the tabpanel* "unless the
-   first element containing meaningful content inside the tabpanel is focusable". The Summary panel
-   is a `<dl>` with no focusable child, so a keyboard user tabs past the report body to *Open raw
-   markdown*. Fix: `panel.tabIndex = 0` (harmless when the panel does contain a link).
-2. **`aria-orientation` is absent.** APG only requires it for `vertical`; the default is horizontal,
-   so this is correct as-is. Stated so nobody "fixes" it wrongly.
+One remaining non-gap: **`aria-orientation` is absent**, and APG only requires it for `vertical`; the
+default is horizontal, so this is correct as-is. Stated so nobody "fixes" it wrongly.
 
 Everything else matches the pattern; no change is warranted. The dialog itself is
 `<dialog aria-labelledby="dlg-report-title">` with `showModal()`, which gives focus containment and
@@ -349,9 +427,20 @@ Everything else matches the pattern; no change is warranted. The dialog itself i
 Recommendation: **text plus colour, and the text carries the meaning** `[inference]`, supported by
 WCAG 1.4.1 (colour is not the only channel) in the local reference `[code]`:
 
-- The card already prints `thread running · reasoning · 40s ago` **and** colours an 8 px
-  `.dot` `[code]`. Keep both: a reader of a greyscale screen or with colour-vision deficiency loses
-  nothing, because the words are the status.
+- The card already prints a full sentence **and** colours an 8 px `.dot` `[code]`:
+
+  ```js
+  function dotFor(status) {
+    if (['running', 'queued', 'preparing', 'starting'].includes(status)) return 'running';
+    if (['completed', 'idle'].includes(status)) return 'ok';
+    if (['failed', 'cancelled', 'interrupted', 'rolled_back'].includes(status)) return 'fail';
+    return '';
+  }
+  ```
+
+  Keep both: a reader of a greyscale screen or with colour-vision deficiency loses nothing, because
+  the words are the status. Note the dot is `''` for `waiting`, so a card in that state is text-only
+  already — which is the pattern to copy, not an accident to fix `[inference]`.
 - Mark the dot `aria-hidden="true"` — it repeats the text and would otherwise be an empty span in
   the accessibility tree `[inference]`.
 - Do **not** add a pulse. If one is ever added it must be disabled under `prefers-reduced-motion`,
@@ -452,7 +541,7 @@ Measured on the live board and extrapolated `[measured]`:
 
 | Payload | Bytes |
 |---|---|
-| today, 3 real tickets | 5,007 B (one ticket dict measures 1,560 B; the rest is the shared envelope) |
+| today, 3 real tickets (with state) | 5,593 B (one ticket dict without state measured 1,560 B) |
 | 100 synthetic tickets, no state | 126,909 B (1,269 B/ticket) |
 | 100 synthetic tickets, with `thread_state` + `review_state` | 153,614 B (1,536 B/ticket) |
 | delta | **+26,705 B, +21 %** |
@@ -465,14 +554,21 @@ on every response `[code]`, so nothing is cached and the whole body travels ever
 ### Polling
 
 `load()` runs every 15 s per open tab `[code]`. Each call currently opens the T3 database twice
-(`t3_projects()` and the snapshot query) plus `tickets.sqlite` `[code]`; the snapshot statement adds
-**~4 ms** at 100 threads `[measured]`. Three tabs is 12 requests/minute, each a full JSON body and a
-read-only handle on a 1.75 GB WAL database. That is acceptable — 4 ms every 15 s is 16 ms per
-minute, **0.03 %** duty on the board's main thread — and it is also the first thing that will bite if
-the board is opened on a phone and left open `[inference]`. Options, cheapest first
-`[inference]`: pause polling when `document.hidden`; cache the snapshot for one interval inside the
-handler; or send only per-ticket deltas (`{id, thread_state, review_state}`) once the client has the
-rest.
+(`t3_projects()` and the snapshot query) plus `tickets.sqlite` `[code]`. What the snapshot statement
+costs is the whole story `[measured]`:
+
+| Board | Shipped window form | Correlated `limit 1` |
+|---|---|---|
+| today, 4 thread ids | **39.5 ms** | 0.021 ms |
+| 100 tickets, ~200 ids | **≈275 ms** (137.6 ms per 100 ids) | 1.3 ms |
+
+At today's size the shipped form spends 39.5 ms of a 15 s poll — 0.26 % of a core. At 100 tickets it
+is ~275 ms every 15 s, **~1.8 s of CPU per minute** for one open tab, on a route that takes no token
+`[inference]` from the measurements above. That is the number that matters, and it is a query-shape
+problem, not a polling-rate problem. With the correlated form the same board costs 2.6 ms per poll.
+Options, cheapest first `[inference]`: fix the statement to the correlated form; cache the snapshot for
+one interval inside the handler; pause polling when `document.hidden`; or send only per-ticket deltas
+(`{id, thread_state, review_state}`) once the client has the rest.
 
 ### Auth
 
@@ -500,11 +596,12 @@ is small next to that, but it is not zero `[inference]`.
   handle with `busy_timeout=200` `[code]`. A short timeout is right — a board must not queue behind
   the writer — but it means a busy WAL can return *no* line for one poll. The UI must not render
   "no line" as "not running" `[inference]`.
-- **Today the line is invisible.** `thread_snapshots` is uncommitted, so the deployed board returns
-  `thread_state: null` `[measured]`. Restarting the board before committing shows nothing; committing
-  without restarting shows nothing either. This is the same failure mode `docs/ui-live-status.md`
-  recorded for `/api/tickets/<id>/live`, and it is worth checking both the commit and the
-  `ActiveEnterTimestamp` before believing any screenshot `[inference]`.
+- **The line is live, and it is wrong on two cards right now.** The board process (`16:39:18`)
+predates both commits and its payload does carry `thread_state`, so the defect measured above is what
+is on screen: two `done` cards print `thread running` from a thread they share `[measured]`. This is
+the failure mode `docs/ui-live-status.md` recorded for `/api/tickets/<id>/live` — code state and
+running state drifting apart — and the guard is a one-line fix, but it must be checked against
+`ActiveEnterTimestamp` **and** the running payload, not against the commit message `[inference]`.
 
 ---
 
@@ -519,8 +616,9 @@ All paths on this machine unless a URL is given. T3 and ticket reads used `?mode
 | Row counts, file/WAL size, type and status distributions | same DB, `count(*)` / `group by` | `[measured]` |
 | `EXPLAIN QUERY PLAN` for the grouped, busy-set and single-thread statements | same DB, plan output quoted verbatim | `[measured]` |
 | 2 busy threads; 0.016 ms grouped / 0.0118 ms partial-index; 626 B | same DB, 9 and 15 runs, `time.perf_counter` | `[measured]` |
-| 100-thread timings, 1.61 ms vs 1.85 ms, 27,006 / 34,714 B | same DB, 100 busiest thread ids, 9 runs each | `[measured]` |
-| Fresh-connection cost 0.17 ms + 4.05–4.29 ms | `python3 /tmp/fresh.py <ids>`, 3 runs each | `[measured]` |
+| 100-thread timings: 1.27 ms correlated vs 137.6 ms shipped vs 14.9 ms `max(ordinal)` vs 160 ms `INDEXED BY`, and 39.5 ms at 4 ids | same DB, `thread_snapshots` imported from `board/server.py` at `acb4366` plus the competing statement shapes, 5–9 runs each | `[measured]` |
+| Two `done` tickets sharing one thread that is running; `thread_state.status = "running"` on both | live `curl /api/tickets`, 5,593 B, 3 tickets; `tickets.sqlite` thread ids; `runs` run 51 | `[measured]` |
+| Fresh-connection cost 0.17 ms + 4.05–4.29 ms | a scratch script: `sqlite3.connect('file:…?mode=ro')`, then the statement once, `time.perf_counter` around each, 3 runs per id count | `[measured]` |
 | 85/100 busiest threads end on `checkpoint` | same DB, `order by ordinal desc limit 1` per thread | `[measured]` |
 | Reviewer run `completed_at` `09:29:10.345Z` vs `verify_finished_at` `09:30:14.379621` → 64.03 s | `statev2.sqlite` + `tickets.sqlite`, ticket `T-0003` | `[measured]` |
 | `pendingRequestCount`, `status`, `latestRunId` on the CLI thread object | `t3 thread show mcp:72b322c1-… --json --messages 1` | `[measured]` |
@@ -528,14 +626,15 @@ All paths on this machine unless a URL is given. T3 and ticket reads used `?mode
 | Review columns, `attach_verifier`, `record_verdict`, `review_label` | `tickets/store.py` | `[code]` |
 | Review stage status handling (`waiting` → needs input, `completed`/`idle` accepted) | `watcher.py` `verification_step` | `[code]` |
 | Snapshot query, both-id call, soft failure | `board/server.py` `thread_snapshots`, `/api/tickets` | `[code]` |
-| `thread_state` is uncommitted; deployed payload has no state | `git log -S "thread_state" -- board/server.py` empty; `ActiveEnterTimestamp 16:22:09`; `curl /api/tickets` → `thread_state: null` | `[measured]` |
+| `stageLine`, `dotFor`, `stepSuffix`, `relativeTime`, `prefers-reduced-motion`, the tabs and list renderers, poll cadence, `no-store` | `board/static/index.html` at `acb4366` | `[code]` |
+| Snapshot query, both-id call, soft failure, the `row_number()` shape | `board/server.py` `thread_snapshots`, `/api/tickets` at `acb4366` | `[code]` |
 | Tabs roles/states/keyboard; panel-focus rule | <https://www.w3.org/WAI/ARIA/apg/patterns/tabs/> (HTTP 200, read this session) | `[spec]` |
 | Offline corroboration of the tabs pattern | `~/.agents/skills/accessibility/references/A11Y-PATTERNS.md` §"ARIA tabs" | `[code]` |
 | `scope="col"` and `<caption>` for a one-header table | <https://www.w3.org/WAI/tutorials/tables/one-header/> (HTTP 200, read this session) | `[spec]` |
 | WCAG 1.4.1 / 2.2.2 / 4.1.3 wording | `~/.agents/skills/accessibility/references/WCAG.md` | `[code]` |
 | Render cost, node counts, scroll height, 1.6 ms incremental update | `chrome-headless-shell 159.0.8154.6` via `playwright-core` (`~/.hermes/hermes-agent/node_modules`), CSS extracted from `board/static/index.html`, 11 rebuilds per shape, medians | `[measured]` |
 | Paint cost | not measurable here — rAF waits collapsed to the vsync interval for both shapes | `[inference]` |
-| Payload 5,007 B today; 126,909 → 153,614 B at 100 tickets | live `curl /api/tickets` + synthetic 100-ticket body built from the same fields | `[measured]` |
+| Payload 5,593 B today; 126,909 → 153,614 B at 100 tickets | live `curl /api/tickets` + synthetic 100-ticket body built from the same fields | `[measured]` |
 | Poll cadence, `no-store`, token rules, `relativeTime`, `prefers-reduced-motion` | `board/static/index.html`, `board/server.py` `_send`, `docs/api.md` | `[code]` |
 | Wording of each card line, "no line when finished", patch-don't-rebuild, delta payloads | reasoning over the measurements above | `[inference]` |
 

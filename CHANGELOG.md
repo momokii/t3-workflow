@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- **The card state query no longer scans every turn item.** A derived table of the wanted thread ids with
+  correlated lookups replaces the window-function shape the first attempt used; the measured plan goes
+  from ~40 ms at four threads to a few index seeks (~1 ms per hundred ids). A finished ticket whose
+  thread is still being used now reads "thread still active — this ticket is done" instead of implying
+  the ticket is working, and a reviewer that has finished but has no verdict yet reads "verdict pending".
+  The list table has a caption and `scope="col"` headers.
+
 - **Registering an existing folder now says so, in the dialog.** The board pre-checks the T3 project
   list and refuses a workspace root that already belongs to a project, naming it; the server returns
   the same `409` if the check is bypassed, and a CLI failure is trimmed to its first line instead of a

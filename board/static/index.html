@@ -771,8 +771,10 @@
     const table = document.createElement('table');
     table.className = 'list';
     const head = document.createElement('thead');
-    head.innerHTML = '<tr><th>Ticket</th><th>Title</th><th>Status</th><th>Priority</th>' +
-      '<th>Project</th><th>Review</th><th>Updated</th><th>Actions</th></tr>';
+    head.innerHTML = '<caption class="sr-only">Tickets</caption>' +
+      '<tr><th scope="col">Ticket</th><th scope="col">Title</th><th scope="col">Status</th>' +
+      '<th scope="col">Priority</th><th scope="col">Project</th><th scope="col">Review</th>' +
+      '<th scope="col">Updated</th><th scope="col">Actions</th></tr>';
     table.appendChild(head);
     const body = document.createElement('tbody');
     for (const ticket of state.tickets) {
@@ -1546,10 +1548,15 @@
       return { dot: 'running', text: 'running the test command…' };
     }
     if (ticket.status === 'review') {
+      const verdict = (ticket.verify_verdict || '').toLowerCase();
       if (ticket.review_state) {
         const status = ticket.review_state.status || 'unknown';
+        if (status === 'completed' && !verdict) {
+          return { dot: 'running', text: 'reviewer finished — verdict pending' };
+        }
         return { dot: dotFor(status), text: `reviewer ${status}${stepSuffix(ticket.review_state)}` };
       }
+      if (ticket.verify_attempt && !verdict) return { dot: 'running', text: 'reviewer starting…' };
       return { dot: 'running', text: 'review queued — starting the reviewer…' };
     }
     if (ticket.status === 'in-progress') {
@@ -1561,6 +1568,10 @@
     }
     if (ticket.thread_state) {
       const status = ticket.thread_state.status || 'unknown';
+      if (ticket.status === 'done' && ['running', 'queued', 'preparing', 'starting'].includes(status)) {
+        // A finished ticket may share a thread that is still being talked to; that is not its work.
+        return { dot: '', text: 'thread still active — this ticket is done' };
+      }
       return { dot: dotFor(status), text: `thread ${status}${stepSuffix(ticket.thread_state)}` };
     }
     return null;

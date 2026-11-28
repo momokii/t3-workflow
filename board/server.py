@@ -73,36 +73,29 @@ def thread_snapshots(db_path: Path, thread_ids: list[str]) -> dict:
             con.execute("pragma query_only=ON")
             con.execute("pragma busy_timeout=200")
             unique = sorted(set(ids))
-            marks = ",".join("?" for _ in unique)
-            runs = con.execute(
-                "select thread_id, status from ("
-                "  select thread_id, status,"
-                "         row_number() over (partition by thread_id order by ordinal desc) as rank"
-                "  from orchestration_v2_projection_runs"
-                f" where thread_id in ({marks})"
-                ") where rank = 1",
+            subquery = " union all ".join("select ? as thread_id" for _ in unique)
+            rows = con.execute(
+                "select ids.thread_id as thread_id,"
+                "  (select r.status from orchestration_v2_projection_runs r"
+                "    where r.thread_id = ids.thread_id order by r.ordinal desc limit 1) as run_status,"
+                "  (select t.type from orchestration_v2_projection_turn_items t"
+                "    where t.thread_id = ids.thread_id order by t.ordinal desc limit 1) as last_type,"
+                "  (select t.status from orchestration_v2_projection_turn_items t"
+                "    where t.thread_id = ids.thread_id order by t.ordinal desc limit 1) as last_state,"
+                "  (select t.updated_at from orchestration_v2_projection_turn_items t"
+                "    where t.thread_id = ids.thread_id order by t.ordinal desc limit 1) as last_at"
+                " from (" + subquery + ") ids",
                 unique,
             ).fetchall()
-            items = con.execute(
-                "select thread_id, type, status, updated_at from ("
-                "  select thread_id, type, status, updated_at,"
-                "         row_number() over (partition by thread_id order by ordinal desc) as rank"
-                "  from orchestration_v2_projection_turn_items"
-                f" where thread_id in ({marks})"
-                ") where rank = 1",
-                unique,
-            ).fetchall()
-            for run in runs:
-                result[run["thread_id"]] = {
-                    "status": run["status"],
-                    "last_type": "", "last_state": "", "last_at": "",
+            for row in rows:
+                if row["run_status"] is None and row["last_type"] is None:
+                    continue
+                result[row["thread_id"]] = {
+                    "status": row["run_status"] or "unknown",
+                    "last_type": row["last_type"] or "",
+                    "last_state": row["last_state"] or "",
+                    "last_at": row["last_at"] or "",
                 }
-            for item in items:
-                entry = result.setdefault(item["thread_id"], {"status": "unknown"})
-                entry.update({
-                    "last_type": item["type"], "last_state": item["status"],
-                    "last_at": item["updated_at"],
-                })
         finally:
             con.close()
     except sqlite3.Error:
