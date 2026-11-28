@@ -122,7 +122,7 @@ Verification that the restore worked: `tickets/cli.py list` shows the tickets fr
 | Path | Contents | Grows |
 |---|---|---|
 | `~/.local/state/t3-workflow/tickets.sqlite` | tickets, events, approvals | with tickets and moves |
-| `~/.local/state/t3-workflow/reports/` | `T-xxxx.md`, `T-xxxx.pr.md` | one pair per finished ticket |
+| `~/.local/state/t3-workflow/reports/` | `T-xxxx.md`, `T-xxxx.html`, `T-xxxx.pr.md` | markdown report, the readable page sent to Telegram, and the PR body — per finished ticket |
 | `~/.local/state/t3-workflow/backups/` | snapshots | daily, pruned to 7 |
 | `~/.local/state/t3-workflow/audit.jsonl` | every bridge command and decision | append-only; rotate by hand if it matters |
 | `~/.config/t3-workflow/config.json` | profiles, limits, release policy | rarely |

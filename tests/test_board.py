@@ -217,7 +217,7 @@ class BoardApiTests(unittest.TestCase):
         self.assertTrue(by_project["no-such-project"]["project_missing"])
         self.assertFalse(by_project["t3-workflow"]["project_missing"])
 
-    def test_folder_picker_needs_the_token_and_stays_inside_home(self) -> None:
+    def test_folder_picker_requires_the_token_and_refuses_system_paths(self) -> None:
         response, _ = self.request("GET", "/api/fs?path=")
         self.assertEqual(response.status, 401)
         folder = Path(tempfile.mkdtemp(prefix="fs-"))

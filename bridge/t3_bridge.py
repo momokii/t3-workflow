@@ -44,7 +44,7 @@ if str(WORKFLOW_ROOT / "tickets") not in sys.path:
 
 try:  # pragma: no cover - only differs when the repo moves
     from store import TicketError as StoreError
-    from store import TicketStore, load_config as load_workflow_config
+    from store import TicketStore, load_config as load_workflow_config, report_page_path
 except Exception:  # noqa: BLE001
     StoreError = Exception  # type: ignore[assignment]
     TicketStore = None  # type: ignore[assignment]
@@ -690,7 +690,7 @@ def notify_ticket_states(config: dict, state: dict) -> int:
             sent += announce_plan(config, state, ticket)
         report = (ticket.get("report_path") or "").strip()
         if ticket["status"] == "done" and report:
-            readable = Path(report).with_suffix(".html")
+            readable = report_page_path(report)
             send_document(
                 config, str(chats[0]), readable if readable.is_file() else Path(report),
                 f"{AUTOMATION_PREFIX} · {ticket['id']} report",

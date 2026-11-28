@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- **The markdown and HTML reports drifted.** They enumerated the same fields twice and the HTML page
+  was missing the review's start time; both now build from `report_facts()` / `review_facts()`, and the
+  `.html` page path has one helper (`report_page_path()`) shared by the store and the bridge.
+
 - The dry-run watcher test used a project title, so it needed the real T3 database and failed on
   GitHub Actions. It now uses an absolute path, matching the other hermetic tests.
 - Documentation now describes the published remote, the CI badge, and the fact that a repository

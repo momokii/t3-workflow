@@ -281,6 +281,7 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             as_html = (query.get("format") or [""])[0].lower() == "html"
             store = self._store()
+            kind = "text/html; charset=utf-8" if as_html else "text/markdown; charset=utf-8"
             try:
                 text = store.report_html(ticket_id) if as_html else store.report(ticket_id)
             except TicketError as exc:
@@ -291,14 +292,12 @@ class Handler(BaseHTTPRequestHandler):
                 ))
                 fallback = reports / f"{ticket_id}.{'html' if as_html else 'md'}"
                 if fallback.is_file():
-                    kind = "text/html; charset=utf-8" if as_html else "text/markdown; charset=utf-8"
                     self._send(200, fallback.read_bytes(), kind)
                 else:
                     self._json(404, {"error": str(exc)})
                 return
             finally:
                 store.close()
-            kind = "text/html; charset=utf-8" if as_html else "text/markdown; charset=utf-8"
             self._send(200, text.encode(), kind)
             return
         if path.startswith("/api/tickets/") and path.endswith("/events"):

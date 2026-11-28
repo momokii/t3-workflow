@@ -46,7 +46,7 @@ T3 remains the owner of projects, threads and runs. This repository reads `state
 | `branch`, `pr_url` | text | filled by the release stage |
 | `claimed_at`, `claimed_by` | text | set by the atomic claim |
 | `proof` | text | exit status plus output tail from the test stage |
-| `report_path`, `pr_body_path` | text | files written on completion |
+| `report_path`, `pr_body_path` | text | the markdown report's path (its `.html` page is written beside it) and the PR body |
 | `verify_thread_id`, `verify_run_id` | text | the reviewer thread and run of the current attempt |
 | `verify_provider`, `verify_model`, `verify_attempt` | text, integer | who reviews, and how many attempts were used |
 | `verify_verdict`, `verify_findings` | text | `ACCEPT`/`REJECT`/`FAILED`/`TIMEOUT`, and the reviewer's words |

@@ -121,6 +121,11 @@ class TicketError(Exception):
     """Raised for a rejected operation; the message is meant for the operator."""
 
 
+def report_page_path(path: Path | str) -> Path:
+    """The readable HTML page that accompanies a ticket's markdown report."""
+    return Path(path).with_suffix(".html")
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -364,7 +369,7 @@ class TicketStore:
         target = reports_dir / f"{ticket_id}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(self.report(ticket_id), encoding="utf-8")
-        target.with_suffix(".html").write_text(self.report_html(ticket_id, document=True), encoding="utf-8")
+        report_page_path(target).write_text(self.report_html(ticket_id, document=True), encoding="utf-8")
         self.con.execute(
             "update tickets set report_path=?, updated_at=? where id=?", (str(target), now(), ticket_id)
         )
@@ -623,22 +628,49 @@ class TicketStore:
         rows = self.con.execute("select status, count(*) as n from tickets group by status").fetchall()
         return {row["status"]: row["n"] for row in rows}
 
+    REPORT_FACTS = ("Status", "Project", "Model profile", "Priority", "Created", "Updated", "Thread")
+
+    @staticmethod
+    def report_facts(ticket: dict) -> list[tuple[str, str, bool]]:
+        """(label, value, monospace) for the header, in one place for both renderers."""
+        facts = [
+            ("Status", ticket["status"], True),
+            ("Project", ticket["project"], False),
+            ("Model profile", ticket["model_profile"] or "(default config)", False),
+            ("Priority", str(ticket["priority"]), False),
+            ("Created", ticket["created_at"], False),
+            ("Updated", ticket["updated_at"], False),
+        ]
+        if ticket["thread_id"]:
+            facts.append(("Thread", ticket["thread_id"], True))
+        return facts
+
+    @staticmethod
+    def review_facts(ticket: dict) -> list[tuple[str, str, bool]]:
+        verdict = (ticket.get("verify_verdict") or "").strip()
+        facts = [("Verdict", verdict or "not decided", True)]
+        if ticket.get("verify_provider") or ticket.get("verify_model"):
+            facts.append((
+                "Reviewer",
+                f"{ticket.get('verify_provider') or '?'} / {ticket.get('verify_model') or '?'}",
+                False,
+            ))
+        if ticket.get("verify_thread_id"):
+            facts.append(("Review thread", ticket["verify_thread_id"], True))
+        facts.append(("Attempt", str(ticket.get("verify_attempt") or 0), False))
+        if ticket.get("verify_started_at"):
+            facts.append(("Started", ticket["verify_started_at"], False))
+        if ticket.get("verify_finished_at"):
+            facts.append(("Finished", ticket["verify_finished_at"], False))
+        return facts
+
     def report(self, ticket_id: str, t3_link: str = "") -> str:
         """Markdown report for a finished (or in-flight) ticket."""
         ticket = self.get(ticket_id)
         events = self.events(ticket_id)
-        lines = [
-            f"# {ticket['id']} · {ticket['title']}",
-            "",
-            f"- **Status**: `{ticket['status']}`",
-            f"- **Project**: {ticket['project']}",
-            f"- **Model profile**: {ticket['model_profile'] or '(default config)'}",
-            f"- **Priority**: {ticket['priority']}",
-            f"- **Created**: {ticket['created_at']}",
-            f"- **Updated**: {ticket['updated_at']}",
-        ]
-        if ticket["thread_id"]:
-            lines.append(f"- **Thread**: `{ticket['thread_id']}`")
+        lines = [f"# {ticket['id']} · {ticket['title']}", ""]
+        for label, value, mono in self.report_facts(ticket):
+            lines.append(f"- **{label}**: {f'`{value}`' if mono else value}")
         if t3_link:
             lines.append(f"- **Link**: {t3_link}")
         if ticket["test_cmd"]:
@@ -654,19 +686,8 @@ class TicketStore:
         verdict = (ticket.get("verify_verdict") or "").strip()
         if verdict or ticket.get("verify_attempt"):
             lines += ["", "## Independent review", ""]
-            lines.append(f"- **Verdict**: `{verdict or 'not decided'}`")
-            if ticket.get("verify_provider") or ticket.get("verify_model"):
-                lines.append(
-                    f"- **Reviewer**: {ticket.get('verify_provider') or '?'} / "
-                    f"{ticket.get('verify_model') or '?'}"
-                )
-            if ticket.get("verify_thread_id"):
-                lines.append(f"- **Review thread**: `{ticket['verify_thread_id']}`")
-            lines.append(f"- **Attempt**: {ticket.get('verify_attempt') or 0}")
-            if ticket.get("verify_started_at"):
-                lines.append(f"- **Started**: {ticket['verify_started_at']}")
-            if ticket.get("verify_finished_at"):
-                lines.append(f"- **Finished**: {ticket['verify_finished_at']}")
+            for label, value, mono in self.review_facts(ticket):
+                lines.append(f"- **{label}**: {f'`{value}`' if mono else value}")
             if ticket.get("verify_findings"):
                 lines += ["", "### Findings", "", ticket["verify_findings"]]
         lines += ["", "## History", "", "| Time | Event | Detail |", "|---|---|---|"]
@@ -690,7 +711,7 @@ class TicketStore:
     .verdict { font-weight: 700; }
     """
 
-    def report_html(self, ticket_id: str, t3_link: str = "", document: bool = False) -> str:
+    def report_html(self, ticket_id: str, document: bool = False) -> str:
         """A self-contained HTML rendering of the report, built from the ticket itself.
 
         The board inserts the fragment (`document=False`); the release writes the full page next
@@ -701,20 +722,9 @@ class TicketStore:
         events = self.events(ticket_id)
         esc = escape
         body: list[str] = [f"<h1>{esc(ticket['id'])} · {esc(ticket['title'])}</h1>", "<dl>"]
-        facts = [
-            ("Status", esc(ticket["status"])),
-            ("Project", esc(ticket["project"])),
-            ("Model profile", esc(ticket["model_profile"] or "(default config)")),
-            ("Priority", str(ticket["priority"])),
-            ("Created", esc(ticket["created_at"])),
-            ("Updated", esc(ticket["updated_at"])),
-        ]
-        if ticket["thread_id"]:
-            facts.append(("Thread", f"<code>{esc(ticket['thread_id'])}</code>"))
-        if t3_link:
-            facts.append(("Link", esc(t3_link)))
-        for key, value in facts:
-            body.append(f"<dt>{esc(key)}</dt><dd>{value}</dd>")
+        for label, value, mono in self.report_facts(ticket):
+            shown = f"<code>{esc(value)}</code>" if mono else esc(value)
+            body.append(f"<dt>{esc(label)}</dt><dd>{shown}</dd>")
         body.append("</dl>")
         if ticket["test_cmd"]:
             body += ["<h2>Test command</h2>", f"<pre><code>{esc(ticket['test_cmd'])}</code></pre>"]
@@ -729,15 +739,9 @@ class TicketStore:
         verdict = (ticket.get("verify_verdict") or "").strip()
         if verdict or ticket.get("verify_attempt"):
             body += ["<h2>Independent review</h2>", "<dl>"]
-            body.append(f"<dt>Verdict</dt><dd class=\"verdict\">{esc(verdict or 'not decided')}</dd>")
-            if ticket.get("verify_provider") or ticket.get("verify_model"):
-                reviewer = f"{ticket.get('verify_provider') or '?'} / {ticket.get('verify_model') or '?'}"
-                body.append(f"<dt>Reviewer</dt><dd>{esc(reviewer)}</dd>")
-            if ticket.get("verify_thread_id"):
-                body.append(f"<dt>Review thread</dt><dd><code>{esc(ticket['verify_thread_id'])}</code></dd>")
-            body.append(f"<dt>Attempt</dt><dd>{ticket.get('verify_attempt') or 0}</dd>")
-            if ticket.get("verify_finished_at"):
-                body.append(f"<dt>Finished</dt><dd>{esc(ticket['verify_finished_at'])}</dd>")
+            for label, value, mono in self.review_facts(ticket):
+                shown = f"<code>{esc(value)}</code>" if mono else esc(value)
+                body.append(f"<dt>{esc(label)}</dt><dd>{shown}</dd>")
             body.append("</dl>")
             if ticket.get("verify_findings"):
                 body += ["<h3>Findings</h3>", f"<pre>{esc(ticket['verify_findings'])}</pre>"]
