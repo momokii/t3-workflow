@@ -124,7 +124,10 @@ class TicketCommandTests(unittest.TestCase):
         bridge.handle(self.config, CHAT, "/ticket t3-workflow one")
         sent: list[str] = []
         original = bridge.reply
+        documents: list[Path] = []
+        original_document = bridge.send_document
         bridge.reply = lambda config, chat, text: sent.append(text)
+        bridge.send_document = lambda config, chat, path, caption="": documents.append(Path(path))
         try:
             state = {"ticketStates": {}}
             self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # seed, nothing sent
@@ -138,8 +141,39 @@ class TicketCommandTests(unittest.TestCase):
             self.assertEqual(bridge.notify_ticket_states(self.config, state), 1)
             self.assertIn("done", sent[0])
             self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # not duplicated
+            self.assertEqual(len(documents), 1)
+            self.assertTrue(documents[0].name.endswith(".md"))
         finally:
             bridge.reply = original
+            bridge.send_document = original_document
+
+    def test_a_claimed_ticket_is_acknowledged(self) -> None:
+        bridge.handle(self.config, CHAT, "/ticket t3-workflow one")
+        sent: list[str] = []
+        original = bridge.reply
+        bridge.reply = lambda config, chat, text: sent.append(text)
+        try:
+            state = {"ticketStates": {}}
+            bridge.notify_ticket_states(self.config, state)  # seed the backlog state
+            store = self.store_cls(self.db, self.wf_config)
+            store.move("T-0001", "ready", force=True)
+            store.claim("T-0001", "watcher")
+            store.close()
+            self.assertEqual(bridge.notify_ticket_states(self.config, state), 1)
+            self.assertIn("in-progress", sent[0])
+            self.assertIn("T-0001", sent[0])
+        finally:
+            bridge.reply = original
+
+    def test_multipart_body_carries_the_file(self) -> None:
+        body, content_type = bridge.multipart_body(
+            {"chat_id": "1"}, "document", "T-0001.md", b"# report\n"
+        )
+        self.assertIn("multipart/form-data; boundary=", content_type)
+        self.assertIn(b'name="chat_id"', body)
+        self.assertIn(b'filename="T-0001.md"', body)
+        self.assertIn(b"# report", body)
+        self.assertTrue(body.endswith(b"--\r\n"))
 
     def test_second_decision_is_reported_not_crashing(self) -> None:
         bridge.handle(self.config, CHAT, "/ticket t3-workflow one")

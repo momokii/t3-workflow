@@ -37,6 +37,17 @@ def print_ticket(ticket: dict, events: list[dict] | None = None) -> None:
         print(f"  test    : {ticket['test_cmd']}")
     if ticket["thread_id"]:
         print(f"  thread  : {ticket['thread_id']}")
+    if ticket.get("verify_verdict") or ticket.get("verify_attempt"):
+        verdict = ticket.get("verify_verdict") or "pending"
+        reviewer = " / ".join(part for part in (ticket.get("verify_provider"), ticket.get("verify_model")) if part)
+        attempt = ticket.get("verify_attempt") or 0
+        suffix = f" · {reviewer}" if reviewer else ""
+        print(f"  review  : {verdict} · attempt {attempt}{suffix}")
+        findings = (ticket.get("verify_findings") or "").strip()
+        if findings:
+            print("  findings:")
+            for line in findings.splitlines()[:8]:
+                print(f"    {line[:110]}")
     if ticket["note"]:
         print(f"  note    : {ticket['note']}")
     if events:

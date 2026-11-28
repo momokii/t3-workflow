@@ -30,6 +30,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -157,6 +158,58 @@ def reply(config: dict, chat_id: str, text: str) -> None:
 
 
 # ---------------------------------------------------------------- t3 access
+
+
+def multipart_body(fields: dict, file_field: str, filename: str, content: bytes,
+                   content_type: str = "text/markdown") -> tuple[bytes, str]:
+    """A Telegram multipart upload, built with the standard library.
+
+    Kept as a pure function so the bytes can be checked without a network call.
+    """
+    boundary = f"----t3workflow{uuid.uuid4().hex}"
+    parts = b""
+    for name, value in fields.items():
+        parts += (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'
+            f"{value}\r\n"
+        ).encode()
+    parts += (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; '
+        f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'
+    ).encode()
+    parts += content + f"\r\n--{boundary}--\r\n".encode()
+    return parts, f"multipart/form-data; boundary={boundary}"
+
+
+def send_document(config: dict, chat_id: str, path: Path, caption: str = "") -> bool:
+    """Upload one file to the chat. Used to deliver the ticket report as evidence."""
+    token = config["telegram"]["botToken"]
+    if not token:
+        log("report not sent: botToken is empty")
+        return False
+    try:
+        content = Path(path).read_bytes()
+    except OSError as exc:
+        log(f"report not sent, cannot read {path}: {exc}")
+        return False
+    fields = {"chat_id": chat_id}
+    if caption:
+        fields["caption"] = caption[:1000]
+    body, content_type = multipart_body(fields, "document", Path(path).name, content)
+    request = urllib.request.Request(
+        f"{config['telegram']['apiBase']}/bot{token}/sendDocument",
+        data=body, headers={"Content-Type": content_type},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace") or "{}")
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        log(f"report not sent: {type(exc).__name__}: {exc}")
+        return False
+    if not payload.get("ok"):
+        log(f"report not sent: {payload.get('description')}")
+        return False
+    return True
 
 
 def t3_run(config: dict, args: list[str], stdin: str | None = None) -> tuple[int, str]:
@@ -538,8 +591,17 @@ def notify_approvals(config: dict, state: dict) -> int:
     return sent
 
 
+NOTIFY_STATUSES = ("in-progress", "ready", "review", "done", "blocked")
+STATUS_ICON = {"in-progress": "▶", "ready": "↻", "review": "🔍", "done": "✅", "blocked": "⛔"}
+
+
 def notify_ticket_states(config: dict, state: dict) -> int:
-    """Send one message when a ticket reaches review, done or blocked."""
+    """Acknowledge work, report the review verdict, and deliver the report.
+
+    `in-progress` is the acknowledgement that a new ticket was taken; `ready` right after
+    `in-progress` is a bounded retry, not a fresh ticket. A `done` ticket sends its report
+    as a document, so the evidence arrives with the news instead of behind a path.
+    """
     if TicketStore is None:
         return 0
     chats = config["telegram"]["allowChatIds"]
@@ -554,15 +616,32 @@ def notify_ticket_states(config: dict, state: dict) -> int:
     sent = 0
     for ticket in rows:
         previous = known.get(ticket["id"])
-        if previous == ticket["status"]:
+        if previous is None:
+            known[ticket["id"]] = ticket["status"]
+            continue  # first sighting seeds the state; nothing is announced twice
+        if previous == ticket["status"] or ticket["status"] not in NOTIFY_STATUSES:
+            known[ticket["id"]] = ticket["status"]
             continue
+        if ticket["status"] == "ready" and previous != "in-progress":
+            known[ticket["id"]] = ticket["status"]
+            continue  # only a retry is worth a message, not an ordinary queue move
         known[ticket["id"]] = ticket["status"]
-        if previous is None or ticket["status"] not in ("review", "done", "blocked"):
-            continue
         note = f"\n{ticket['note']}" if ticket.get("note") else ""
+        verdict = ""
+        if ticket.get("verify_verdict"):
+            verdict = f" · review {ticket['verify_verdict']}"
+            if ticket.get("verify_attempt"):
+                verdict += f" ({ticket['verify_attempt']})"
         link = f"\n{ticket['pr_url']}" if ticket.get("pr_url") else ""
-        reply(config, str(chats[0]), f"{ticket['id']} → {ticket['status']}: {ticket['title']}{note}{link}")
+        icon = STATUS_ICON.get(ticket["status"], "•")
+        reply(
+            config, str(chats[0]),
+            f"{icon} {ticket['id']} → {ticket['status']}: {ticket['title']}{verdict}{note}{link}",
+        )
         sent += 1
+        report = (ticket.get("report_path") or "").strip()
+        if ticket["status"] == "done" and report:
+            send_document(config, str(chats[0]), Path(report), f"{ticket['id']} report")
     state["ticketStates"] = known
     save_state(state)
     return sent

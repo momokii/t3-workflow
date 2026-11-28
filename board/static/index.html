@@ -94,6 +94,10 @@
   .meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .tag { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-soft); background: var(--surface-2); }
   .tag.profile { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .tag.verdict { font-weight: 600; }
+  .tag.verdict.accept { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+  .tag.verdict.reject, .tag.verdict.failed { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+  .tag.verdict.timeout, .tag.verdict.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
   a.thread { font-size: 11px; color: var(--accent); text-decoration: none; }
   a.thread:hover { text-decoration: underline; }
   .move { margin-top: 10px; display: flex; gap: 6px; align-items: center; }
@@ -309,6 +313,15 @@
       prof.className = 'tag profile';
       prof.textContent = t.model_profile;
       meta.appendChild(prof);
+    }
+    if (t.verify_verdict || t.verify_attempt) {
+      const verdict = (t.verify_verdict || 'pending').toLowerCase();
+      const limit = (state.verification && state.verification.maxAttempts) || 2;
+      const review = document.createElement('span');
+      review.className = 'tag verdict ' + verdict;
+      review.textContent = `review ${verdict}${t.verify_attempt ? ` ${t.verify_attempt}/${limit}` : ''}`;
+      review.title = 'Independent review verdict; open the report for the findings';
+      meta.appendChild(review);
     }
     if (t.thread_id) {
       const a = document.createElement('a');

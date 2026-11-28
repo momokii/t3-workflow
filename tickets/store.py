@@ -100,6 +100,9 @@ MIGRATIONS = [
     ("tickets", "verify_started_at", "text not null default ''"),
     ("tickets", "verify_finished_at", "text not null default ''"),
     ("tickets", "verify_baseline", "text not null default ''"),
+    ("tickets", "dev_attempts", "integer not null default 0"),
+    ("tickets", "test_attempts", "integer not null default 0"),
+    ("tickets", "dev_run_id", "text not null default ''"),
 ]
 
 
@@ -268,7 +271,9 @@ class TicketStore:
         rows = self.list(status)
         for row in rows:
             row.pop("proof", None)
-            row.pop("verify_findings", None)  # reviewer prose is not for a list endpoint
+            row.pop("verify_findings", None)   # reviewer prose is not for a list endpoint
+            row.pop("verify_baseline", None)   # internal fingerprint of the tree under review
+            row.pop("verify_run_id", None)     # internal anchor, not a UI concept
         return rows
 
     def write_report(self, ticket_id: str) -> str:
@@ -330,6 +335,34 @@ class TicketStore:
             (thread_id, run_id, provider, model, attempt, now(), baseline, now(), ticket_id),
         )
         self._event(ticket_id, "verify-started", f"attempt {attempt} · {provider}/{model} · run {run_id}")
+        self.con.commit()
+        return self.get(ticket_id)
+
+    def set_attempts(self, ticket_id: str, *, dev: int | None = None, test: int | None = None) -> dict:
+        ticket = self.get(ticket_id)
+        dev_value = int(ticket.get("dev_attempts") or 0) if dev is None else int(dev)
+        test_value = int(ticket.get("test_attempts") or 0) if test is None else int(test)
+        self.con.execute(
+            "update tickets set dev_attempts=?, test_attempts=?, updated_at=? where id=?",
+            (dev_value, test_value, now(), ticket_id),
+        )
+        self.con.commit()
+        return self.get(ticket_id)
+
+    def reset_attempts(self, ticket_id: str) -> dict:
+        """A successful run clears the retry budget, including the resume anchor."""
+        self.con.execute(
+            "update tickets set dev_attempts=0, test_attempts=0, dev_run_id='', updated_at=? where id=?",
+            (now(), ticket_id),
+        )
+        self.con.commit()
+        return self.get(ticket_id)
+
+    def set_dev_run(self, ticket_id: str, run_id: str) -> dict:
+        """Remember which run the dev thread is on, so `testing` waits for the new turn."""
+        self.con.execute(
+            "update tickets set dev_run_id=?, updated_at=? where id=?", (run_id, now(), ticket_id)
+        )
         self.con.commit()
         return self.get(ticket_id)
 

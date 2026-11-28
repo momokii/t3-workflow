@@ -92,6 +92,27 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(profile["provider"], "pi")
 
 
+class CliShowTests(unittest.TestCase):
+    def test_show_prints_the_review_outcome(self) -> None:
+        tmp = Path(tempfile.mkdtemp(prefix="cli-"))
+        config = tmp / "config.json"
+        config.write_text(json.dumps(CONFIG))
+        store = TicketStore(tmp / "t.sqlite", config)
+        ticket = store.add("reviewed", "/tmp/p", model_profile="fast", status="review")
+        store.attach_verifier(ticket["id"], "rev-1", "run-1", "pi", "m", "baseline")
+        store.record_verdict(ticket["id"], "REJECT", "app.py:1 is wrong")
+        store.close()
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "tickets/cli.py"), "--db", str(tmp / "t.sqlite"),
+             "--config", str(config), "show", ticket["id"]],
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("REJECT", proc.stdout)
+        self.assertIn("app.py:1 is wrong", proc.stdout)
+        self.assertIn("pi / m", proc.stdout)
+
+
 class WatcherTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="watcher-"))
@@ -126,15 +147,21 @@ class WatcherTests(unittest.TestCase):
         self.assertIn("pi", calls[0])
         self.assertIn("opencode-go/deepseek-v4.1-flash", calls[0])
 
-    def test_failed_start_blocks_ticket(self) -> None:
+    def test_a_failed_start_is_retried_until_the_budget_is_spent(self) -> None:
         ticket = self.store.add("uji", "/tmp/project", model_profile="fast", status="ready")
 
         def failing_runner(command, **kwargs):  # noqa: ARG001
             return subprocess.CompletedProcess(command, 3, "", "boom")
 
-        with self.assertRaises(TicketError):
-            watcher.run_once(self.store, CONFIG, "/bin/true", dry_run=False, runner=failing_runner)
-        self.assertEqual(self.store.get(ticket["id"])["status"], "blocked")
+        config = json.loads(json.dumps(CONFIG))
+        config["retry"] = {"maxThreadAttempts": 2}
+        for attempt in (1, 2):
+            with self.assertRaises(TicketError):
+                watcher.run_once(self.store, config, "/bin/true", dry_run=False, runner=failing_runner)
+            stored = self.store.get(ticket["id"])
+            expected = "ready" if attempt == 1 else "blocked"
+            self.assertEqual(stored["status"], expected, stored["note"])
+            self.assertEqual(stored["dev_attempts"], attempt)
 
     def test_unknown_profile_blocks_before_claim(self) -> None:
         ticket = self.store.add("probe", "/tmp/project", status="ready")  # no profile, a default exists

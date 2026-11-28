@@ -147,6 +147,20 @@ class BoardApiTests(unittest.TestCase):
         self.assertIn('class="btn guide"', raw)
         self.assertIn('aria-label="Open the guide', raw)
 
+    def test_tickets_expose_the_verdict_but_not_the_review_prose(self) -> None:
+        store = TicketStore(self.db, self.config)
+        store.attach_verifier("T-0001", "rev-1", "run-1", "pi", "m", "baseline-hash")
+        store.record_verdict("T-0001", "ACCEPT", "internal reviewer note")
+        store.close()
+        response, raw = self.request("GET", "/api/tickets")
+        self.assertEqual(response.status, 200)
+        payload = json.loads(raw)
+        ticket = next(item for item in payload["tickets"] if item["id"] == "T-0001")
+        self.assertEqual(ticket["verify_verdict"], "ACCEPT")
+        for hidden in ("verify_findings", "verify_baseline", "verify_run_id"):
+            self.assertNotIn(hidden, ticket)
+        self.assertEqual(payload["verification"]["maxAttempts"], 2)
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)

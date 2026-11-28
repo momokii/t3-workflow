@@ -107,18 +107,47 @@ class TestStageTests(Base):
         self.assertEqual(stored["status"], "review")
         self.assertIn("PASS", stored["proof"])
 
-    def test_failure_returns_to_in_progress(self) -> None:
+    def test_failure_sends_the_output_back_to_the_dev_thread(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing", test_cmd="false")
-        message = watcher.run_test(self.store, ticket, runner=fail_runner)
-        self.assertIn("failed", message)
+        self.store.attach_thread(ticket["id"], "dev-1")
+        ticket = self.store.get(ticket["id"])  # attach_thread changed the row
+        sent: list[str] = []
+        outer = self
+
+        class Runner:
+            def __call__(self, command, input=None, **kwargs):
+                if command[1:3] == ["thread", "show"]:
+                    body = {"thread": {"status": "completed", "latestRunId": "run-old"}}
+                    return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
+                if command[1:3] == ["thread", "send"]:
+                    sent.append(input or "")
+                    return subprocess.CompletedProcess(command, 0, "{}", "")
+                return fail_runner(command, **kwargs)
+
+        message = watcher.run_test(self.store, ticket, CONFIG, runner=Runner())
+        self.assertIn("findings sent", message)
         stored = self.store.get(ticket["id"])
         self.assertEqual(stored["status"], "in-progress")
         self.assertIn("FAIL", stored["proof"])
+        self.assertIn("failed its test", sent[0])
+        self.assertEqual(stored["dev_run_id"], "run-old")   # sync waits for a new run
 
-    def test_missing_test_cmd_does_not_advance(self) -> None:
+    def test_a_failing_test_is_bounded(self) -> None:
+        config = json.loads(json.dumps(CONFIG))
+        config["retry"] = {"maxTestAttempts": 1}
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing", test_cmd="false")
+        self.store.attach_thread(ticket["id"], "dev-1")
+        watcher.run_test(self.store, ticket, config, runner=fail_runner)
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("1/1", stored["note"])
+
+    def test_missing_test_cmd_blocks_instead_of_looping(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="testing")
-        watcher.run_test(self.store, ticket, runner=ok_runner)
-        self.assertEqual(self.store.get(ticket["id"])["status"], "in-progress")
+        watcher.run_test(self.store, ticket, CONFIG, runner=ok_runner)
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("retry cannot fix", stored["note"])
 
     def test_step_prefers_testing_over_ready(self) -> None:
         testing = self.store.add("uji", "/tmp/p", model_profile="fast", status="testing", test_cmd="true")
@@ -194,14 +223,40 @@ class SyncTests(Base):
         self.assertEqual(watcher.sync_threads(self.store, CONFIG, runner=fake), [])
         self.assertEqual(self.store.get(ticket["id"])["status"], "in-progress")
 
-    def test_failed_thread_blocks_ticket(self) -> None:
+    def test_a_failed_thread_is_retried_then_blocked(self) -> None:
         ticket = self._ticket_with_thread("in-progress")
 
         def fake(command, **kwargs):  # noqa: ARG001
             return subprocess.CompletedProcess(command, 0, json.dumps({"thread": {"status": "failed"}}), "")
 
-        watcher.sync_threads(self.store, CONFIG, runner=fake)
-        self.assertEqual(self.store.get(ticket["id"])["status"], "blocked")
+        watcher.sync_threads(self.store, CONFIG, runner=fake)   # attempt 1 of 3
+        self.assertEqual(self.store.get(ticket["id"])["status"], "ready")
+        self.assertEqual(self.store.get(ticket["id"])["dev_attempts"], 1)
+        for _ in range(2):  # attempts 2 and 3
+            self.store.move(ticket["id"], "in-progress")
+            watcher.sync_threads(self.store, CONFIG, runner=fake)
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("3/3", stored["note"])
+
+    def test_findings_wait_for_the_next_run_before_testing(self) -> None:
+        ticket = self._ticket_with_thread("in-progress")
+        self.store.set_dev_run(ticket["id"], "run-old")
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            body = {"thread": {"status": "completed", "latestRunId": "run-old"}}
+            return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
+
+        notes = watcher.sync_threads(self.store, CONFIG, runner=fake)
+        self.assertEqual(self.store.get(ticket["id"])["status"], "in-progress")
+        self.assertTrue(any("resume" in note for note in notes))
+
+        def resumed(command, **kwargs):  # noqa: ARG001
+            body = {"thread": {"status": "completed", "latestRunId": "run-new"}}
+            return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
+
+        watcher.sync_threads(self.store, CONFIG, runner=resumed)
+        self.assertEqual(self.store.get(ticket["id"])["status"], "testing")
 
     def test_ticket_without_thread_is_ignored(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")

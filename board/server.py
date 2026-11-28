@@ -206,6 +206,10 @@ class Handler(BaseHTTPRequestHandler):
                     "profileDetails": profile_details,
                     "summary": store.summary(),
                     "approvalCount": len(pending),
+                    "verification": {
+                        "enabled": bool((config.get("verification") or {}).get("enabled", True)),
+                        "maxAttempts": int((config.get("verification") or {}).get("maxAttempts", 2) or 2),
+                    },
                 })
             finally:
                 store.close()

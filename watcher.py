@@ -111,17 +111,29 @@ def sync_threads(store: TicketStore, config: dict, runner=None) -> list[str]:
     the watcher advances the ticket from the thread's status, not from a guess.
     """
     notes: list[str] = []
+    limit = retry_settings(config)["maxThreadAttempts"]
     for ticket in store.list("in-progress"):
         thread_id = ticket.get("thread_id")
         if not thread_id:
             continue
-        status = thread_status(config, thread_id, runner=runner)
+        anchor = thread_show(config, thread_id, messages=1, runner=runner).get("thread") or {}
+        status = str(anchor.get("status") or "")
+        latest = str(anchor.get("latestRunId") or "")
         if status in ("completed", "idle"):
+            baseline = str(ticket.get("dev_run_id") or "")
+            if baseline and (not latest or latest == baseline):
+                # Findings were just sent; this is still the run that failed. Wait for the
+                # thread to start its next turn instead of testing the same code again.
+                notes.append(f"{ticket['id']}: waiting for the dev thread to resume")
+                continue
+            store.reset_attempts(ticket["id"])
             store.move(ticket["id"], "testing", f"thread finished ({status})")
             notes.append(f"{ticket['id']} → testing (thread {status})")
-        elif status in ("failed", "cancelled", "interrupted"):
-            store.move(ticket["id"], "blocked", f"thread {status}")
-            notes.append(f"{ticket['id']} → blocked (thread {status})")
+        elif status in ("failed", "cancelled", "interrupted", "rolled_back"):
+            notes.append(retry_or_block(
+                store, ticket, f"thread {status}", counter="dev_attempts",
+                limit=limit, stage="thread",
+            ))
     return notes
 
 
@@ -139,6 +151,66 @@ def approval_gate(store: TicketStore, ticket: dict) -> str | None:
         return f"{ticket['id']} was rejected → blocked"
     approval = store.request_approval(ticket["id"], f"Start ticket {ticket['id']}: {ticket['title']}")
     return f"{ticket['id']} needs approval (approval #{approval['approval_id']})"
+
+
+# ------------------------------------------------------------- retry policy
+
+RETRY_DEFAULTS = {"maxThreadAttempts": 3, "maxTestAttempts": 3}
+
+
+def retry_settings(config: dict) -> dict:
+    settings = dict(RETRY_DEFAULTS)
+    settings.update(config.get("retry") or {})
+    return settings
+
+
+def retry_or_block(store: TicketStore, ticket: dict, reason: str, *, counter: str,
+                   limit: int, stage: str) -> str:
+    """Give a failed ticket another turn while its budget lasts; then block it.
+
+    Only failures that can plausibly succeed on a retry go through here (a T3 call that
+    failed, a thread that died). A rejection from review, a missing model or a missing
+    remote must not loop, and they never call this.
+    """
+    attempts = int(ticket.get(counter) or 0) + 1
+    limit = max(1, int(limit))
+    if counter == "dev_attempts":
+        store.set_attempts(ticket["id"], dev=attempts)
+    else:
+        store.set_attempts(ticket["id"], test=attempts)
+    if attempts >= limit:
+        store.move(ticket["id"], "blocked", f"{stage}: {reason} ({attempts}/{limit} attempts)")
+        return f"{ticket['id']}: {stage} failed ({attempts}/{limit}) → blocked"
+    store.record_event(ticket["id"], "retry", f"{stage}: {reason} · attempt {attempts}/{limit}")
+    store.move(ticket["id"], "ready", f"{stage}: {reason}; retry {attempts}/{limit}")
+    return f"{ticket['id']}: {stage} failed, retry {attempts}/{limit} → ready"
+
+
+def send_dev_text(store: TicketStore, ticket: dict, config: dict, text: str,
+                  runner=subprocess.run) -> tuple[bool, str]:
+    """Send into the ticket's dev thread and remember the run the thread was on.
+
+    The remembered run is the resume anchor: `sync_threads()` refuses to move the ticket to
+    `testing` until the thread has actually started a new run, so a failing test cannot be
+    re-tested against the code that just failed.
+    """
+    dev = (ticket.get("thread_id") or "").strip()
+    if not dev:
+        return False, "no dev thread"
+    data = thread_show(config, dev, messages=1, runner=runner)
+    baseline = str((data.get("thread") or {}).get("latestRunId") or "")
+    cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+    try:
+        proc = runner([cli, "thread", "send", dev, "-", "--json"],
+                      input=text, capture_output=True, text=True, timeout=300)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"send failed: {type(exc).__name__}"
+    if proc.returncode != 0:
+        return False, f"send failed (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:200]}"
+    if baseline:
+        store.set_dev_run(ticket["id"], baseline)
+    store.record_event(ticket["id"], "continued", f"thread {dev}")
+    return True, ""
 
 
 # ---------------------------------------------------------------- dev stage
@@ -197,11 +269,16 @@ def run_once(
         try:
             proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
         except (OSError, subprocess.TimeoutExpired) as exc:
-            store.move(ticket["id"], "blocked", f"thread send failed: {type(exc).__name__}")
-            raise TicketError(f"failed to continue thread: {exc}") from exc
+            raise TicketError(retry_or_block(
+                store, ticket, f"thread send {type(exc).__name__}", counter="dev_attempts",
+                limit=retry_settings(config)["maxThreadAttempts"], stage="continue",
+            )) from exc
         if proc.returncode != 0:
-            store.move(ticket["id"], "blocked", f"thread send rc={proc.returncode}")
-            raise TicketError(f"thread send failed (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:200]}")
+            raise TicketError(retry_or_block(
+                store, ticket, f"thread send rc={proc.returncode}", counter="dev_attempts",
+                limit=retry_settings(config)["maxThreadAttempts"], stage="continue",
+            ))
+        store.reset_attempts(ticket["id"])
         store.record_event(ticket["id"], "continued", f"thread {ticket['thread_id']}")
         return f"{ticket['id']} → continuing thread {ticket['thread_id']} (profile {profile['name']})"
 
@@ -211,16 +288,23 @@ def run_once(
     try:
         proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        store.move(ticket["id"], "blocked", f"start failed: {type(exc).__name__}")
-        raise TicketError(f"failed to run t3: {type(exc).__name__}: {exc}") from exc
+        raise TicketError(retry_or_block(
+            store, ticket, f"t3 {type(exc).__name__}", counter="dev_attempts",
+            limit=retry_settings(config)["maxThreadAttempts"], stage="start",
+        )) from exc
     if proc.returncode != 0:
-        store.move(ticket["id"], "blocked", f"t3 rc={proc.returncode}")
-        raise TicketError(f"t3 failed (rc={proc.returncode}): {(proc.stderr or proc.stdout or '')[:300]}")
+        raise TicketError(retry_or_block(
+            store, ticket, f"t3 rc={proc.returncode}", counter="dev_attempts",
+            limit=retry_settings(config)["maxThreadAttempts"], stage="start",
+        ))
     try:
         thread_id = json.loads(proc.stdout)["threadId"]
     except (json.JSONDecodeError, KeyError) as exc:
-        store.move(ticket["id"], "blocked", "t3 output is not JSON")
-        raise TicketError(f"t3 output has no threadId: {(proc.stdout or '')[:200]}") from exc
+        raise TicketError(retry_or_block(
+            store, ticket, "t3 output has no threadId", counter="dev_attempts",
+            limit=retry_settings(config)["maxThreadAttempts"], stage="start",
+        )) from exc
+    store.reset_attempts(ticket["id"])
     store.attach_thread(ticket["id"], thread_id)
     return f"{ticket['id']} → thread {thread_id} (profile {profile['name']})"
 
@@ -597,22 +681,15 @@ def verification_step(store: TicketStore, ticket: dict, config: dict, t3_cli: st
         store.record_verdict(ticket_id, "REJECT", findings or "no findings given")
         dev_thread = (ticket.get("thread_id") or "").strip()
         if attempt < max_attempts and dev_thread:
-            cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
             message = (
                 f"Your work on {ticket_id} was rejected by an independent review "
                 f"(attempt {attempt}/{max_attempts}).\n\n{findings or '(no findings given)'}\n\n"
                 "Address the findings in this thread."
             )
-            try:
-                proc = runner([cli, "thread", "send", dev_thread, "-", "--json"],
-                              input=message, capture_output=True, text=True, timeout=300)
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                store.move(ticket_id, "blocked", f"findings could not be sent: {type(exc).__name__}")
-                raise TicketError(f"failed to send findings: {exc}") from exc
-            if proc.returncode != 0:
-                store.move(ticket_id, "blocked", f"findings could not be sent rc={proc.returncode}")
+            sent, note = send_dev_text(store, ticket, config, message, runner=runner)
+            if not sent:
+                store.move(ticket_id, "blocked", f"review rejected; findings could not be sent: {note}")
                 return f"{ticket_id}: findings could not be sent → blocked"
-            store.record_event(ticket_id, "continued", f"thread {dev_thread}")
             store.clear_verifier(ticket_id)
             store.move(
                 ticket_id, "in-progress",
@@ -632,13 +709,41 @@ def verification_step(store: TicketStore, ticket: dict, config: dict, t3_cli: st
 # ---------------------------------------------------------------- test stage
 
 
-def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
-    """Run the ticket's test command and turn the exit code into a status move."""
+def run_test(store: TicketStore, ticket: dict, config: dict | None = None,
+             runner=subprocess.run) -> str:
+    """Run the ticket's test command and turn the exit code into a status move.
+
+    A failing test is not a dead end: the tail goes back into the dev thread and the ticket
+    returns to `in-progress`, bounded by `retry.maxTestAttempts`. An empty test command is a
+    configuration error, not something a retry can fix, so it blocks immediately.
+    """
+    config = config or {}
+    settings = retry_settings(config)
+    limit = max(1, int(settings["maxTestAttempts"]))
     command = (ticket.get("test_cmd") or "").strip()
     if not command:
         store.attach_proof(ticket["id"], False, "ticket has no test_cmd")
-        store.move(ticket["id"], "in-progress", "test skipped: test_cmd is empty")
-        return f"{ticket['id']}: test_cmd is empty → in-progress"
+        store.move(ticket["id"], "blocked", "test: test_cmd is empty, a retry cannot fix that")
+        return f"{ticket['id']}: test_cmd is empty → blocked"
+
+    def fail(reason: str, output: str) -> str:
+        attempts = int(ticket.get("test_attempts") or 0) + 1
+        store.set_attempts(ticket["id"], test=attempts)
+        if attempts >= limit:
+            store.move(ticket["id"], "blocked", f"{reason} ({attempts}/{limit} attempts); see proof")
+            return f"{ticket['id']}: {reason} ({attempts}/{limit}) → blocked"
+        message = (
+            f"Your work on {ticket['id']} failed its test ({reason}, attempt {attempts}/{limit}).\n\n"
+            f"{output[:3000] or '(no output)'}\n\n"
+            "Fix the cause in this thread; the test runs again when it finishes."
+        )
+        sent, note = send_dev_text(store, ticket, config, message, runner=runner)
+        if not sent:
+            store.move(ticket["id"], "blocked", f"{reason}; findings could not be sent: {note}")
+            return f"{ticket['id']}: {reason}, could not reach the dev thread → blocked"
+        store.move(ticket["id"], "in-progress", f"{reason}; findings sent, retry {attempts}/{limit}")
+        return f"{ticket['id']}: {reason}, findings sent → in-progress ({attempts}/{limit})"
+
     cwd = project_path(ticket["project"])
     try:
         proc = runner(
@@ -647,18 +752,17 @@ def run_test(store: TicketStore, ticket: dict, runner=subprocess.run) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         output = f"{type(exc).__name__}: {exc}"
         store.attach_proof(ticket["id"], False, output)
-        store.move(ticket["id"], "in-progress", "test timeout/error")
-        return f"{ticket['id']}: test error ({type(exc).__name__}) → in-progress"
+        return fail(f"test {type(exc).__name__}", output)
 
     output = ((proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")).strip()
     tail = "\n".join(output.splitlines()[-40:])
     ok = proc.returncode == 0
     store.attach_proof(ticket["id"], ok, tail or "(no output)")
     if ok:
+        store.reset_attempts(ticket["id"])
         store.move(ticket["id"], "review", "test passed")
         return f"{ticket['id']}: test passed (rc=0) → review"
-    store.move(ticket["id"], "in-progress", f"test failed (rc={proc.returncode})")
-    return f"{ticket['id']}: test failed (rc={proc.returncode}) → in-progress"
+    return fail(f"test failed (rc={proc.returncode})", tail)
 
 
 def active_tickets(store: TicketStore) -> list[dict]:
@@ -734,7 +838,7 @@ def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: s
     if testing is not None:
         if dry_run:
             return f"[dry-run] {testing['id']} · run test: {testing['test_cmd'] or '(empty)'}"
-        return run_test(store, testing, runner=runner)
+        return run_test(store, testing, config, runner=runner)
     limit = int((config.get("watcher") or {}).get("maxConcurrent", 1) or 1)
     active = active_tickets(store)
     if len(active) >= limit:
