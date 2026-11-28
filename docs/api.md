@@ -268,7 +268,9 @@ curl -s -X POST http://127.0.0.1:8787/api/projects \
   -d '{"title":"my-project","path":"/home/kelanach/projects/my-project"}'
 ```
 
-Validation: `title` non-empty, `path` absolute and an existing directory (`400` otherwise), then `t3 project add <path> --title <title>`. A non-zero exit from the CLI returns `409` with its stderr.
+Validation: `title` non-empty, `path` absolute and an existing directory (`400` otherwise), and the folder
+must not already be a project (`409` with `that folder is already the project '<title>' in T3`). It then runs
+`t3 project add <path> --title <title>`; a non-zero exit returns `409` with the first line of its output.
 
 ## POST /api/projects/<id>/remove
 

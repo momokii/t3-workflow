@@ -411,6 +411,15 @@ class Handler(BaseHTTPRequestHandler):
             if not title or not folder.is_absolute() or not folder.is_dir():
                 self._json(400, {"error": "title is required; path must be absolute and exist"})
                 return
+            for project in t3_projects(Path(self.t3_db_path)):
+                try:
+                    if Path(project["workspace_root"]).expanduser().resolve() == folder.resolve():
+                        self._json(409, {
+                            "error": f"that folder is already the project '{project['title']}' in T3",
+                        })
+                        return
+                except OSError:
+                    continue
             config = load_config(Path(self.config_path))
             cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
             try:
@@ -422,9 +431,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
                 return
             if proc.returncode != 0:
-                self._json(409, {"error": (proc.stderr or proc.stdout or "failed").strip()[:300]})
+                detail = (proc.stderr or proc.stdout or "failed").strip().splitlines()
+                self._json(409, {"error": (detail[0] if detail else "failed")[:300]})
                 return
-            self._json(200, {"message": (proc.stdout or "project ditambahkan").strip()[:300],
+            self._json(200, {"message": (proc.stdout or "project registered").strip().splitlines()[0][:300],
                              "projects": t3_projects(Path(self.t3_db_path))})
             return
         if path.startswith("/api/projects/") and path.endswith("/remove"):

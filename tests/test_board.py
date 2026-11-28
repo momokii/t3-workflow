@@ -48,7 +48,11 @@ class BoardApiTests(unittest.TestCase):
         self.config = self.tmp / "config.json"
         self.fake_cli = self.tmp / "fake-t3"
         self.args_file = self.tmp / "t3-args.txt"
-        self.fake_cli.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$T3_ARGS_FILE\"\n")
+        self.fake_cli.write_text(
+            "#!/bin/sh\n"
+            "printf '%s\\n' \"$@\" > \"$T3_ARGS_FILE\"\n"
+            "case \"$*\" in *fail*) echo 'first line of the failure'; echo 'second line with /a/path'; exit 1 ;; esac\n"
+        )
         self.fake_cli.chmod(0o755)
         config = json.loads(json.dumps(CONFIG))
         config["t3"] = {"cli": str(self.fake_cli)}
@@ -316,6 +320,32 @@ class BoardApiTests(unittest.TestCase):
         dialog = raw[raw.index('id="dlg-project"'):]
         dialog = dialog[:dialog.index("</dialog>")]
         self.assertLess(dialog.index('id="project-rows"'), dialog.index('class="row actions"'))
+
+    def test_registering_the_same_folder_twice_is_refused_clearly(self) -> None:
+        con = sqlite3.connect(self.t3_db)
+        con.execute("insert into projection_projects values ('p9','brain','%s',null)" % self.tmp)
+        con.commit(); con.close()
+        response, raw = self.request(
+            "POST", "/api/projects",
+            {"title": "brain-obsidian", "path": str(self.tmp)}, token="secret",
+        )
+        self.assertEqual(response.status, 409, raw)
+        self.assertIn("already the project 'brain'", json.loads(raw)["error"])
+
+    def test_a_cli_failure_is_reported_as_one_line(self) -> None:
+        os.environ["T3_ARGS_FILE"] = str(self.args_file)
+        folder = Path(tempfile.mkdtemp(prefix="new-project-"))
+        response, raw = self.request(
+            "POST", "/api/projects",
+            {"title": "fail", "path": str(folder)}, token="secret",
+        )
+        self.assertEqual(response.status, 409, raw)
+        self.assertEqual(json.loads(raw)["error"], "first line of the failure")
+
+    def test_waits_show_a_progress_bar_and_a_spinner(self) -> None:
+        _, raw = self.request("GET", "/")
+        for needle in ('id="progress"', "spinner", "is-busy", "withBusy"):
+            self.assertIn(needle, raw)
 
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")

@@ -121,6 +121,19 @@
   .empty { color: var(--ink-soft); font-size: 12px; padding: 6px; }
   .btn { font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
   .btn[disabled] { opacity: .55; cursor: not-allowed; }
+  .btn.is-busy { cursor: progress; opacity: .8; }
+  .spinner { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px;
+    border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+    animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #progress { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 100; overflow: hidden; }
+  #progress::before { content: ""; display: block; height: 100%; width: 34%; background: var(--accent);
+    animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-110%); } to { transform: translateX(320%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; border-right-color: currentColor; opacity: .6; }
+    #progress::before { animation: none; width: 100%; opacity: .5; }
+  }
   .btn.guide { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); color: var(--accent); font-weight: 600; gap: 6px; }
   .btn.guide:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); }
   .btn.guide svg { width: 15px; height: 15px; flex: none; }
@@ -196,6 +209,7 @@
 </style>
 </head>
 <body>
+<div id="progress" role="progressbar" aria-label="Loading" hidden></div>
 <header class="top">
   <div class="bar">
     <div class="brand"><img src="/static/logo.svg" alt="" width="26" height="26">Ticket Board <span>· t3-workflow</span></div>
@@ -676,7 +690,7 @@
   async function api(path, options = {}) {
     const headers = Object.assign({}, options.body ? { 'Content-Type': 'application/json' } : {},
                                   TOKEN ? { 'X-Board-Token': TOKEN } : {});
-    const res = await fetch(path, Object.assign({}, options, { headers }));
+    const res = await track(fetch(path, Object.assign({}, options, { headers })));
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
@@ -767,7 +781,7 @@
     form.project.innerHTML = '<option value="">Loading projects…</option>';
     form.provider.innerHTML = '<option value="">Loading harnesses…</option>';
     form.model.innerHTML = '<option value="">…</option>';
-    note.textContent = 'Loading projects and the model catalogue…';
+    setStatus(note, 'Loading projects and the model catalogue…', true);
     submit.disabled = true;
     dlg.setAttribute('aria-busy', 'true');
     dlg.showModal();  // open first: a slow T3 call must never look like a dead button
@@ -805,7 +819,7 @@
     const note = document.getElementById('adopt-load');
     const submit = form.querySelector('button[type="submit"]');
     form.thread_id.innerHTML = '<option value="">Loading threads…</option>';
-    note.textContent = 'Loading the recent T3 threads…';
+    setStatus(note, 'Loading the recent T3 threads…', true);
     submit.disabled = true;
     dlg.setAttribute('aria-busy', 'true');
     dlg.showModal();  // the thread list needs a T3 call; open the dialog first
@@ -833,11 +847,51 @@
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
 
+  let pending = 0;
+  const progress = document.getElementById('progress');
+  function track(promise) {
+    pending += 1;
+    progress.hidden = false;
+    return promise.finally(() => {
+      pending = Math.max(0, pending - 1);
+      progress.hidden = pending === 0;
+    });
+  }
+
+  function setStatus(element, message, loading = false) {
+    element.textContent = '';
+    if (loading) {
+      const spinner = document.createElement('span');
+      spinner.className = 'spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      element.appendChild(spinner);
+    }
+    element.appendChild(document.createTextNode(message));
+    element.setAttribute('aria-busy', loading ? 'true' : 'false');
+  }
+
+  async function withBusy(button, work) {
+    if (button) {
+      button.disabled = true;
+      button.classList.add('is-busy');
+      button.setAttribute('aria-busy', 'true');
+    }
+    try {
+      return await work();
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.classList.remove('is-busy');
+        button.removeAttribute('aria-busy');
+      }
+    }
+  }
+
   async function openReport(ticket) {
     const dlg = document.getElementById('dlg-report');
     document.getElementById('dlg-report-title').textContent = `${ticket.id} · report`;
     document.getElementById('report-body').innerHTML = '';
-    document.getElementById('report-status').textContent = 'Loading the report…';
+    setStatus(document.getElementById('report-status'), 'Loading the report…', true);
     document.getElementById('report-raw').href = `/api/report/${ticket.id}`;
     dlg.showModal();
     try {
@@ -845,7 +899,7 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       // The server escapes every ticket field, so the fragment is trusted markup.
       document.getElementById('report-body').innerHTML = await res.text();
-      document.getElementById('report-status').textContent = '';
+      setStatus(document.getElementById('report-status'), '');
     } catch (err) {
       // A report written before the HTML page existed has only markdown; show that rather than
       // a dead dialog. Same for a ticket deleted before its page was written.
@@ -856,11 +910,15 @@
         pre.textContent = await res.text();
         document.getElementById('report-body').innerHTML = '';
         document.getElementById('report-body').appendChild(pre);
-        document.getElementById('report-status').textContent =
-          'Showing the markdown report: no rendered page exists for this ticket.';
+        setStatus(
+          document.getElementById('report-status'),
+          'Showing the markdown report: no rendered page exists for this ticket.',
+        );
       } catch {
-        document.getElementById('report-status').textContent =
-          'Could not load the report: ' + (err.message || err);
+        setStatus(
+          document.getElementById('report-status'),
+          'Could not load the report: ' + (err.message || err),
+        );
       }
     }
   }
@@ -877,7 +935,7 @@
     const status = document.getElementById('thread-status');
     dlg.dataset.threadId = threadId;
     facts.innerHTML = '';
-    status.textContent = 'Looking up the thread…';
+    setStatus(status, 'Looking up the thread…', true);
     dlg.showModal();
     try {
       const found = await threadDetails(threadId);
@@ -891,9 +949,9 @@
       facts.innerHTML = rows.map(([key, value]) =>
         `<dt>${escapeHtml(key)}</dt><dd>${key === 'Thread id' ? `<code>${escapeHtml(value)}</code>` : escapeHtml(value)}</dd>`
       ).join('');
-      status.textContent = found ? '' : 'T3 did not list this thread among the recent ones; the id is still valid.';
+      setStatus(status, found ? '' : 'T3 did not list this thread among the recent ones; the id is still valid.');
     } catch (err) {
-      status.textContent = 'Could not load the thread details: ' + (err.message || err);
+      setStatus(status, 'Could not load the thread details: ' + (err.message || err));
     }
   }
 
@@ -904,13 +962,23 @@
   });
 
   // ------------------------------------------------------------- projects
+  let projectCache = [];
   async function loadProjectRows() {
     const rows = document.getElementById('project-rows');
     const status = document.getElementById('project-status');
-    rows.innerHTML = '<p class="hint">Loading projects…</p>';
+    rows.textContent = '';
+    const loading = document.createElement('p');
+    loading.className = 'hint';
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    loading.append(spinner, document.createTextNode('Loading projects…'));
+    rows.appendChild(loading);
+    setStatus(status, 'Reading the project list from T3…', true);
     try {
       const data = await api('/api/projects');
       const projects = data.projects || [];
+      projectCache = projects;
       rows.innerHTML = '';
       for (const project of projects) {
         const row = document.createElement('div');
@@ -924,14 +992,14 @@
         remove.className = 'btn danger';
         remove.textContent = 'Remove…';
 
-        remove.addEventListener('click', () => removeProject(project));
+        remove.addEventListener('click', (event) => removeProject(project, event.currentTarget));
         row.append(meta, remove);
         rows.appendChild(row);
       }
-      status.textContent = projects.length ? '' : 'No project registered yet.';
+      setStatus(status, projects.length ? '' : 'No project registered yet.');
     } catch (err) {
-      rows.innerHTML = '';
-      status.textContent = 'Could not load projects: ' + (err.message || err);
+      rows.textContent = '';
+      setStatus(status, 'Could not load projects: ' + (err.message || err));
     }
   }
 
@@ -941,7 +1009,7 @@
     loadProjectRows();
   }
 
-  async function removeProject(project) {
+  async function removeProject(project, button) {
     const typed = window.prompt(
       `Removing “${project.title}” deletes the project and ALL of its threads in T3.\n` +
       'Tickets and reports are kept. This cannot be undone.\n\n' +
@@ -953,13 +1021,14 @@
       return;
     }
     try {
-      await api(`/api/projects/${encodeURIComponent(project.project_id)}/remove`, {
+      await withBusy(button, () => api(`/api/projects/${encodeURIComponent(project.project_id)}/remove`, {
         method: 'POST', body: JSON.stringify({ confirm: project.title }),
-      });
+      }));
       say(`${project.title} removed with its threads`);
       await loadProjectRows();
       await load();
     } catch (err) {
+      setStatus(document.getElementById('project-status'), err.message || String(err));
       say(err.message, true);
     }
   }
@@ -984,7 +1053,7 @@
   async function loadFs(path, retryParent = true) {
     const status = document.getElementById('fs-hint');
     const list = document.getElementById('fs-list');
-    status.textContent = 'Reading…';
+    setStatus(status, 'Reading…', true);
     try {
       const data = await api(`/api/fs?path=${encodeURIComponent(path || '')}`);
       fsState.current = data.path;
@@ -996,15 +1065,15 @@
       up.disabled = !data.parent;
       up.dataset.parent = data.parent || '';
       document.getElementById('fs-use').hidden = fsState.mode !== 'dir';
-      status.textContent = (data.directories.length || (fsState.mode === 'file' && data.files.length))
-        ? '' : 'This folder is empty.';
+      setStatus(status, (data.directories.length || (fsState.mode === 'file' && data.files.length))
+        ? '' : 'This folder is empty.');
     } catch (err) {
       if (retryParent && path) {
         return loadFs(path.replace(/\/[^/]+$/, '') || '', false);
       }
-      status.textContent = /invalid token/i.test(err.message || '')
+      setStatus(status, /invalid token/i.test(err.message || '')
         ? 'This page carries no board token, so the folder picker cannot read the machine.'
-        : 'Could not read that folder: ' + (err.message || err);
+        : 'Could not read that folder: ' + (err.message || err));
     }
   }
 
@@ -1063,7 +1132,7 @@
     form.priority.value = String(ticket.priority || 3);
     form.attachment_path.value = ticket.attachment_path || '';
     updateTestWarning();
-    note.textContent = 'Loading the model list…';
+    setStatus(note, 'Loading the model list…', true);
     dlg.showModal();  // the ticket data is already here; only the pickers need the catalogue
     try {
       const projects = await api('/api/projects');
@@ -1088,8 +1157,7 @@
   }
 
   async function load() {
-    const res = await fetch('/api/tickets', { cache: 'no-store' });
-    const data = await res.json();
+    const data = await api('/api/tickets');
     const projects = [...new Set(data.tickets.map(t => t.project))].sort();
     const keep = projectSel.value;
     projectSel.innerHTML = '<option value="">All projects</option>' +
@@ -1107,13 +1175,10 @@
     state.tickets = state.tickets.map(t => t.id === id ? optimistic : t);
     render();
     try {
-      const res = await fetch(`/api/tickets/${id}/move`, {
+      const data = await api(`/api/tickets/${id}/move`, {
         method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json' }, TOKEN ? { 'X-Board-Token': TOKEN } : {}),
-        body: JSON.stringify({ status, force })
+        body: JSON.stringify({ status, force }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'move failed');
       state.tickets = state.tickets.map(t => t.id === id ? data.ticket : t);
       await load();
       say(`${id} moved to ${LABELS[status] || status}${force ? ' (forced)' : ''}`);
@@ -1126,13 +1191,10 @@
 
   async function decide(approvalId, approved) {
     try {
-      const res = await fetch(`/api/approvals/${approvalId}/decide`, {
+      await api(`/api/approvals/${approvalId}/decide`, {
         method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json' }, TOKEN ? { 'X-Board-Token': TOKEN } : {}),
-        body: JSON.stringify({ approved })
+        body: JSON.stringify({ approved }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'failed');
       say(`Approval #${approvalId} ${approved ? 'approved' : 'rejected'}`);
       await load();
     } catch (err) {
@@ -1193,15 +1255,18 @@
       );
       if (!proceed) return;
     }
+    const submit = form.querySelector('button[type="submit"]');
     try {
       if (editingId) {
-        await api(`/api/tickets/${editingId}/edit`, {
+        await withBusy(submit, () => api(`/api/tickets/${editingId}/edit`, {
           method: 'POST', body: JSON.stringify({ ...body, force: true }),
-        });
+        }));
         form.closest('dialog').close();
         say(`${editingId} updated`);
       } else {
-        const data = await api('/api/tickets', { method: 'POST', body: JSON.stringify(body) });
+        const data = await withBusy(submit, () => api('/api/tickets', {
+          method: 'POST', body: JSON.stringify(body),
+        }));
         form.closest('dialog').close();
         say(`${data.ticket.id} created`);
       }
@@ -1214,10 +1279,11 @@
   document.getElementById('delete-ticket').addEventListener('click', async () => {
     if (!editingId) return;
     if (!window.confirm(`Delete ${editingId}? The report is kept; this cannot be undone.`)) return;
+    const button = document.getElementById('delete-ticket');
     try {
-      await api(`/api/tickets/${editingId}/delete`, {
+      await withBusy(button, () => api(`/api/tickets/${editingId}/delete`, {
         method: 'POST', body: JSON.stringify({ confirm: true }),
-      });
+      }));
       document.getElementById('dlg-ticket').close();
       say(`${editingId} deleted; its report is kept`);
       editingId = null;
@@ -1228,16 +1294,29 @@
   document.getElementById('form-project').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.target;
+    const status = document.getElementById('project-status');
+    const button = form.querySelector('button[type="submit"]');
+    const path = form.path.value.trim().replace(/\/+$/, '');
+    const clash = projectCache.find((project) =>
+      (project.workspace_root || '').replace(/\/+$/, '') === path);
+    if (clash) {
+      setStatus(status, `That folder is already the project “${clash.title}” in T3. ` +
+        'Pick another folder, or use that project from the ticket dialog.');
+      return;
+    }
     try {
-      const data = await api('/api/projects', {
+      const data = await withBusy(button, () => api('/api/projects', {
         method: 'POST',
         body: JSON.stringify({ title: form.title.value, path: form.path.value }),
-      });
+      }));
       form.closest('dialog').close();
       form.reset();
       say(data.message || 'project registered');
       loadProjectRows();
-    } catch (err) { say(err.message, true); }
+    } catch (err) {
+      setStatus(status, err.message || String(err));
+      say(err.message || String(err), true);
+    }
   });
 
   document.getElementById('form-adopt').addEventListener('submit', async (event) => {
@@ -1245,8 +1324,9 @@
     const form = event.target;
     const option = form.thread_id.selectedOptions[0];
     const [project] = (option ? option.textContent : '? ·').split(' · ');
+    const submit = form.querySelector('button[type="submit"]');
     try {
-      const data = await api(`/api/threads/${encodeURIComponent(form.thread_id.value)}/adopt`, {
+      const data = await withBusy(submit, () => api(`/api/threads/${encodeURIComponent(form.thread_id.value)}/adopt`, {
         method: 'POST',
         body: JSON.stringify({
           title: option ? option.textContent.split(' · ')[1].replace(/\s*\[[^\]]*\]$/, '') : '',
@@ -1255,7 +1335,7 @@
           body: form.body.value,
           test_cmd: form.test_cmd.value,
         }),
-      });
+      }));
       form.closest('dialog').close();
       say(`${data.ticket.id} adopted the thread`);
       await load();

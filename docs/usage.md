@@ -262,6 +262,13 @@ and `/#legend` open those dialogs directly (used for support links and screensho
   `/boot`, `/run` and hidden directories, and requires the board token; pick a file for an attachment,
   or a folder for a project.
 
+### Waiting, and what an error looks like
+
+Every request moves a thin progress bar at the top of the page, and the control that started it shows a
+spinner and disables itself, so a slow call never looks like a dead button. Errors that belong to a
+dialog appear **inside it** and leave the form intact (registering a folder that is already a T3 project
+says which project owns it, instead of a raw CLI error).
+
 ### The test command, and when it can wait
 
 The test command is the proof: the watcher runs it on the host and only the exit code decides. A project
