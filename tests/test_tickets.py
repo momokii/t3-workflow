@@ -163,13 +163,15 @@ class WatcherTests(unittest.TestCase):
             self.assertEqual(stored["status"], expected, stored["note"])
             self.assertEqual(stored["dev_attempts"], attempt)
 
-    def test_unknown_profile_blocks_before_claim(self) -> None:
+    def test_unknown_profile_blocks_the_ticket_instead_of_the_queue(self) -> None:
         ticket = self.store.add("probe", "/tmp/project", status="ready")  # no profile, a default exists
         config = json.loads(json.dumps(CONFIG))
         config["defaults"] = {}
         with self.assertRaises(TicketError):
             watcher.run_once(self.store, config, "/bin/true", dry_run=False)
-        self.assertEqual(self.store.get(ticket["id"])["status"], "ready")
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("model selection", stored["note"])
 
 
 if __name__ == "__main__":

@@ -15,6 +15,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Retries are classified, not guessed.** The watcher reads the last run's error item from T3's
+  database (`failure.class`, `failure.message`, read-only) and blocks at once on a usage limit, a
+  context overflow, a removed model or a provider version mismatch, while timeouts, connection drops,
+  429s, 5xx and DNS failures keep the bounded retry. Measured evidence and the taxonomy:
+  `docs/retry-evidence.md`.
+- **A stuck ticket no longer starves the queue.** An unselectable model/preset blocks the ticket
+  instead of leaving it `ready` to be picked forever, and a release that can never succeed (no remote,
+  unsupported mode, failed push) blocks with its reason.
+
+### Fixed
+
 - **The loop repairs itself.** A failing test now sends its output tail into the dev thread and the
   ticket returns to `in-progress`, bounded by `retry.maxTestAttempts`; a crashed `t3` call or a dead
   thread returns the ticket to `ready`, bounded by `retry.maxThreadAttempts`. Counters live on the

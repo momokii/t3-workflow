@@ -55,6 +55,7 @@ treat them as a hint and let `STATE.md` and §9 tell you the truth.
 | Invariants an agent must keep | `AGENTS.md` |
 | The same material as a page, with screenshots | `/guide` on the board (`board/static/guide.html`) |
 | Why the loop is safe to leave alone | `docs/autonomy.md` |
+| What a failed run records, and what may retry | `docs/retry-evidence.md` |
 | Shape of a handoff like this one | `docs/handoff-template.md` |
 
 ## 4. Architecture in one screen
@@ -96,8 +97,11 @@ started. The sync stage moves a ticket to `testing` when T3 reports the thread `
 5. **Autonomous repair loop.** A failing test sends its output into the dev thread; a crashed T3 call
    or a dead thread returns the ticket to `ready`. Both are bounded (`retry.maxTestAttempts`,
    `retry.maxThreadAttempts`) and counted on the ticket (`test_attempts`, `dev_attempts`); the
-   `dev_run_id` anchor keeps `testing` from re-running against the code that just failed. A configuration
-   error or a review rejection never retries blindly. `docs/autonomy.md` records the decisions.
+   `dev_run_id` anchor keeps `testing` from re-running against the code that just failed. The failure
+   class is read from T3's error item: a usage limit, a context overflow, a missing model or a provider
+   version mismatch blocks immediately, while timeouts, connection drops, 429s and 5xx retry. An
+   unselectable ticket or a release that can never succeed blocks instead of blocking the queue
+   `docs/retry-evidence.md` and `docs/autonomy.md` record the evidence and the decisions.
 6. **Independent review before release.** `review` starts a second thread in a fresh context (same
    harness and model by default, `verification.profile` to override) that receives the ticket, the test
    proof, `git status` and `git diff HEAD`, and must end with `VERDICT: ACCEPT` or `VERDICT: REJECT`; a

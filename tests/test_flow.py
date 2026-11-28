@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -291,3 +292,100 @@ class ApprovalGateTests(Base):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class FailureClassificationTests(unittest.TestCase):
+    """A permanent provider failure must block; a transient one may retry."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="failure-"))
+        self.config_path = self.tmp / "config.json"
+        self.config_path.write_text(json.dumps(CONFIG))
+        self.store = TicketStore(self.tmp / "t.sqlite", self.config_path)
+        self.t3_db = self.tmp / "t3.sqlite"
+        con = sqlite3.connect(self.t3_db)
+        con.executescript(
+            "create table orchestration_v2_projection_runs"
+            " (run_id text, thread_id text, ordinal integer, status text, payload_json text);"
+            "create table orchestration_v2_projection_turn_items"
+            " (run_id text, type text, status text, payload_json text);"
+        )
+        con.execute(
+            "insert into orchestration_v2_projection_runs values ('r1','th-1',1,'failed', ?)",
+            (json.dumps({"rootNodeId": "n1"}),),
+        )
+        con.execute(
+            "insert into orchestration_v2_projection_turn_items values ('r1','error','failed', ?)",
+            (json.dumps({"nodeId": "n1", "failure": {"class": "provider_error",
+                                                     "message": "Request timed out."},
+                         "retry": {"attempt": 3, "maxAttempts": 3}}),),
+        )
+        con.commit(); con.close()
+
+    def tearDown(self) -> None:
+        self.store.close()
+
+    def _failure(self, message: str, failure_class: str = "provider_error") -> dict:
+        con = sqlite3.connect(self.t3_db)
+        con.execute("delete from orchestration_v2_projection_turn_items")
+        con.execute(
+            "insert into orchestration_v2_projection_turn_items values ('r1','error','failed', ?)",
+            (json.dumps({"nodeId": "n1",
+                         "failure": {"class": failure_class, "message": message}}),),
+        )
+        con.commit(); con.close()
+        return watcher.thread_failure("th-1", self.t3_db)
+
+    def test_a_timeout_is_not_permanent(self) -> None:
+        failure = self._failure("Request timed out.")
+        self.assertEqual(failure["message"], "Request timed out.")
+        self.assertFalse(failure["permanent"])
+
+    def test_a_usage_limit_is_permanent(self) -> None:
+        self.assertTrue(self._failure("The usage limit has been reached", "usage_limit")["permanent"])
+        self.assertTrue(self._failure("GoUsageLimitError: resets in 10d 8h")["permanent"])
+
+    def test_context_overflow_and_a_missing_model_are_permanent(self) -> None:
+        self.assertTrue(self._failure("Input token count (454749) exceeds the context length")["permanent"])
+        self.assertTrue(self._failure("Model not found: opencode-go/beam-free")["permanent"])
+
+    def test_a_missing_database_is_not_a_classification(self) -> None:
+        self.assertEqual(watcher.thread_failure("th-1", self.tmp / "nope.sqlite"), {})
+
+    def test_sync_blocks_a_permanent_failure_without_retrying(self) -> None:
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+        self.store.attach_thread(ticket["id"], "th-1")
+        self._failure("The usage limit has been reached", "usage_limit")
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            body = {"thread": {"status": "failed", "latestRunId": "r1"}}
+            return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
+
+        original = watcher.T3_DB
+        watcher.T3_DB = self.t3_db
+        try:
+            watcher.sync_threads(self.store, CONFIG, runner=fake)
+        finally:
+            watcher.T3_DB = original
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("usage limit", stored["note"])
+
+    def test_sync_retries_a_transient_failure(self) -> None:
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+        self.store.attach_thread(ticket["id"], "th-1")
+        self._failure("Request timed out.")
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            body = {"thread": {"status": "failed", "latestRunId": "r1"}}
+            return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
+
+        original = watcher.T3_DB
+        watcher.T3_DB = self.t3_db
+        try:
+            watcher.sync_threads(self.store, CONFIG, runner=fake)
+        finally:
+            watcher.T3_DB = original
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "ready")
+        self.assertIn("retry", stored["note"])

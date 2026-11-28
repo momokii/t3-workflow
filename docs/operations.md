@@ -106,6 +106,7 @@ Verification that the restore worked: `tickets/cli.py list` shows the tickets fr
 | Approval never arrives in Telegram | bridge down, or chat id not allowlisted | check the bridge log; `/id` from the chat and compare with `allowChatIds` |
 | Board returns `401` on a move | page loaded before a token rotation | reload the page |
 | `t3-alert@…` did not fire | `OnFailure` written under `[Service]` | it belongs in `[Unit]`; check `systemctl --user show t3-watcher -p OnFailure` |
+| Ticket blocks with a usage limit or a context overflow in the note | T3 marked the failure permanent; a retry would loop | wait for the quota window, switch the ticket to another preset, or shorten the thread; then `blocked → ready` |
 | Ticket bounces `in-progress → ready` | a bounded retry: the T3 call failed or the thread died | read the note (`retry 1/3`); nothing to do unless it ends in `blocked` |
 | Ticket says `waiting for the dev thread to resume` | findings were sent and testing waits for the thread's next run | watch the thread in T3; `limits.maxInProgressMinutes` blocks it if the thread never resumes |
 | Test keeps failing | the tail is sent into the dev thread each time, bounded by `retry.maxTestAttempts` | after the budget, `blocked`; read the proof, fix by hand or raise the budget |

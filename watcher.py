@@ -130,9 +130,17 @@ def sync_threads(store: TicketStore, config: dict, runner=None) -> list[str]:
             store.move(ticket["id"], "testing", f"thread finished ({status})")
             notes.append(f"{ticket['id']} → testing (thread {status})")
         elif status in ("failed", "cancelled", "interrupted", "rolled_back"):
+            failure = thread_failure(thread_id)
+            if failure.get("permanent"):
+                detail = failure.get("message") or failure.get("class") or status
+                store.move(ticket["id"], "blocked", f"thread {status}: {detail}"[:200])
+                notes.append(f"{ticket['id']} → blocked (permanent: {detail[:60]})")
+                continue
+            reason = f"thread {status}"
+            if failure.get("message"):
+                reason += f": {failure['message'][:80]}"
             notes.append(retry_or_block(
-                store, ticket, f"thread {status}", counter="dev_attempts",
-                limit=limit, stage="thread",
+                store, ticket, reason, counter="dev_attempts", limit=limit, stage="thread",
             ))
     return notes
 
@@ -156,6 +164,61 @@ def approval_gate(store: TicketStore, ticket: dict) -> str | None:
 # ------------------------------------------------------------- retry policy
 
 RETRY_DEFAULTS = {"maxThreadAttempts": 3, "maxTestAttempts": 3}
+
+
+# Failure classes that a retry cannot fix. Measured from T3's own error item; the message is
+# matched as a fallback because the class is generic (`provider_error`) for most of them.
+PERMANENT_FAILURES = (
+    "usage limit", "usage_limit", "usagelimit", "context length", "input token count",
+    "model not found", "no longer available", "does not work with this t3",
+)
+
+
+def thread_failure(thread_id: str, t3_db: Path | None = None) -> dict:
+    """The last run's failure item for a thread, from T3's database (read-only).
+
+    `t3 thread show --json` reports *that* a run failed but not why; the cause lives in the
+    error turn item (`failure.class/message`, `retry.attempt`). This reads it defensively:
+    any read problem returns {} and the caller keeps its safe default.
+    """
+    db = Path(t3_db or T3_DB)
+    if not db.exists():
+        return {}
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+        con.row_factory = sqlite3.Row
+        try:
+            row = con.execute(
+                "select r.status,"
+                " json_extract(i.payload_json,'$.failure.class') as failure_class,"
+                " json_extract(i.payload_json,'$.failure.message') as message,"
+                " json_extract(i.payload_json,'$.retry.attempt') as attempt,"
+                " json_extract(i.payload_json,'$.retry.maxAttempts') as max_attempts"
+                " from orchestration_v2_projection_runs r"
+                " left join orchestration_v2_projection_turn_items i"
+                "   on i.run_id = r.run_id and i.type = 'error' and i.status = 'failed'"
+                "  and json_extract(i.payload_json,'$.nodeId') = json_extract(r.payload_json,'$.rootNodeId')"
+                " where r.thread_id = ? order by r.ordinal desc limit 1",
+                (thread_id,),
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
+    if row is None:
+        return {}
+    message = str(row["message"] or "")
+    failure_class = str(row["failure_class"] or "")
+    lowered = message.lower()
+    permanent = failure_class == "usage_limit" or any(marker in lowered for marker in PERMANENT_FAILURES)
+    return {
+        "status": str(row["status"] or ""),
+        "class": failure_class,
+        "message": message[:300],
+        "attempt": row["attempt"],
+        "max_attempts": row["max_attempts"],
+        "permanent": permanent,
+    }
 
 
 def retry_settings(config: dict) -> dict:
@@ -234,6 +297,9 @@ def run_once(
     try:
         selection = resolve_ticket(ticket, config)
     except CatalogError as exc:
+        if not dry_run:
+            # Head-of-line protection: an unselectable ticket must not be picked forever.
+            store.move(ticket["id"], "blocked", f"model selection: {str(exc)[:180]}")
         raise TicketError(str(exc)) from exc
     source = selection["source"]
     if source == "ticket":
@@ -832,13 +898,25 @@ def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: s
         handled = verification_step(store, review, config, t3_cli, runner=runner)
         if handled is not None:
             return handled
-        return release(store, review, config)
+        try:
+            return release(store, review, config)
+        except TicketError as exc:
+            # A release that can never succeed (no remote, unsupported mode, failed push)
+            # must not be retried by the queue forever.
+            if store.get(review["id"])["status"] == "review":
+                store.move(review["id"], "blocked", f"release: {str(exc)[:180]}")
+            raise
 
     testing = next_testing(store)
     if testing is not None:
         if dry_run:
             return f"[dry-run] {testing['id']} · run test: {testing['test_cmd'] or '(empty)'}"
-        return run_test(store, testing, config, runner=runner)
+        try:
+            return run_test(store, testing, config, runner=runner)
+        except TicketError as exc:
+            if store.get(testing["id"])["status"] == "testing":
+                store.move(testing["id"], "blocked", f"test: {str(exc)[:180]}")
+            raise
     limit = int((config.get("watcher") or {}).get("maxConcurrent", 1) or 1)
     active = active_tickets(store)
     if len(active) >= limit:

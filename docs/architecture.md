@@ -142,6 +142,7 @@ A failure that a second attempt can plausibly fix goes back into the queue, coun
 | Dev thread reported `failed`/`cancelled`/`interrupted`/`rolled_back` | same retry | `retry.maxThreadAttempts` |
 | Test failed (or timed out) | output tail sent into the dev thread, `in-progress`, findings event | `retry.maxTestAttempts` |
 | Test command empty | `blocked` (a retry cannot fix a missing command) | — |
+| Dev thread failed with a permanent cause (usage limit, context overflow, removed model, provider mismatch) | `blocked` with the error message, no retry | — |
 
 When findings are sent, the watcher stores the thread's current `latestRunId` as `dev_run_id`. The sync
 stage refuses `completed`/`idle` → `testing` while the thread is still on that run, so the code that just

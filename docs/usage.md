@@ -132,11 +132,14 @@ The loop is meant to finish without you, so failures are classified rather than 
 | `t3 thread start`/`send` fails to run (crash, timeout, non-JSON) | same retry, with the exit code in the note | `retry.maxThreadAttempts` (3) |
 | The review rejects | findings into the dev thread, one review attempt spent | `verification.maxAttempts` (2) |
 | The ticket has no test command | `blocked` immediately: a retry cannot invent one | — |
-| A model or preset is unknown, a remote is missing, the reviewer never decides | `blocked`: retrying would loop forever | — |
+| Provider usage limit, context overflow, model removed, provider version mismatch | `blocked` at once: T3's error item marks these permanent, and a retry would loop for days | — |
+| A model or preset is unknown, a remote is missing, a push fails, the reviewer never decides | `blocked`: retrying would loop forever, and a stuck ticket must not starve the queue | — |
 
 Two guards make the loop safe rather than optimistic: the resume anchor (`dev_run_id`) stops the
 watcher from testing the code that just failed, and every retry is counted on the ticket
 (`dev_attempts`, `test_attempts`) so a broken loop ends in `blocked` with the reason, not in silence.
+The classification comes from T3's own error item (`failure.class` and `failure.message`), read
+read-only; the measured taxonomy is in `docs/retry-evidence.md`.
 
 Telegram announces the work as it moves: an acknowledgement when a ticket is claimed, a retry notice, the
 review verdict, and on `done` the markdown report as a document, so the evidence arrives with the news.

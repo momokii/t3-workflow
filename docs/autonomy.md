@@ -26,9 +26,12 @@ enforced rather than promised, and what is deliberately out of scope.
    matches the tree is refused.
 3. **No read-only sandbox exists** in T3 0.1.9 (`docs/readonly-verifier.md`), so enforcement is evidence,
    not permissions: run anchoring, fingerprint, bounded attempts.
-4. **Retries are bounded and classified** (`docs/usage.md`): transient T3
-   failures and failing tests retry with a counter; configuration errors and review rejections do not
-   retry blindly.
+4. **Retries are bounded and classified** (`docs/retry-evidence.md`, `docs/usage.md`): the failure
+   class is read from T3's `error` turn item. Transient failures (timeout, connection drop, 429, 5xx,
+   DNS) retry with a counter; a usage limit, a context overflow, a missing model and a provider version
+   mismatch block at once, because a retry would loop for days. Configuration errors and review
+   rejections never retry blindly, and an unselectable ticket or an impossible release blocks instead
+   of starving the queue.
 5. **The verdict is anchored to a run**: only the last assistant message of `verify_run_id` counts, and
    `runCount > 1` blocks (`docs/verification-assumptions.md`).
 6. **Reports are markdown.** Telegram receives the file itself; a PDF renderer is a dependency without

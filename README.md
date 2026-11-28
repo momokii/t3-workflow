@@ -321,6 +321,7 @@ docs/           architecture, API, operations
 | [REVIEW.md](REVIEW.md) | two-axis review (standards and spec) over the whole repository |
 | [AGENTS.md](AGENTS.md) | invariants an agent must keep when changing this code |
 | [docs/autonomy.md](docs/autonomy.md) | the autonomous loop: decisions, enforcement, out of scope |
+| [docs/retry-evidence.md](docs/retry-evidence.md) | what a failed run records, and which failures may retry |
 | [CHANGELOG.md](CHANGELOG.md) | released versions |
 
 ## Known limitations

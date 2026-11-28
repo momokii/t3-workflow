@@ -133,6 +133,18 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn("remote", str(ctx.exception))
         self.assertEqual(self.store.get(ticket["id"])["status"], "review")
 
+    def test_step_blocks_a_release_that_can_never_succeed(self) -> None:
+        ticket = self.ticket()
+        git(["remote", "remove", "origin"], self.repo)
+        config = json.loads(json.dumps(CONFIG))
+        config["verification"] = {"enabled": False}   # isolate the release path
+        with self.assertRaises(TicketError):
+            watcher.step(self.store, config, "/bin/true", dry_run=False)
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("release:", stored["note"])
+        self.assertIn("remote", stored["note"])
+
     def test_release_refuses_disabled(self) -> None:
         ticket = self.ticket()
         config = json.loads(json.dumps(CONFIG))
