@@ -42,6 +42,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Cards say what is happening.** Each card carries a live line from T3's latest run and turn item
+  (`thread running · command execution · 3s ago`, or `reviewer …` while a review runs), a **live**
+  control that becomes **history** once the thread is finished, **retry** on blocked tickets and
+  **delete** on every open card. `GET /api/tickets` gained `thread_state`/`review_state`.
+- **The report is tabbed.** Sections come from `GET /api/report/<id>?format=json` and render one per tab
+  (Summary, Test command, What was asked, Evidence, Independent review, History) with arrow-key
+  navigation; a ticket deleted before sections existed still opens as the saved page.
+- **A list view.** The header switch renders the same tickets as a table (id, title, status, priority,
+  project, review, updated, actions) and remembers the choice; `/#list`, `/#live-T-xxxx` and
+  `/#report-T-xxxx` are documented deep links.
+
 - **Live status reads T3's database, not a subprocess.** The live modal shows the last turn items
   (what the thread is doing now) and messages with timestamps, both indexed; measured at ~1.4 ms
   instead of ~1 s and ~299 MB per `t3 thread show` call. The log is silent to screen readers and the

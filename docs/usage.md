@@ -251,7 +251,11 @@ one-shot step. While a step runs it says `checking (Ns)` — a step may legitima
 so that is not called stale until 2 000 seconds. Otherwise it turns amber with `(stale)` after three
 intervals, and its tooltip carries the last message. **Check now** runs `watcher.py --once` immediately
 (the claim is atomic, so it cannot double-start a ticket) and shows its last line. Cards for tickets with
-a thread gain a **live** control: a modal follows the thread every five seconds — the last turn items
+a thread gain a **history** control once done, and every ticket's card carries a live line (`thread
+running · command execution · 3s ago`, or `reviewer …` while review runs). The **list** switch in the
+header shows the same tickets as a table (id, title, status, priority, project, review, updated,
+actions); the choice is remembered. Blocked cards have **retry** (back to Ready) and every open card has
+**delete** with the same confirmation as the dialog. A live modal follows the thread every five seconds — the last turn items
 (what it is doing now) and messages (what it said) — stops when closed or after three failures, pauses
 while the tab is hidden, and keeps a manual Refresh. The log is not an `aria-live` region, so a poll does
 not re-announce the conversation; the status line announces the change instead.
@@ -262,8 +266,9 @@ The header's **?** button opens a legend: what each column means, what `p1…p5`
 badges say and what the move controls do — written for a phone, where hover does not exist. `/#projects`
 and `/#legend` open those dialogs directly (used for support links and screenshots).
 
-- **report** on a card opens a reader: the server renders the report as HTML (headings, tables, code,
-  findings) and the dialog shows it, with "Open raw markdown" for the original. On `done` a standalone
+- **report** on a card opens a reader with a tab per section — Summary, Test command, What was asked,
+  Evidence, Independent review, History — each with a sentence saying what it proves; "Open raw markdown"
+  is one click away. On `done` a standalone
   HTML page is written next to the markdown and sent to Telegram as the report document — that page is
   the lightweight, proper report; a PDF would only add a renderer. A report written before the page
   existed (or a ticket deleted before it) still opens: the dialog falls back to the markdown.

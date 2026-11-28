@@ -60,6 +60,44 @@ def project_test_command(config: dict, title: str, workspace_root: str) -> dict:
     return detect_test_command_info(Path(workspace_root))
 
 
+def thread_snapshots(db_path: Path, thread_ids: list[str]) -> dict:
+    """Latest run status and last turn item per thread, for the card's live line."""
+    result: dict[str, dict] = {}
+    ids = [thread_id for thread_id in thread_ids if thread_id]
+    if not db_path.exists() or not ids:
+        return result
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2)
+        con.row_factory = sqlite3.Row
+        try:
+            con.execute("pragma query_only=ON")
+            con.execute("pragma busy_timeout=200")
+            for thread_id in sorted(set(ids)):
+                run = con.execute(
+                    "select status from orchestration_v2_projection_runs"
+                    " where thread_id=? order by ordinal desc limit 1",
+                    (thread_id,),
+                ).fetchone()
+                item = con.execute(
+                    "select type, status, updated_at from orchestration_v2_projection_turn_items"
+                    " where thread_id=? order by ordinal desc limit 1",
+                    (thread_id,),
+                ).fetchone()
+                if run is None and item is None:
+                    continue
+                result[thread_id] = {
+                    "status": (run["status"] if run else "unknown"),
+                    "last_type": (item["type"] if item else ""),
+                    "last_state": (item["status"] if item else ""),
+                    "last_at": (item["updated_at"] if item else ""),
+                }
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return result
+    return result
+
+
 def thread_log(db_path: Path, thread_id: str, messages: int = 12, activity: int = 20) -> dict:
     """The thread's recent messages and turn items, read through T3's indexes."""
     if not db_path.exists():
@@ -384,7 +422,14 @@ class Handler(BaseHTTPRequestHandler):
                 pending = store.pending_approvals()
                 titles = {item["title"] for item in t3_projects(Path(self.t3_db_path))}
                 tickets = store.list_public()
+                snapshots = thread_snapshots(
+                    Path(self.t3_db_path),
+                    [ticket.get("thread_id") or "" for ticket in tickets]
+                    + [ticket.get("verify_thread_id") or "" for ticket in tickets],
+                )
                 for ticket in tickets:
+                    ticket["thread_state"] = snapshots.get(ticket.get("thread_id") or "")
+                    ticket["review_state"] = snapshots.get(ticket.get("verify_thread_id") or "")
                     project = (ticket.get("project") or "").strip()
                     if project.startswith("/"):
                         ticket["project_missing"] = not Path(project).is_dir()
@@ -414,9 +459,19 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/report/"):
             ticket_id = path.rsplit("/", 1)[-1]
             query = parse_qs(urlparse(self.path).query)
-            as_html = (query.get("format") or [""])[0].lower() == "html"
+            wanted = (query.get("format") or [""])[0].lower()
+            as_html = wanted == "html"
+            as_json = wanted in ("json", "sections")
             store = self._store()
             kind = "text/html; charset=utf-8" if as_html else "text/markdown; charset=utf-8"
+            if as_json:
+                try:
+                    self._json(200, {"sections": store.report_sections(ticket_id)})
+                except TicketError as exc:
+                    self._json(404, {"error": str(exc)})
+                finally:
+                    store.close()
+                return
             try:
                 text = store.report_html(ticket_id) if as_html else store.report(ticket_id)
             except TicketError as exc:

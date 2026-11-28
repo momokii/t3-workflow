@@ -94,6 +94,10 @@ curl -s http://127.0.0.1:8787/api/tickets | python3 -m json.tool
 }
 ```
 
+Each ticket also carries `thread_state` and `review_state` (from T3's latest run and turn item:
+`status`, `last_type`, `last_state`, `last_at`) so a card can say "thread running · command execution ·
+3s ago" without another request.
+
 `proof` is deliberately absent from this response — it can contain build logs or environment detail. The
 review is trimmed the same way: a ticket exposes `verify_verdict`, `verify_attempt`, `verify_provider`,
 `verify_model`, `verify_started_at` and `verify_finished_at` so a card can show the outcome, while
@@ -255,6 +259,8 @@ The first decision wins; a second one returns `409 {"error": "approval 1 is alre
 
 Returns `text/markdown`: status, project, profile, thread, test command, description, proof, approval state and the full event table. `404` for an unknown ticket.
 
+`?format=json` returns the named sections the board's tabs render: `{"sections": [{"id", "title",
+"lead", "html"}]}` (Summary, Test command, What was asked, Evidence, Independent review, History).
 `?format=html` returns the same report as an HTML fragment, built by the server with every ticket field escaped. The board inserts it into the report dialog; the release also writes a standalone `T-xxxx.html` page next to the markdown, and that page is what Telegram receives as the report document.
 
 ```bash

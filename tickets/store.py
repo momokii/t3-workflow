@@ -733,63 +733,48 @@ class TicketStore:
     .toc-lite a { color: #4f46e5; text-decoration: none; }
     """
 
-    def report_html(self, ticket_id: str, document: bool = False) -> str:
-        """A self-contained HTML rendering of the report, built from the ticket itself.
+    @staticmethod
+    def _report_part(anchor: str, title: str, lead: str, content: list[str]) -> dict:
+        return {"id": anchor, "title": title, "lead": lead, "html": "\n".join(content)}
 
-        The board inserts the fragment (`document=False`); the release writes the full page next
-        to the markdown so the delivered document reads properly on a phone. Every field is
-        escaped: a ticket title is user input. Sections are explicit and introduced, so a reader
-        knows what each part is evidence of.
-        """
+    def report_sections(self, ticket_id: str) -> list[dict]:
+        """The report as named, introduced sections: the board tabs and the HTML page share them."""
         ticket = self.get(ticket_id)
         events = self.events(ticket_id)
         esc = escape
+        sections: list[dict] = []
 
-        def part(anchor: str, title: str, lead: str, content: list[str]) -> list[str]:
-            return [
-                f'<section class="part" id="{anchor}">',
-                f"<h2>{esc(title)}</h2>",
-                f'<p class="lead">{esc(lead)}</p>',
-                *content,
-                "</section>",
-            ]
-
-        toc = ['<nav class="toc-lite" aria-label="Report sections"><span>Jump to:</span>']
         summary = ["<dl>"]
         for label, value, mono in self.report_facts(ticket):
             shown = f"<code>{esc(value)}</code>" if mono else esc(value)
             summary.append(f"<dt>{esc(label)}</dt><dd>{shown}</dd>")
         summary.append("</dl>")
+        sections.append(self._report_part("summary", "Summary", "The facts of the ticket.", summary))
 
-        body: list[str] = [
-            f"<h1>{esc(ticket['id'])} · {esc(ticket['title'])}</h1>",
-            '<p class="lead">Generated from the ticket and its event history. Nothing here is '
-            "written by hand; the same data is behind the markdown file.</p>",
-            '<nav class="toc-lite" aria-label="Report sections"><span>Jump to:</span>'
-            '<a href="#summary">Summary</a>'
-            + ('<a href="#test">Test command</a>' if ticket["test_cmd"] else "")
-            + ('<a href="#description">What was asked</a>' if ticket["body"] else "")
-            + '<a href="#evidence">Evidence</a>'
-            + ('<a href="#review">Independent review</a>'
-               if (ticket.get("verify_verdict") or ticket.get("verify_attempt")) else "")
-            + '<a href="#history">History</a></nav>',
-        ]
-        body += part("summary", "Summary", "The facts of the ticket.", summary)
         if ticket["test_cmd"]:
-            body += part("test", "Test command",
-                         "The command the host ran after the thread finished; its exit code is the proof.",
-                         [f"<pre><code>{esc(ticket['test_cmd'])}</code></pre>"])
+            sections.append(self._report_part(
+                "test", "Test command",
+                "The command the host ran after the thread finished; its exit code is the proof.",
+                [f"<pre><code>{esc(ticket['test_cmd'])}</code></pre>"],
+            ))
         if ticket["body"]:
-            body += part("description", "What was asked",
-                         "The ticket body, handed to the agent verbatim.", [f"<p>{esc(ticket['body'])}</p>"])
+            sections.append(self._report_part(
+                "description", "What was asked",
+                "The ticket body, handed to the agent verbatim.",
+                [f"<p>{esc(ticket['body'])}</p>"],
+            ))
+
         evidence = [f"<p>{esc(ticket['note'] or 'no evidence note yet')}</p>"]
         approval = self.approval_state(ticket_id)
         if approval != "none":
             evidence.append(f"<p><strong>Approval</strong>: {esc(approval)}</p>")
         if ticket.get("proof"):
             evidence += ["<h3>Test output</h3>", f"<pre>{esc(ticket['proof'])}</pre>"]
-        body += part("evidence", "Evidence",
-                     "What the host recorded, independently of the agent's own words.", evidence)
+        sections.append(self._report_part(
+            "evidence", "Evidence",
+            "What the host recorded, independently of the agent's own words.", evidence,
+        ))
+
         verdict = (ticket.get("verify_verdict") or "").strip()
         if verdict or ticket.get("verify_attempt"):
             review = ["<dl>"]
@@ -799,9 +784,12 @@ class TicketStore:
             review.append("</dl>")
             if ticket.get("verify_findings"):
                 review += ["<h3>Findings</h3>", f"<pre>{esc(ticket['verify_findings'])}</pre>"]
-            body += part("review", "Independent review",
-                         "A second thread, in a fresh context, judged the work against the ticket "
-                         "and the recorded evidence.", review)
+            sections.append(self._report_part(
+                "review", "Independent review",
+                "A second thread, in a fresh context, judged the work against the ticket and the "
+                "recorded evidence.", review,
+            ))
+
         history = ["<table><thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead><tbody>"]
         for event in events:
             history.append(
@@ -809,8 +797,31 @@ class TicketStore:
                 f"<td>{esc(event['detail'])}</td></tr>"
             )
         history.append("</tbody></table>")
-        body += part("history", "History",
-                     "Every state change and stage action, in order.", history)
+        sections.append(self._report_part(
+            "history", "History", "Every state change and stage action, in order.", history,
+        ))
+        return sections
+
+    def report_html(self, ticket_id: str, document: bool = False) -> str:
+        """The report as one page: a fragment for the board, a document for disk and Telegram."""
+        ticket = self.get(ticket_id)
+        esc = escape
+        sections = self.report_sections(ticket_id)
+        links = "".join(f'<a href="#{s["id"]}">{esc(s["title"])}</a>' for s in sections)
+        body: list[str] = [
+            f"<h1>{esc(ticket['id'])} · {esc(ticket['title'])}</h1>",
+            '<p class="lead">Generated from the ticket and its event history. Nothing here is '
+            "written by hand; the same data is behind the markdown file.</p>",
+            f'<nav class="toc-lite" aria-label="Report sections"><span>Jump to:</span>{links}</nav>',
+        ]
+        for section in sections:
+            body += [
+                f'<section class="part" id="{section["id"]}">',
+                f"<h2>{esc(section['title'])}</h2>",
+                f'<p class="lead">{esc(section["lead"])}</p>',
+                section["html"],
+                "</section>",
+            ]
         fragment = "\n".join(body)
         if not document:
             return fragment

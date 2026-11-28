@@ -119,6 +119,18 @@
   details.force button { font: inherit; font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
   details.force button:hover { border-color: var(--accent); color: var(--accent); }
   .empty { color: var(--ink-soft); font-size: 12px; padding: 6px; }
+  .state-line { display: flex; gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--ink-soft); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+  .dot.running { background: var(--accent); }
+  .dot.ok { background: var(--ok); }
+  .dot.fail { background: var(--danger); }
+  .list-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  table.list { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.list th, table.list td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.list th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); position: sticky; top: 0; background: var(--surface); }
+  table.list tr:last-child td { border-bottom: 0; }
+  table.list td.acts { white-space: nowrap; }
+  table.list button.act { margin-right: 8px; }
   .btn { font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
   .btn[disabled] { opacity: .55; cursor: not-allowed; }
   .btn.is-busy { cursor: progress; opacity: .8; }
@@ -170,6 +182,17 @@
   .md pre { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; overflow-x: auto; }
   .md pre code { border: 0; background: none; padding: 0; }
   .md table { display: block; overflow-x: auto; border-collapse: collapse; margin: 8px 0; }
+  .md dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px; margin: 8px 0; }
+  .md dt { color: var(--ink-soft); }
+  .md dd { margin: 0; word-break: break-all; }
+  .md .part { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
+  .md .lead { color: var(--ink-soft); margin: 0 0 8px; }
+  .tabs { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 8px; border-bottom: 1px solid var(--line); }
+  .tabs button { font: inherit; font-size: 12px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--surface); color: var(--ink-soft); cursor: pointer; white-space: nowrap; }
+  .tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .tabs button:focus-visible { outline: var(--focus); outline-offset: 2px; }
+  @media (max-width: 520px) { .md dl { grid-template-columns: 1fr; gap: 2px; } .md dd { margin-bottom: 6px; } }
   .md th, .md td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
   .md a { color: var(--accent); }
   .md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
@@ -247,6 +270,7 @@
         aria-label="What the columns, priorities and badges mean">?</button>
       <span class="chip watcher" id="watcher" title="Last watcher check">watcher: unknown</span>
       <button class="btn" id="check-now" type="button" title="Run one watcher step now">Check now</button>
+      <button class="btn" id="view-toggle" type="button" title="Switch between the board and a list">List</button>
       <a class="btn guide" href="/guide" aria-label="Open the guide: how tickets, reviews and releases work">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15"/><path d="M8 7h8M8 11h6"/></svg>
         Guide
@@ -261,6 +285,7 @@
 
 <main>
   <div class="board" id="board" aria-label="Ticket board"></div>
+  <div class="list-wrap" id="list-view" hidden></div>
   <p class="hint" style="color:var(--ink-soft);font-size:12px;margin-top:10px">
     Drag a card to another column, or use the <strong>Move</strong> control on the card (a single-pointer equivalent, per WCAG 2.2 SC 2.5.7).
     <kbd>Tab</kbd> to move focus, <kbd>Enter</kbd> on a control to change status.
@@ -434,6 +459,7 @@
   <form method="dialog">
     <h3 id="dlg-report-title">Report</h3>
     <p class="hint" id="report-status" role="status"></p>
+    <div class="tabs" id="report-tabs" role="tablist" aria-label="Report sections"></div>
     <article class="md" id="report-body"></article>
     <div class="row">
       <a class="btn" id="report-raw" href="#" target="_blank" rel="noopener">Open raw markdown</a>
@@ -498,6 +524,7 @@
   const ORDER = ['backlog','ready','in-progress','testing','review','done','blocked'];
   let state = { tickets: [], transitions: {}, profiles: [], statuses: ORDER, catalog: null };
   let editingId = null;
+  let viewMode = localStorage.getItem('boardView') === 'list' ? 'list' : 'board';
   const TOKEN = (document.querySelector('meta[name="board-token"]') || {}).content || '';
 
   const say = (msg, isError=false) => {
@@ -578,14 +605,34 @@
       missing.title = 'This project no longer exists in T3; the ticket and its report are kept';
       meta.appendChild(missing);
     }
-    if (t.thread_id && ['in-progress', 'testing', 'review'].includes(t.status)) {
+    if (t.status === 'blocked') {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'act';
+      retry.textContent = 'retry';
+      retry.title = 'Move this blocked ticket back to Ready and try again';
+      retry.addEventListener('click', () => moveTicket(t.id, 'ready', false));
+      meta.appendChild(retry);
+    }
+    if (t.thread_id) {
       const live = document.createElement('button');
       live.type = 'button';
       live.className = 'act';
-      live.textContent = 'live';
-      live.title = 'Follow this ticket\'s thread while it works';
+      live.textContent = t.status === 'done' ? 'history' : 'live';
+      live.title = t.status === 'done'
+        ? 'Read the thread record of how this ticket was done'
+        : 'Follow this ticket\'s thread while it works';
       live.addEventListener('click', () => openLive(t));
       meta.appendChild(live);
+    }
+    if (t.status !== 'done') {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'act danger';
+      remove.textContent = 'delete';
+      remove.title = 'Delete this ticket; its report and a snapshot are kept';
+      remove.addEventListener('click', () => deleteTicket(t));
+      meta.appendChild(remove);
     }
     if (t.thread_id) {
       const a = document.createElement('a');
@@ -648,6 +695,25 @@
       el.appendChild(retry);
     }
 
+    const threadState = t.status === 'review' && t.review_state
+      ? ['reviewer', t.review_state]
+      : (t.thread_state ? ['thread', t.thread_state] : null);
+    if (threadState) {
+      const line = document.createElement('div');
+      line.className = 'state-line';
+      const dot = document.createElement('span');
+      const status = threadState[1].status || 'unknown';
+      dot.className = 'dot ' + (['running', 'queued', 'preparing', 'starting'].includes(status) ? 'running'
+        : ['completed', 'idle'].includes(status) ? 'ok'
+        : ['failed', 'cancelled', 'interrupted', 'rolled_back'].includes(status) ? 'fail' : '');
+      const text = document.createElement('span');
+      text.textContent = `${threadState[0]} ${status}` +
+        (threadState[1].last_type ? ` · ${threadState[1].last_type.replaceAll('_', ' ')}` : '') +
+        (threadState[1].last_at ? ` · ${relativeTime(threadState[1].last_at)}` : '');
+      line.append(dot, text);
+      el.appendChild(line);
+    }
+
     const pending = approvalFor(t);
     if (pending) {
       const box = document.createElement('div');
@@ -707,7 +773,82 @@
     return el;
   }
 
+  function syncViewToggle() {
+    const toggle = document.getElementById('view-toggle');
+    toggle.textContent = viewMode === 'list' ? 'Board' : 'List';
+    toggle.title = viewMode === 'list' ? 'Show the kanban board' : 'Show the tickets as a list';
+  }
+
+  function listAction(label, title, handler, danger = false) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'act' + (danger ? ' danger' : '');
+    button.textContent = label;
+    button.title = title;
+    button.addEventListener('click', handler);
+    return button;
+  }
+
+  function renderList() {
+    const wrap = document.getElementById('list-view');
+    wrap.textContent = '';
+    const table = document.createElement('table');
+    table.className = 'list';
+    const head = document.createElement('thead');
+    head.innerHTML = '<tr><th>Ticket</th><th>Title</th><th>Status</th><th>Priority</th>' +
+      '<th>Project</th><th>Review</th><th>Updated</th><th>Actions</th></tr>';
+    table.appendChild(head);
+    const body = document.createElement('tbody');
+    for (const ticket of state.tickets) {
+      const row = document.createElement('tr');
+      const id = document.createElement('td');
+      id.innerHTML = `<span class="id">${escapeHtml(ticket.id)}</span>`;
+      const title = document.createElement('td');
+      title.textContent = ticket.title;
+      const status = document.createElement('td');
+      status.textContent = LABELS[ticket.status] || ticket.status;
+      const priority = document.createElement('td');
+      priority.textContent = `p${ticket.priority}`;
+      const project = document.createElement('td');
+      project.textContent = ticket.project;
+      const review = document.createElement('td');
+      review.textContent = ticket.review_label || '';
+      const updated = document.createElement('td');
+      updated.textContent = relativeTime(ticket.updated_at);
+      const actions = document.createElement('td');
+      actions.className = 'acts';
+      if (ticket.thread_id) {
+        actions.appendChild(listAction(ticket.status === 'done' ? 'history' : 'live',
+          'Read the thread', () => openLive(ticket)));
+      }
+      actions.appendChild(listAction('report', 'Read the report', () => openReport(ticket)));
+      if (ticket.status !== 'done') {
+        actions.appendChild(listAction('edit', 'Edit the ticket', () => openEditDialog(ticket)));
+      }
+      if (ticket.status === 'blocked') {
+        actions.appendChild(listAction('retry', 'Move back to Ready',
+          () => moveTicket(ticket.id, 'ready', false)));
+      }
+      if (ticket.status !== 'done') {
+        actions.appendChild(listAction('delete', 'Delete the ticket', () => deleteTicket(ticket), true));
+      }
+      row.append(id, title, status, priority, project, review, updated, actions);
+      body.appendChild(row);
+    }
+    table.appendChild(body);
+    wrap.appendChild(table);
+  }
+
   function render() {
+    syncViewToggle();
+    if (viewMode === 'list') {
+      board.hidden = true;
+      document.getElementById('list-view').hidden = false;
+      renderList();
+      return;
+    }
+    board.hidden = false;
+    document.getElementById('list-view').hidden = true;
     board.innerHTML = '';
     for (const status of ORDER) {
       const col = document.createElement('section');
@@ -975,38 +1116,88 @@
     }
   }
 
+  function selectReportTab(sections, index) {
+    const tabs = document.getElementById('report-tabs');
+    const body = document.getElementById('report-body');
+    for (let i = 0; i < sections.length; i += 1) {
+      const button = tabs.children[i];
+      const panel = body.children[i];
+      if (!button || !panel) continue;
+      const selected = i === index;
+      button.setAttribute('aria-selected', selected ? 'true' : 'false');
+      button.tabIndex = selected ? 0 : -1;
+      panel.hidden = !selected;
+    }
+    if (tabs.children[index]) tabs.children[index].focus();
+  }
+
+  function renderReportTabs(sections) {
+    const tabs = document.getElementById('report-tabs');
+    const body = document.getElementById('report-body');
+    tabs.textContent = '';
+    body.textContent = '';
+    sections.forEach((section, index) => {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.role = 'tab';
+      tab.id = `report-tab-${section.id}`;
+      tab.textContent = section.title;
+      tab.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
+      tab.tabIndex = index === 0 ? 0 : -1;
+      tab.setAttribute('aria-controls', `report-panel-${section.id}`);
+      tab.addEventListener('click', () => selectReportTab(sections, index));
+      tabs.appendChild(tab);
+      const panel = document.createElement('section');
+      panel.id = `report-panel-${section.id}`;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', tab.id);
+      panel.hidden = index !== 0;
+      const lead = document.createElement('p');
+      lead.className = 'lead';
+      lead.textContent = section.lead;
+      panel.appendChild(lead);
+      const content = document.createElement('div');
+      content.innerHTML = section.html;
+      panel.appendChild(content);
+      body.appendChild(panel);
+    });
+    tabs.onkeydown = (event) => {
+      const keys = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+      if (!keys.includes(event.key)) return;
+      event.preventDefault();
+      const selected = Array.from(tabs.children).findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+      let next = selected;
+      if (event.key === 'ArrowRight') next = (selected + 1) % sections.length;
+      if (event.key === 'ArrowLeft') next = (selected - 1 + sections.length) % sections.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = sections.length - 1;
+      selectReportTab(sections, next);
+    };
+  }
+
   async function openReport(ticket) {
     const dlg = document.getElementById('dlg-report');
     document.getElementById('dlg-report-title').textContent = `${ticket.id} · report`;
-    document.getElementById('report-body').innerHTML = '';
+    document.getElementById('report-body').textContent = '';
+    document.getElementById('report-tabs').textContent = '';
     setStatus(document.getElementById('report-status'), 'Loading the report…', true);
     document.getElementById('report-raw').href = `/api/report/${ticket.id}`;
     dlg.showModal();
     try {
-      const res = await fetch(`/api/report/${ticket.id}?format=html`, { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // The server escapes every ticket field, so the fragment is trusted markup.
-      document.getElementById('report-body').innerHTML = await res.text();
+      const data = await api(`/api/report/${ticket.id}?format=json`);
+      renderReportTabs(data.sections || []);
       setStatus(document.getElementById('report-status'), '');
     } catch (err) {
-      // A report written before the HTML page existed has only markdown; show that rather than
-      // a dead dialog. Same for a ticket deleted before its page was written.
+      // A deleted ticket has only the files written at deletion time; show the page as one panel.
       try {
-        const res = await fetch(`/api/report/${ticket.id}`, { cache: 'no-store' });
-        if (!res.ok) throw err;
-        const pre = document.createElement('pre');
-        pre.textContent = await res.text();
-        document.getElementById('report-body').innerHTML = '';
-        document.getElementById('report-body').appendChild(pre);
-        setStatus(
-          document.getElementById('report-status'),
-          'Showing the markdown report: no rendered page exists for this ticket.',
-        );
+        const response = await track(fetch(`/api/report/${ticket.id}?format=html`, { cache: 'no-store' }));
+        if (!response.ok) throw err;
+        document.getElementById('report-body').innerHTML = await response.text();
+        setStatus(document.getElementById('report-status'),
+          'Showing the saved report page: the ticket row is gone, so sections are not available.');
       } catch {
-        setStatus(
-          document.getElementById('report-status'),
-          'Could not load the report: ' + (err.message || err),
-        );
+        setStatus(document.getElementById('report-status'),
+          'Could not load the report: ' + (err.message || err));
       }
     }
   }
@@ -1321,6 +1512,36 @@
     }
   }
 
+  function relativeTime(iso) {
+    const at = Date.parse(iso || '');
+    if (!at) return '';
+    const seconds = Math.max(0, Math.round((Date.now() - at) / 1000));
+    if (seconds < 5) return 'just now';
+    if (seconds < 90) return `${seconds}s ago`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 90) return `${minutes}m ago`;
+    return `${Math.round(minutes / 60)}h ago`;
+  }
+
+  async function deleteTicket(ticket) {
+    const confirmed = await askConfirm({
+      title: 'Delete ticket',
+      body: `${ticket.id} will be removed from the board. Its report and a snapshot in the event ` +
+        'history are kept; this cannot be undone.',
+      confirmLabel: 'Delete ticket',
+    });
+    if (!confirmed) return;
+    try {
+      await api(`/api/tickets/${ticket.id}/delete`, {
+        method: 'POST', body: JSON.stringify({ confirm: true }),
+      });
+      say(`${ticket.id} deleted; its report is kept`);
+      await load();
+    } catch (err) {
+      say(err.message || String(err), true);
+    }
+  }
+
   function updateWatcher(watcher) {
     const chip = document.getElementById('watcher');
     if (!watcher) {
@@ -1354,8 +1575,15 @@
       if (document.hidden) return;
       const data = await api(`/api/tickets/${liveTicket.id}/live`);
       liveFailures = 0;
+      const finished = ['completed', 'failed', 'cancelled', 'interrupted', 'rolled_back', 'idle']
+        .includes(data.thread.status);
+      if (finished && liveTimer) {
+        clearInterval(liveTimer);
+        liveTimer = null;
+      }
       setStatus(status, `thread ${data.thread.status || '?'} · ${data.thread.model || ''} · ` +
-        `${(data.activity || []).length} steps · ${data.messages.length} messages`);
+        `${(data.activity || []).length} steps · ${data.messages.length} messages` +
+        (finished ? ' · finished, this is the record' : ''));
       const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
       log.textContent = '';
       const strip = document.getElementById('live-activity');
@@ -1427,6 +1655,11 @@
   document.getElementById('live-refresh').addEventListener('click', () => {
     liveFailures = 0;
     pollLive();
+  });
+  document.getElementById('view-toggle').addEventListener('click', () => {
+    viewMode = viewMode === 'list' ? 'board' : 'list';
+    localStorage.setItem('boardView', viewMode);
+    render();
   });
   document.getElementById('check-now').addEventListener('click', (event) =>
     withBusy(event.currentTarget, async () => {
@@ -1644,8 +1877,15 @@
     '#projects': openProjectDialog,
     '#legend': () => document.getElementById('dlg-legend').showModal(),
   };
+  if (location.hash === '#list') {
+    viewMode = 'list';
+    localStorage.setItem('boardView', 'list');
+    render();
+  }
   const liveHash = location.hash.match(/^#live-(T-\d+)$/);
   if (liveHash) openLive({ id: liveHash[1] });
+  const reportHash = location.hash.match(/^#report-(T-\d+)$/);
+  if (reportHash) openReport({ id: reportHash[1] });
   if (deepLinks[location.hash]) {
     try {
       const opened = deepLinks[location.hash]();

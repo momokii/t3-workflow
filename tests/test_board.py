@@ -466,6 +466,38 @@ class BoardApiTests(unittest.TestCase):
                        'id="dlg-live"', 'id="live-activity"', 'class="req"'):
             self.assertIn(needle, raw)
 
+    def test_the_report_is_available_as_named_sections(self) -> None:
+        response, raw = self.request("GET", "/api/report/T-0001?format=json")
+        self.assertEqual(response.status, 200, raw)
+        sections = json.loads(raw)["sections"]
+        self.assertEqual([section["id"] for section in sections][0], "summary")
+        self.assertIn("history", [section["id"] for section in sections])
+        for section in sections:
+            self.assertTrue(section["title"])
+            self.assertTrue(section["lead"])
+
+    def test_tickets_carry_a_live_state_per_thread(self) -> None:
+        con = sqlite3.connect(self.db)
+        con.execute("update tickets set thread_id='th-1' where id='T-0002'")
+        con.commit(); con.close()
+        con = sqlite3.connect(self.t3_db)
+        con.execute("insert into orchestration_v2_projection_runs values ('r2','th-1',2,'running')")
+        con.execute(
+            "insert into orchestration_v2_projection_turn_items values"
+            " ('t1','th-1',1,'command_execution','running','2026-11-28T09:09:51Z','{}')"
+        )
+        con.commit(); con.close()
+        _, raw = self.request("GET", "/api/tickets")
+        ticket = next(item for item in json.loads(raw)["tickets"] if item["id"] == "T-0002")
+        self.assertEqual(ticket["thread_state"]["status"], "running")
+        self.assertEqual(ticket["thread_state"]["last_type"], "command_execution")
+
+    def test_the_board_has_report_tabs_and_a_list_view(self) -> None:
+        _, raw = self.request("GET", "/")
+        for needle in ('id="report-tabs"', 'id="list-view"', 'id="view-toggle"',
+                       "renderReportTabs", "renderList"):
+            self.assertIn(needle, raw)
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)
