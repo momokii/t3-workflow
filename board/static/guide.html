@@ -196,7 +196,7 @@ npm test -- --run</code></pre>
     <h2>What each ticket field does</h2>
     <p class="note">Reading is part of the dialog: <strong>report</strong> opens the report as a rendered page,
     <strong>thread</strong> shows the thread's title, project and status beside its id, and every path field has a
-    <strong>Browse…</strong> picker that reads this machine (home folder, names only).</p>
+    <strong>Browse…</strong> picker that reads this machine (names only, token-guarded, system and hidden paths refused).</p>
     <figure class="shot">
       <img src="/static/shots/new-ticket.png" alt="The New ticket dialog: title, project, preset, harness, model, context, attachment, test command, priority and the approval checkbox, each with a short explanation." width="1100" height="900" loading="lazy" decoding="async">
       <figcaption>Every field carries its own explanation under it. The dialog opens immediately and fills its pickers from T3; submit stays disabled until they are ready.</figcaption>
@@ -373,6 +373,11 @@ npm test -- --run</code></pre>
     <p>A usage limit retries itself: the ticket blocks with a retry time and the watcher puts it back in
     <code>ready</code> after the backoff window, a bounded number of times. Any other blocked ticket comes
     back with <strong>Move → Ready</strong> on its card.</p>
+    <p class="note">Deletion is not mirrored 1:1, and cannot be: T3's CLI has no per-thread delete
+    (<code>t3 thread --help</code> lists only <code>list|start|send|show</code>), so a board action cannot
+    remove a thread. Only <code>t3 project remove --force</code> deletes a project's threads, and that is
+    project-wide. The board therefore keeps the ticket and its report, and shows what T3 did: a deleted
+    thread blocks the ticket, a missing project gets a badge.</p>
   </section>
 
   <section id="data">

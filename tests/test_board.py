@@ -219,13 +219,17 @@ class BoardApiTests(unittest.TestCase):
         payload = json.loads(raw)
         self.assertEqual(payload["path"], str(Path.home()))
         self.assertIn("directories", payload)
-        response, raw = self.request("GET", "/api/fs?path=/etc", token="secret")
-        self.assertEqual(response.status, 403)
+        # outside home is allowed when the filesystem allows it (the process runs as the owner)
+        response, _ = self.request("GET", "/api/fs?path=/tmp", token="secret")
+        self.assertEqual(response.status, 200)
+        # system and hidden trees are refused before any listing
+        for blocked in ("/proc", "/sys", f"{Path.home()}/.ssh"):
+            response, _ = self.request("GET", f"/api/fs?path={blocked}", token="secret")
+            self.assertEqual(response.status, 403, blocked)
 
     def test_the_board_has_readers_for_reports_threads_and_folders(self) -> None:
         _, raw = self.request("GET", "/")
-        for needle in ("dlg-report", "dlg-thread", "dlg-fs", "renderMarkdown",
-                       "openThreadDialog", "openFsDialog", "data-browse", "test-warning"):
+        for needle in ("dlg-report", "dlg-thread", "dlg-fs", "data-browse", "test-warning"):
             self.assertIn(needle, raw)
 
     def test_list_tickets(self) -> None:

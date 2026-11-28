@@ -40,6 +40,10 @@ from store import (  # noqa: E402
 
 STATIC = Path(__file__).resolve().parent / "static"
 
+# Names only, token-guarded, and never these trees: virtual filesystems and the
+# directories whose listing is nobody's business on a tailnet page.
+FS_BLOCKED_ROOTS = ("/proc", "/sys", "/dev", "/root", "/boot", "/run")
+
 
 T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
 CATALOG_DIR = Path.home() / ".t3/caches"
@@ -60,7 +64,7 @@ def t3_projects(db_path: Path) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def t3_threads(db_path: Path, limit: int = 40) -> list[dict]:
+def t3_threads(db_path: Path, limit: int = 200) -> list[dict]:
     """The most recent T3 threads, so existing work can be adopted as a ticket."""
     if not db_path.exists():
         return []
@@ -106,6 +110,44 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    @staticmethod
+    def _fs_listing(raw: str) -> tuple[int, dict]:
+        """Names only, token-guarded, and never the trees nobody should list here."""
+        home = Path.home().resolve()
+        try:
+            target = Path(raw or home).expanduser().resolve()
+        except OSError as exc:
+            return 400, {"error": str(exc)}
+        text = str(target)
+        if any(text == root or text.startswith(root + "/") for root in FS_BLOCKED_ROOTS):
+            return 403, {"error": "a system path is not readable from the board"}
+        if any(part.startswith(".") for part in target.parts[1:]):
+            return 403, {"error": "hidden paths are not listed"}
+        if not target.is_dir():
+            return 404, {"error": "not a directory"}
+        directories, files = [], []
+        try:
+            children = sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+        except OSError as exc:
+            return 400, {"error": str(exc)}
+        for child in children:
+            if child.name.startswith("."):
+                continue
+            try:
+                if child.is_dir():
+                    directories.append({"name": child.name, "path": str(child)})
+                elif child.is_file():
+                    files.append({"name": child.name, "path": str(child), "size": child.stat().st_size})
+            except OSError:
+                continue
+        return 200, {
+            "path": text,
+            "parent": str(target.parent) if target != home else "",
+            "home": str(home),
+            "directories": directories,
+            "files": files,
+        }
 
     def _send_static(self, name: str) -> None:
         """Serve a file under `board/static/`, including subfolders such as `shots/`."""
@@ -180,50 +222,12 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, load_catalog_cached(Path(self.catalog_dir), config=config))
             return
         if path == "/api/fs":
-            # A folder picker for the board. It reads names only, stays inside the home
-            # directory, and needs the board token, because a directory tree is not a
-            # public page.
             if not self._authorised():
                 self._json(401, {"error": "invalid token"})
                 return
             query = parse_qs(urlparse(self.path).query)
-            raw = (query.get("path") or [str(Path.home())])[0]
-            home = Path.home().resolve()
-            try:
-                target = Path(raw).expanduser().resolve()
-            except OSError as exc:
-                self._json(400, {"error": str(exc)})
-                return
-            if target != home and home not in target.parents:
-                self._json(403, {"error": "outside the home directory"})
-                return
-            if not target.is_dir():
-                self._json(404, {"error": "not a directory"})
-                return
-            directories, files = [], []
-            try:
-                children = sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
-            except OSError as exc:
-                self._json(400, {"error": str(exc)})
-                return
-            for child in children:
-                if child.name.startswith("."):
-                    continue
-                try:
-                    if child.is_dir():
-                        directories.append({"name": child.name, "path": str(child)})
-                    elif child.is_file():
-                        files.append({"name": child.name, "path": str(child),
-                                      "size": child.stat().st_size})
-                except OSError:
-                    continue
-            self._json(200, {
-                "path": str(target),
-                "parent": str(target.parent) if target != home else "",
-                "home": str(home),
-                "directories": directories,
-                "files": files,
-            })
+            status, payload = self._fs_listing((query.get("path") or [""])[0])
+            self._json(status, payload)
             return
         if path == "/api/projects":
             self._json(200, {"projects": t3_projects(Path(self.t3_db_path))})

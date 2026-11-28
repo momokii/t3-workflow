@@ -19,10 +19,14 @@ GET  /api/tickets/<id>/events          the ticket's event history
 GET  /api/report/<id>                  the ticket's markdown report
 GET  /api/catalog                      harnesses, models, presets, defaults
 GET  /api/projects                     T3 projects
-GET  /api/threads                      recent T3 threads
+GET  /api/threads                      recent T3 threads (up to 200)
+GET  /api/fs?path=<dir>                folder picker: names under a directory (token)
 ```
 
-Authentication: `X-Board-Token: <token>` on every `POST`. The token comes from `--token`, or `T3_BOARD_TOKEN` in the environment (the systemd unit reads it from `~/.config/t3-workflow/board.env`). A missing or wrong token returns `401 {"error": "invalid token"}`.
+Authentication: `X-Board-Token: <token>` on every `POST`, and on `GET /api/fs` — that route lists
+filenames from this machine, so it is not open like the rest of `GET`. The token comes from `--token`, or
+`T3_BOARD_TOKEN` in the environment (the systemd unit reads it from
+`~/.config/t3-workflow/board.env`). A missing or wrong token returns `401 {"error": "invalid token"}`.
 
 Start it:
 
@@ -271,9 +275,29 @@ Validation: `title` non-empty, `path` absolute and an existing directory (`400` 
 
 Read from T3's `statev2.sqlite`, `deleted_at is null`, ordered by title.
 
+## GET /api/fs
+
+The folder picker behind the attachment and project path fields.
+
+```bash
+curl -s "http://127.0.0.1:8787/api/fs?path=$HOME" -H "X-Board-Token: $TOKEN"
+```
+
+```json
+{ "path": "/home/kelanach", "parent": "/home",
+  "home": "/home/kelanach",
+  "directories": [ { "name": "projects", "path": "/home/kelanach/projects" } ],
+  "files": [ { "name": "notes.md", "path": "/home/kelanach/notes.md", "size": 1234 } ] }
+```
+
+`path` defaults to the home directory and accepts `~`. Names starting with `.` are hidden from the
+listing. `/proc`, `/sys`, `/dev`, `/root`, `/boot`, `/run` and any path containing a hidden directory are
+refused. Errors: `401` without the token, `403` for those paths, `404` when the path is not a directory,
+`400` when it cannot be read. Only names and sizes are returned — never file contents.
+
 ## GET /api/threads
 
-The 40 most recent threads, with the latest run's status.
+The 200 most recent threads, with the latest run's status.
 
 ```json
 {

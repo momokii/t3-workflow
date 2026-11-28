@@ -15,6 +15,71 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Autonomous ticket loop.** A ticket is acknowledged, executed in a T3 thread, proved by the host's
+  test command, reviewed by a second thread in a fresh context, repaired from the reviewer's findings
+  (bounded), then pushed and reported. Telegram carries the acknowledgement, the plan, retries, the
+  verdict and the report document; every ticket-driven message starts with `🤖 ticket automation` so it
+  differs from a reply to a typed command.
+- **Independent review gate.** `review` releases only on `VERDICT: ACCEPT` from the reviewer's last
+  assistant message of the verified run (run id + `runCount == 1`); findings go into the dev thread on
+  rejection, and a deleted reviewer thread, a missing verdict, a timeout or a tree that changed during
+  the review blocks the ticket. Measured facts: `docs/verification-assumptions.md`,
+  `docs/readonly-verifier.md`.
+- **Bounded, classified retries.** A failing test sends its output into the dev thread; a crashed call
+  or a dead thread returns the ticket to `ready`; a usage limit blocks with `retry_after` and retries
+  itself after the backoff window; context overflow, a removed model and a provider mismatch block at
+  once. Evidence: `docs/retry-evidence.md`.
+- **Project defaults and one-line tickets.** `projects.<title>` can carry `test_cmd`, `profile` and a
+  provider/model pair; the dialog and `cli add` use them, and the test command also suggests common
+  commands and warns live while empty. The watcher still never invents a command: empty blocks at
+  `testing`.
+- **Edit and delete with history.** `store.update()` edits the human-owned fields (refused on `done`,
+  `force` mid-flight); `store.delete()` writes the report, records a `deleted` snapshot and removes the
+  row. Exposed in the board, `cli edit|delete` and the API; the report is still served after deletion.
+- **The board reads as well as writes.** `report` opens a rendered reader (headings, lists, tables,
+  code, links) with a raw link; `thread` shows title, project, status, created time and id with copy;
+  every path field has a token-guarded folder picker (`GET /api/fs`, names only, system/hidden paths
+  refused).
+- **Board UX.** Dialogs open immediately with a loading state and a prefetched, cached catalogue; cards
+  carry a review badge and a **project missing** marker when T3 lost the project.
+- **Guide page** at `/guide` with screenshots, corrected structure and the failure/deletion tables.
+
+### Fixed
+
+- **The watcher crashed while polling a thread.** `sync_threads()` without a runner passed `None` into
+  `thread_show()`, exiting the unit mid-loop; both normalise `runner or subprocess.run`, with a
+  regression test. Found by the first real end-to-end run.
+- **A thread or project deleted in T3 left the ticket waiting.** The watcher now reads "no longer
+  available" and blocks the ticket with that reason; a missing project shows a badge instead of looking
+  normal.
+- **The review verdict could be read from the wrong run.** The stage stores and compares the run id,
+  requires one run, reads only assistant messages, tolerates markdown emphasis/trailing house-style
+  lines and refuses contradicting verdicts.
+- **The guide's table of contents swallowed a section**, producing a broken two-column render; the list
+  closes before the sections and tables scroll.
+- **The empty-test-command warning could stay visible after a project default filled the field**, and a
+  filled attachment path dead-ended the folder picker; both fixed.
+
+### Changed
+
+- **English everywhere a person reads text**; the passing-proof marker is `[PASS]`. A guard fails on
+  Indonesian text in tracked files.
+- Documentation aligned with the behaviour: README, AGENTS.md (invariants 6, 10, 11), `docs/usage.md`,
+  `docs/architecture.md`, `docs/api.md`, `docs/operations.md`, the guide, `docs/autonomy.md`.
+
+## [0.1.1] — 2026-11-26
+
+### Fixed
+
+- The dry-run watcher test used a project title, so it needed the real T3 database and failed on
+  GitHub Actions. It now uses an absolute path, matching the other hermetic tests.
+- Documentation now describes the published remote, the CI badge, and the fact that a repository
+  without a remote cannot release.
+
+## [Unreleased]
+
+### Added
+
 - **The board reads as well as writes.** `report` opens the markdown in a dialog rendered with headings,
   lists, tables, code and links (plus a link to the raw file); `thread` shows the thread's title,
   project, status and created time beside its id, with a copy button, instead of a toast with the raw

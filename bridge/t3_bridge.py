@@ -583,7 +583,7 @@ def notify_approvals(config: dict, state: dict) -> int:
         reply(
             config,
             str(chats[0]),
-            f"{AUTOMATION} · approval #{key} · {approval['ticket_id']}\n{approval['question']}\n\n"
+            f"{AUTOMATION_PREFIX} · approval #{key} · {approval['ticket_id']}\n{approval['question']}\n\n"
             f"Reply: /approve {key} or /reject {key}",
         )
         notified.add(key)
@@ -593,7 +593,7 @@ def notify_approvals(config: dict, state: dict) -> int:
     return sent
 
 
-AUTOMATION = "🤖 ticket automation"
+AUTOMATION_PREFIX = "🤖 ticket automation"
 NOTIFY_STATUSES = ("in-progress", "ready", "review", "done", "blocked")
 STATUS_ICON = {"in-progress": "▶", "ready": "↻", "review": "🔍", "done": "✅", "blocked": "⛔"}
 
@@ -633,7 +633,7 @@ def announce_plan(config: dict, state: dict, ticket: dict) -> int:
         text = text[:900].rstrip() + " …"
     reply(
         config, str(config["telegram"]["allowChatIds"][0]),
-        f"{AUTOMATION} · 🧭 {ticket['id']} plan:\n{text}",
+        f"{AUTOMATION_PREFIX} · 🧭 {ticket['id']} plan:\n{text}",
     )
     seen.add(key)
     state["plannedRuns"] = sorted(seen)[-200:]
@@ -682,7 +682,7 @@ def notify_ticket_states(config: dict, state: dict) -> int:
         icon = STATUS_ICON.get(ticket["status"], "•")
         reply(
             config, str(chats[0]),
-            f"{AUTOMATION} · {icon} {ticket['id']} → {ticket['status']}: "
+            f"{AUTOMATION_PREFIX} · {icon} {ticket['id']} → {ticket['status']}: "
             f"{ticket['title']}{verdict}{note}{link}",
         )
         sent += 1
@@ -690,7 +690,10 @@ def notify_ticket_states(config: dict, state: dict) -> int:
             sent += announce_plan(config, state, ticket)
         report = (ticket.get("report_path") or "").strip()
         if ticket["status"] == "done" and report:
-            send_document(config, str(chats[0]), Path(report), f"{ticket['id']} report")
+            send_document(
+                config, str(chats[0]), Path(report),
+                f"{AUTOMATION_PREFIX} · {ticket['id']} report",
+            )
     state["ticketStates"] = known
     save_state(state)
     return sent

@@ -251,8 +251,9 @@ defaults remove the typing, not the proof.
 - **thread** opens the thread's details — title, project, status, created time and the raw id — from
   T3's own list, with a copy button. The board mirrors a thread; it does not own it.
 - **Browse…** next to an attachment or a project path opens a folder picker that reads this machine,
-  starting at your home directory. It lists names only, stays inside `$HOME`, and requires the board
-  token; pick a file for an attachment, or a folder for a project.
+  starting at your home directory. It lists names only, refuses `/proc`, `/sys`, `/dev`, `/root`,
+  `/boot`, `/run` and hidden directories, and requires the board token; pick a file for an attachment,
+  or a folder for a project.
 
 ### The test command, and when it can wait
 
@@ -286,6 +287,10 @@ The board and T3 are not a mirror that copies deletions; they own different thin
 | Remove a project in T3 | kept, with report and events | the card shows a **project missing** badge |
 | Delete a ticket (board, `cli delete --yes`, API with `confirm: true`) | row removed after a `deleted` snapshot; report file kept | the T3 thread is **not** deleted — it is work history T3 owns |
 | Delete a report file by hand | kept | `/api/report/<id>` no longer serves it |
+
+Deleting a ticket cannot remove its T3 thread: the CLI has no per-thread delete (`t3 thread --help` lists
+only `list|start|send|show`), and only `t3 project remove --force` removes threads. That is why the mirror
+is one-way — the board reflects T3, it does not erase T3.
 
 A usage limit is retried automatically: the ticket blocks with a time, and the watcher returns it to
 `ready` after `retry.quotaBackoffMinutes` (default 60) until `retry.maxQuotaAttempts` (default 3) windows

@@ -29,8 +29,9 @@ schema or state machine → `docs/architecture.md`, procedures → `docs/operati
    with a row snapshot; deletion never destroys evidence.
 7. **Release pushes only a ticket branch.** The base branch is never pushed, and a ticket
    without a `[PASS]` proof is refused.
-8. **Board writes need the token.** Every `POST` passes through `X-Board-Token`; `GET` is
-   open to the tailnet, which is the real boundary.
+8. **Board writes need the token.** Every `POST` passes through `X-Board-Token`, and so does
+   `GET /api/fs`, which lists filenames from this machine; the rest of `GET` is open to the tailnet,
+   which is the real boundary.
 9. **T3 stays the owner of projects and threads.** Read `statev2.sqlite` read-only; create
    projects through `t3 project add`, never by writing the database.
 10. **Review before release.** `review` releases only on a `VERDICT: ACCEPT` line from the review

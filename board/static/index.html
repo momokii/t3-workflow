@@ -153,7 +153,6 @@
   .md pre code { border: 0; background: none; padding: 0; }
   .md table { display: block; overflow-x: auto; border-collapse: collapse; margin: 8px 0; }
   .md th, .md td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
-  .md blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--ink-soft); }
   .md a { color: var(--accent); }
   .md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
   .hint.warn { color: var(--warn); }
@@ -278,6 +277,7 @@
     <p class="hint">Sent into the thread verbatim, together with the title. Write the acceptance criteria here: this is the whole contract the agent receives.</p>
     <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
     <p class="hint">Runs in the project folder after the thread finishes; exit code 0 is the proof, anything else sends the ticket back. <a href="/guide#test-command">Why this field exists</a>.</p>
+    <p class="hint warn" id="adopt-test-warning" hidden>No test command yet: the ticket will block at testing until one is filled in.</p>
     <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Adopt</button></div>
   </form>
 </dialog>
@@ -887,7 +887,7 @@
     list.appendChild(item);
   }
 
-  async function loadFs(path) {
+  async function loadFs(path, retryParent = true) {
     const status = document.getElementById('fs-hint');
     const list = document.getElementById('fs-list');
     status.textContent = 'Reading…';
@@ -905,7 +905,12 @@
       status.textContent = (data.directories.length || (fsMode === 'file' && data.files.length))
         ? '' : 'This folder is empty.';
     } catch (err) {
-      status.textContent = 'Could not read that folder: ' + (err.message || err);
+      if (retryParent && path) {
+        return loadFs(path.replace(/\/[^/]+$/, '') || '', false);
+      }
+      status.textContent = /invalid token/i.test(err.message || '')
+        ? 'This page carries no board token, so the folder picker cannot read the machine.'
+        : 'Could not read that folder: ' + (err.message || err);
     }
   }
 
@@ -941,7 +946,13 @@
     const warning = document.getElementById('test-warning');
     warning.hidden = Boolean(form.test_cmd.value.trim());
   }
-  document.getElementById('form-ticket').test_cmd.addEventListener('input', updateTestWarning);
+  document.getElementById('form-ticket').test_cmd.addEventListener('input', () => updateTestWarning());
+
+  function updateAdoptWarning() {
+    const form = document.getElementById('form-adopt');
+    document.getElementById('adopt-test-warning').hidden = Boolean(form.test_cmd.value.trim());
+  }
+  document.getElementById('form-adopt').test_cmd.addEventListener('input', updateAdoptWarning);
 
   async function openEditDialog(ticket) {
     const dlg = document.getElementById('dlg-ticket');
@@ -1042,7 +1053,7 @@
   document.getElementById('adopt-thread').addEventListener('click', () =>
     openAdoptDialog().catch(err => say(err.message, true)));
   const ticketForm = document.getElementById('form-ticket');
-  ticketForm.project.addEventListener('change', () => applyProjectDefaults(ticketForm));
+  ticketForm.project.addEventListener('change', () => { applyProjectDefaults(ticketForm); updateTestWarning(); });
   ticketForm.profile.addEventListener('change', () => {
     const preset = ((state.catalog && state.catalog.presets) || []).find(p => p.name === ticketForm.profile.value);
     if (!preset) return;
@@ -1080,6 +1091,12 @@
       priority: Number(form.priority.value),
       requires_approval: form.requires_approval.checked,
     };
+    if (!editingId && !form.test_cmd.value.trim()) {
+      const proceed = window.confirm(
+        'No test command: this ticket will block at testing until you fill one in. Create it anyway?'
+      );
+      if (!proceed) return;
+    }
     try {
       if (editingId) {
         await api(`/api/tickets/${editingId}/edit`, {
