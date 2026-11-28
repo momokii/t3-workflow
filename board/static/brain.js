@@ -306,7 +306,6 @@
           'text-background-padding': '2px',
           'border-width': 1,
           'border-color': dark ? '#0f1115' : '#ffffff',
-          'min-zoomed-font-size': 7,
         },
       },
       { selector: 'node.brain-dim', style: { opacity: 0.18 } },
@@ -497,7 +496,10 @@
     if (!cy) return;
     const labels = labelsToggle.checked;
     const arrows = arrowsToggle.checked;
-    cy.nodes().forEach((node) => node.style('label', labels ? node.data('label') : ''));
+    cy.nodes().forEach((node) => {
+      node.style('label', node.data('label'));
+      node.style('text-opacity', labels ? 1 : 0);
+    });
     cy.edges().forEach((edge) => edge.style('target-arrow-shape', arrows ? 'triangle' : 'none'));
   }
 
