@@ -324,6 +324,7 @@ docs/           architecture, API, operations
 | [docs/retry-evidence.md](docs/retry-evidence.md) | what a failed run records, and which failures may retry |
 | [docs/test-command-detection.md](docs/test-command-detection.md) | what each project declares as its test command, and which declarations are safe unattended |
 | [docs/ui-live-status.md](docs/ui-live-status.md) | what a running thread actually updates, heartbeat and upload measurements |
+| [docs/ui-ticket-states.md](docs/ui-ticket-states.md) | per-card live state queries, reviewer state, tabs and list-view patterns |
 | [CHANGELOG.md](CHANGELOG.md) | released versions |
 
 ## Known limitations

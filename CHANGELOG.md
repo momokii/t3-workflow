@@ -42,6 +42,18 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Cards say which stage is running, not a raw T3 status.** `queued for the watcher`, `running the
+  test command…`, `review queued — starting the reviewer…`, `reviewer …`, or the thread's last step, so
+  "loading" is distinguishable from "finished". Delete is offered on backlog/ready/blocked/done but never
+  while a stage holds the ticket; the list view updates the status counts and carries approve/reject for
+  pending approvals.
+
+### Fixed
+
+- **The deleted-ticket report no longer leaks the standalone page's CSS into the board**; only its
+  `<main>` content is inserted, with a markdown fallback. The `?format=sections` alias is gone and
+  `/#list` no longer overwrites the remembered view.
+
 - **Cards say what is happening.** Each card carries a live line from T3's latest run and turn item
   (`thread running · command execution · 3s ago`, or `reviewer …` while a review runs), a **live**
   control that becomes **history** once the thread is finished, **retry** on blocked tickets and
