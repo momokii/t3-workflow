@@ -34,6 +34,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **The board explains itself where a phone can see it.** A `?` button opens a legend covering every
+  column, the `p1…p5` scale, the review badges and the move controls; column headers, counters and
+  priority tags also carry their meaning for assistive tech. `/#legend` and `/#projects` are documented
+  deep links.
+- **Dialogs use dynamic viewport units** (`88dvh`, `26dvh`, `46dvh` with `vh` fallbacks), so a mobile
+  toolbar cannot push the actions off screen, and the facts grid stacks on narrow widths.
+
 - **The report is a page, not a wall of markdown.** `GET /api/report/<id>?format=html` returns a
   server-rendered, fully escaped fragment that the board's report dialog shows directly; the release
   writes a standalone `T-xxxx.html` next to the markdown, and Telegram receives that page. The client

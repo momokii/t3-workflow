@@ -124,12 +124,14 @@
   .btn.guide { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); color: var(--accent); font-weight: 600; gap: 6px; }
   .btn.guide:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-color: var(--accent); }
   .btn.guide svg { width: 15px; height: 15px; flex: none; }
+  .btn.icon { padding: 6px 11px; font-weight: 700; }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .btn.danger { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); color: var(--danger); }
   .btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border-color: var(--danger); color: var(--danger); }
   .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
   dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); max-height: 88vh; overflow: auto; box-shadow: var(--shadow); }
+  @supports (height: 100dvh) { dialog { max-height: 88dvh; } }
   dialog::backdrop { background: rgba(12, 14, 20, .45); }
   dialog form { padding: 18px 18px 16px; display: grid; gap: 12px; }
   dialog h3 { margin: 0; font-size: 16px; }
@@ -163,16 +165,23 @@
   .picker { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
   .picker .btn { padding: 5px 10px; font-size: 12px; }
   dl.facts { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; margin: 10px 0; font-size: 13px; }
+  @media (max-width: 520px) {
+    dl.facts { grid-template-columns: 1fr; gap: 2px; }
+    dl.facts dt { margin-top: 10px; font-weight: 600; }
+    dl.facts dd { margin: 0; }
+  }
   dl.facts dt { color: var(--ink-soft); }
   dl.facts dd { margin: 0; word-break: break-all; }
   .fs-path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; overflow-x: auto; white-space: nowrap; }
   ul.fs { list-style: none; margin: 10px 0; padding: 0; max-height: 46vh; border: 1px solid var(--line); border-radius: 9px; }
+  @supports (height: 100dvh) { ul.fs { max-height: 46dvh; } }
   ul.fs li + li { border-top: 1px solid var(--line); }
   ul.fs button { width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink); display: flex; justify-content: space-between; gap: 8px; }
   ul.fs button:hover, ul.fs button:focus-visible { background: var(--surface-2); }
   ul.fs li .path { color: var(--ink-soft); font-size: 11px; margin-left: 22px; }
   .scroller { overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
   .projects { display: grid; gap: 8px; margin: 4px 0 2px; min-width: 0; max-height: 26vh; }
+  @supports (height: 100dvh) { .projects { max-height: 26dvh; } }
   .project-row { display: flex; justify-content: space-between; gap: 10px; align-items: center;
     border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; min-width: 0; }
   .project-row .meta { font-size: 12px; min-width: 0; flex: 1 1 auto; }
@@ -196,6 +205,8 @@
       <button class="btn primary" id="new-ticket" type="button">＋ Ticket</button>
       <button class="btn" id="adopt-thread" type="button">Adopt thread</button>
       <button class="btn" id="new-project" type="button">Register project</button>
+      <button class="btn icon" id="legend" type="button"
+        aria-label="What the columns, priorities and badges mean">?</button>
       <a class="btn guide" href="/guide" aria-label="Open the guide: how tickets, reviews and releases work">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15"/><path d="M8 7h8M8 11h6"/></svg>
         Guide
@@ -275,8 +286,7 @@
 
     <h3>Existing projects</h3>
     <p class="hint">This list is T3's own project list, read live.
-    <a href="/guide#adopt">How projects and tickets relate</a>. The list scrolls, and the buttons below stay
-    reachable.</p>
+    <a href="/guide#adopt">How projects and tickets relate</a>.</p>
     <p class="hint">Removing a project deletes it and <strong>all of its threads</strong> in T3 (the CLI's
     <code>project remove --force</code>). Tickets and their reports are kept; their cards then show
     <strong>project missing</strong>. This cannot be undone.</p>
@@ -301,6 +311,44 @@
     <p class="hint">Runs in the project folder after the thread finishes; exit code 0 is the proof, anything else sends the ticket back. <a href="/guide#test-command">Why this field exists</a>.</p>
     <p class="hint warn" id="adopt-test-warning" hidden>No test command yet: the ticket will block at testing until one is filled in.</p>
     <div class="row actions"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Adopt</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-legend" class="wide" aria-labelledby="dlg-legend-title">
+  <form method="dialog">
+    <h3 id="dlg-legend-title">What the board means</h3>
+    <p class="hint">Every column, number and badge, in one place. The full guide has the workflows and the limitations.</p>
+    <div class="md legend">
+      <h3>Columns</h3>
+      <dl class="facts">
+        <dt>Backlog</dt><dd>Written down, not queued. Move it to Ready when it should compete for the watcher.</dd>
+        <dt>Ready</dt><dd>Queued; the watcher may claim it at any moment.</dd>
+        <dt>In progress</dt><dd>A T3 thread is working on it, claimed atomically.</dd>
+        <dt>Testing</dt><dd>The thread finished; the host is running the ticket's test command.</dd>
+        <dt>Review</dt><dd>A second thread judges the work; only <code>VERDICT: ACCEPT</code> releases it.</dd>
+        <dt>Done</dt><dd>Branch pushed and report written.</dd>
+        <dt>Blocked</dt><dd>Needs a person: a failed test or thread, a usage limit, a deleted thread. The note says which.</dd>
+      </dl>
+      <h3>Numbers and badges</h3>
+      <dl class="facts">
+        <dt>p1 … p5</dt><dd>Priority: 1 urgent, 2 high, 3 normal, 4 low, 5 later. The watcher takes the lowest number first.</dd>
+        <dt>review …</dt><dd>The independent review: <code>accept · first attempt</code> is the normal success; <code>reject · attempt 1 of 2</code> shows the retry budget.</dd>
+        <dt>project missing</dt><dd>The ticket's project no longer exists in T3. The ticket and its report are kept.</dd>
+      </dl>
+      <h3>Controls</h3>
+      <dl class="facts">
+        <dt>Move</dt><dd>Lists only the transitions the state machine allows.</dd>
+        <dt>Force move…</dt><dd>Human override: skips the state machine and is recorded as a forced event.</dd>
+        <dt>report</dt><dd>Opens the ticket's report as a page; the raw markdown is one click away.</dd>
+        <dt>thread</dt><dd>The T3 thread's title, project, status and id. T3 owns the conversation.</dd>
+        <dt>edit</dt><dd>Changes the ticket's fields; deleting keeps the report and a snapshot.</dd>
+      </dl>
+    </div>
+    <div class="row actions">
+      <a class="btn" href="/guide">Open the full guide</a>
+      <span class="spacer"></span>
+      <button class="btn primary" type="submit" value="close">Close</button>
+    </div>
   </form>
 </dialog>
 
@@ -359,6 +407,16 @@
   const projectSel = document.getElementById('project');
   const foot = document.getElementById('foot');
   const LABELS = { backlog:'Backlog', ready:'Ready', 'in-progress':'In progress', testing:'Testing', review:'Review', done:'Done', blocked:'Blocked' };
+  const COLUMN_HELP = {
+    backlog: 'Written down, not queued yet.',
+    ready: 'Queued; the watcher may claim it at any moment.',
+    'in-progress': 'A T3 thread is working on it.',
+    testing: "The host is running the ticket's test command.",
+    review: 'A second thread judges the work; only VERDICT: ACCEPT releases it.',
+    done: 'Branch pushed and report written.',
+    blocked: 'Needs a person; the note says why.',
+  };
+  const PRIORITY_HELP = { 1: 'urgent', 2: 'high', 3: 'normal', 4: 'low', 5: 'later' };
   const ORDER = ['backlog','ready','in-progress','testing','review','done','blocked'];
   let state = { tickets: [], transitions: {}, profiles: [], statuses: ORDER, catalog: null };
   let editingId = null;
@@ -397,7 +455,10 @@
 
     const top = document.createElement('div');
     top.className = 'card-top';
-    top.innerHTML = `<span class="id">${t.id}</span><span class="tag">p${t.priority}</span>`;
+    const priority = PRIORITY_HELP[t.priority] || 'normal';
+    top.innerHTML = `<span class="id">${t.id}</span>` +
+      `<span class="tag" title="Priority ${t.priority} — ${priority}" ` +
+      `aria-label="priority ${t.priority}, ${priority}">p${t.priority}</span>`;
     el.appendChild(top);
 
     const title = document.createElement('div');
@@ -568,7 +629,10 @@
       const items = state.tickets.filter(t => t.status === status && visible(t));
       const head = document.createElement('div');
       head.className = 'col-head';
-      head.innerHTML = `<h2 id="h-${status}">${LABELS[status] || status}</h2><span class="n">${items.length}</span>`;
+      const help = COLUMN_HELP[status] || '';
+      head.title = help;
+      head.innerHTML = `<h2 id="h-${status}" title="${help}">${LABELS[status] || status}</h2>` +
+        `<span class="n" aria-label="${items.length} tickets">${items.length}</span>`;
       col.setAttribute('aria-labelledby', `h-${status}`);
       col.appendChild(head);
 
@@ -605,7 +669,7 @@
     }
     counts.innerHTML += ORDER
       .filter(s => (state.summary || {})[s])
-      .map(s => `<span class="chip">${LABELS[s] || s}: ${state.summary[s]}</span>`)
+      .map(s => `<span class="chip" title="${COLUMN_HELP[s] || ''}">${LABELS[s] || s}: ${state.summary[s]}</span>`)
       .join('');
   }
 
@@ -1079,6 +1143,9 @@
   document.getElementById('new-ticket').addEventListener('click', () =>
     openTicketDialog().catch(err => say(err.message, true)));
   document.getElementById('new-project').addEventListener('click', () => openProjectDialog());
+  document.getElementById('legend').addEventListener('click', () => {
+    document.getElementById('dlg-legend').showModal();
+  });
   document.getElementById('adopt-thread').addEventListener('click', () =>
     openAdoptDialog().catch(err => say(err.message, true)));
   const ticketForm = document.getElementById('form-ticket');
@@ -1196,7 +1263,12 @@
   });
 
   // deep links for support and visual checks: /#new, /#adopt, /#projects
-  const deepLinks = { '#new': openTicketDialog, '#adopt': openAdoptDialog, '#projects': openProjectDialog };
+  const deepLinks = {
+    '#new': openTicketDialog,
+    '#adopt': openAdoptDialog,
+    '#projects': openProjectDialog,
+    '#legend': () => document.getElementById('dlg-legend').showModal(),
+  };
   if (deepLinks[location.hash]) {
     try {
       const opened = deepLinks[location.hash]();

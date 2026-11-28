@@ -299,6 +299,23 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertIn("T-0001", raw)
 
+    def test_the_board_explains_its_own_labels(self) -> None:
+        _, raw = self.request("GET", "/")
+        text = " ".join(raw.split())
+        for phrase in ("What the board means", "Priority", "project missing",
+                       "review", "Force move"):
+            self.assertIn(phrase, text)
+        self.assertIn('aria-label="What the columns, priorities and badges mean"', raw)
+        self.assertIn("priority 1, urgent", raw)
+
+    def test_the_layout_contract_that_keeps_the_actions_reachable(self) -> None:
+        _, raw = self.request("GET", "/")
+        style = raw.split("</style>")[0]
+        for rule in ("position: sticky", "max-height: 88dvh", "max-height: 26dvh"):
+            self.assertIn(rule, style)
+        # the scrollable list comes before the sticky action row in the dialog
+        self.assertLess(raw.index('id="project-rows"'), raw.index('class="row actions"'))
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)

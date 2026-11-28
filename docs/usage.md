@@ -246,6 +246,10 @@ defaults remove the typing, not the proof.
 
 ### Reading in the board
 
+The header's **?** button opens a legend: what each column means, what `p1…p5` are, what the review
+badges say and what the move controls do — written for a phone, where hover does not exist. `/#projects`
+and `/#legend` open those dialogs directly (used for support links and screenshots).
+
 - **report** on a card opens a reader: the server renders the report as HTML (headings, tables, code,
   findings) and the dialog shows it, with "Open raw markdown" for the original. On `done` a standalone
   HTML page is written next to the markdown and sent to Telegram as the report document — that page is
