@@ -463,7 +463,7 @@ class BoardApiTests(unittest.TestCase):
     def test_the_board_has_confirm_dialogs_and_a_drop_zone(self) -> None:
         _, raw = self.request("GET", "/")
         for needle in ('id="dlg-confirm"', 'id="attachment-drop"', 'id="watcher"',
-                       'id="dlg-live"', 'class="req"'):
+                       'id="dlg-live"', 'id="live-activity"', 'class="req"'):
             self.assertIn(needle, raw)
 
     def test_list_tickets(self) -> None:
