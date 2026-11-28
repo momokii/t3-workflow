@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- **Registering an existing folder now says so, in the dialog.** The board pre-checks the T3 project
+  list and refuses a workspace root that already belongs to a project, naming it; the server returns
+  the same `409` if the check is bypassed, and a CLI failure is trimmed to its first line instead of a
+  stack trace in a toast.
+- **Waits are visible.** A thin progress bar follows every request, dialog status lines show a spinner,
+  and the button that started the work disables itself with a busy cursor. All animations respect
+  `prefers-reduced-motion`.
+
 - **The Register-project dialog broke when the project list grew.** It now has its own scroll region
   (`max-height`, shared `.scroller` styling with the folder picker), long paths ellipsize instead of
   widening the dialog, the action row is sticky with room for a focus ring, and the dialog no longer

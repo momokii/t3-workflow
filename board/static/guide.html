@@ -298,7 +298,8 @@ npm test -- --run</code></pre>
     <h3>Registering a project</h3>
     <p>Agents may only work in folders T3 knows about. <strong>Register project</strong> takes a name and an
     absolute path that already exists, then runs <code>t3 project add</code>: T3 stays the owner of the project,
-    and this board only mirrors the result. Point it at the repository root, because the agent works there and
+    and this board only mirrors the result. A folder that already belongs to a project is refused in the
+    dialog, naming that project, instead of failing with a raw CLI error. Point it at the repository root, because the agent works there and
     the test command runs there. A registered project appears in the ticket dialog immediately.</p>
     <p>A folder that is not a git repository can be registered, but the release stage will fail loudly when it
     looks for a remote; that is intentional, so nothing is ever pushed nowhere.</p>
