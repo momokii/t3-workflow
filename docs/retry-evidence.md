@@ -520,8 +520,8 @@ the attempt counters are columns the store already models.
 | **`verification.enabled = false` / `release.enabled = false`** | a disabled stage is a policy, not a fault | `watcher.py:352, 610` `[code]` |
 
 One design constraint from the live data `[measured]`: **do not parse the `note` to decide anything.**
-The live ticket database holds notes in the previous language (`release: tidak ada perubahan untuk
-di-push`, `test lulus`, `thread selesai (completed)`) while the current code writes English — so the
+The live ticket database still holds notes in the language the code used before the English pass (for
+example an old release note and an old test-pass note), while the current code writes English — so the
 note is a human-readable trace, and a retry policy must key on the counters, the `events` kinds, and
 the failure class instead.
 
