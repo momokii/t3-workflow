@@ -27,7 +27,9 @@ flowchart LR
 | `board/server.py` + `index.html` | HTTP API and the single-page board | write a ticket outside `store.move`/`store.add` |
 | `scripts/alert.py` | one Telegram alert per failing unit | retry, restart, or decide anything |
 
-T3 remains the owner of projects, threads and runs. This repository reads `statev2.sqlite` for two things only: the project list and recent threads (both read-only, `mode=ro`).
+T3 remains the owner of projects, threads and runs. This repository reads `statev2.sqlite` read-only
+(`mode=ro`, `query_only`) for three things: the project list, recent threads, and the latest run and turn
+item per thread so a card can say what is happening now. Nothing is ever written to it.
 
 ## Data model
 

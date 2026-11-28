@@ -147,7 +147,9 @@ journalctl --user -u t3-watcher -f
 - **Adopt thread** — turns an existing T3 thread into a `ready` ticket that keeps the thread; the
   watcher sends the ticket prompt into that same thread instead of starting a new one.
 - Drag a card between columns, or use the card's **Move** control (a single-pointer alternative required by WCAG 2.2 SC 2.5.7). **Force move** bypasses the state machine and is recorded as a `forced` event.
-- **Report** downloads the ticket's markdown report.
+- **Report** opens a tabbed reader (Summary, Test command, What was asked, Evidence, Independent review,
+  History) with the raw markdown one click away; `/#list`, `/#live-T-xxxx` and `/#report-T-xxxx` are deep
+  links. Blocked cards offer **retry**, open cards **delete** (the report and a snapshot are kept).
 
 ### From the terminal
 

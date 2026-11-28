@@ -606,33 +606,20 @@
       meta.appendChild(missing);
     }
     if (t.status === 'blocked') {
-      const retry = document.createElement('button');
-      retry.type = 'button';
-      retry.className = 'act';
-      retry.textContent = 'retry';
-      retry.title = 'Move this blocked ticket back to Ready and try again';
-      retry.addEventListener('click', () => moveTicket(t.id, 'ready', false));
-      meta.appendChild(retry);
+      meta.appendChild(actButton('retry', 'Move this blocked ticket back to Ready and try again',
+        () => moveTicket(t.id, 'ready', false)));
     }
     if (t.thread_id && ['in-progress', 'testing', 'review', 'done'].includes(t.status)) {
-      const live = document.createElement('button');
-      live.type = 'button';
-      live.className = 'act';
-      live.textContent = t.status === 'done' ? 'history' : 'live';
-      live.title = t.status === 'done'
-        ? 'Read the thread record of how this ticket was done'
-        : 'Follow this ticket\'s thread while it works';
-      live.addEventListener('click', () => openLive(t));
-      meta.appendChild(live);
+      meta.appendChild(actButton(
+        t.status === 'done' ? 'history' : 'live',
+        t.status === 'done' ? 'Read the thread record of how this ticket was done'
+          : 'Follow this ticket\'s thread while it works',
+        () => openLive(t),
+      ));
     }
     if (!['in-progress', 'testing', 'review'].includes(t.status)) {
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'act danger';
-      remove.textContent = 'delete';
-      remove.title = 'Delete this ticket; its report and a snapshot are kept';
-      remove.addEventListener('click', () => deleteTicket(t));
-      meta.appendChild(remove);
+      meta.appendChild(actButton('delete', 'Delete this ticket; its report and a snapshot are kept',
+        () => deleteTicket(t), true));
     }
     if (t.thread_id) {
       const a = document.createElement('a');
@@ -651,12 +638,8 @@
     report.addEventListener('click', (e) => { e.preventDefault(); openReport(t); });
     meta.appendChild(report);
     if (t.status !== 'done') {
-      const edit = document.createElement('button');
-      edit.type = 'button';
-      edit.className = 'act';
-      edit.textContent = 'edit';
+      const edit = actButton('edit', `Edit ${t.id}`, () => openEditDialog(t));
       edit.setAttribute('aria-label', `Edit ${t.id}`);
-      edit.addEventListener('click', () => openEditDialog(t));
       meta.appendChild(edit);
     }
     el.appendChild(meta);
@@ -772,7 +755,7 @@
     toggle.title = viewMode === 'list' ? 'Show the kanban board' : 'Show the tickets as a list';
   }
 
-  function listAction(label, title, handler, danger = false) {
+  function actButton(label, title, handler, danger = false) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'act' + (danger ? ' danger' : '');
@@ -811,26 +794,26 @@
       const actions = document.createElement('td');
       actions.className = 'acts';
       if (ticket.thread_id) {
-        actions.appendChild(listAction(ticket.status === 'done' ? 'history' : 'live',
+        actions.appendChild(actButton(ticket.status === 'done' ? 'history' : 'live',
           'Read the thread', () => openLive(ticket)));
       }
-      actions.appendChild(listAction('report', 'Read the report', () => openReport(ticket)));
+      actions.appendChild(actButton('report', 'Read the report', () => openReport(ticket)));
       if (ticket.status !== 'done') {
-        actions.appendChild(listAction('edit', 'Edit the ticket', () => openEditDialog(ticket)));
+        actions.appendChild(actButton('edit', 'Edit the ticket', () => openEditDialog(ticket)));
       }
       if (ticket.status === 'blocked') {
-        actions.appendChild(listAction('retry', 'Move back to Ready',
+        actions.appendChild(actButton('retry', 'Move back to Ready',
           () => moveTicket(ticket.id, 'ready', false)));
       }
       const approval = approvalFor(ticket);
       if (approval) {
-        actions.appendChild(listAction('approve', 'Approve this ticket',
+        actions.appendChild(actButton('approve', 'Approve this ticket',
           () => decide(approval.approval_id, true)));
-        actions.appendChild(listAction('reject', 'Reject this ticket',
+        actions.appendChild(actButton('reject', 'Reject this ticket',
           () => decide(approval.approval_id, false), true));
       }
       if (!['in-progress', 'testing', 'review'].includes(ticket.status)) {
-        actions.appendChild(listAction('delete', 'Delete the ticket', () => deleteTicket(ticket), true));
+        actions.appendChild(actButton('delete', 'Delete the ticket', () => deleteTicket(ticket), true));
       }
       row.append(id, title, status, priority, project, review, updated, actions);
       body.appendChild(row);
@@ -1143,7 +1126,7 @@
     sections.forEach((section, index) => {
       const tab = document.createElement('button');
       tab.type = 'button';
-      tab.role = 'tab';
+      tab.setAttribute('role', 'tab');
       tab.id = `report-tab-${section.id}`;
       tab.textContent = section.title;
       tab.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
@@ -1155,12 +1138,14 @@
       panel.id = `report-panel-${section.id}`;
       panel.setAttribute('role', 'tabpanel');
       panel.setAttribute('aria-labelledby', tab.id);
+      panel.tabIndex = 0;
       panel.hidden = index !== 0;
       const lead = document.createElement('p');
       lead.className = 'lead';
       lead.textContent = section.lead;
       panel.appendChild(lead);
       const content = document.createElement('div');
+      // The server escapes every ticket field in this HTML (store.report_sections).
       content.innerHTML = section.html;
       panel.appendChild(content);
       body.appendChild(panel);
@@ -1200,6 +1185,7 @@
         const parsed = new DOMParser().parseFromString(page, 'text/html');
         const main = parsed.querySelector('main');
         // Only the <main> content: the standalone page's body/main styles must not leak into the board.
+        // Only our own generated page, and only its <main>: its styles cannot reach the board.
         document.getElementById('report-body').innerHTML = main ? main.innerHTML : page;
         setStatus(document.getElementById('report-status'),
           'Showing the saved report: the ticket row is gone, so the tabbed sections are not available.');

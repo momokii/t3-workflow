@@ -274,7 +274,8 @@ and `/#legend` open those dialogs directly (used for support links and screensho
   shown, or the markdown if that page is missing. On `done` a standalone
   HTML page is written next to the markdown and sent to Telegram as the report document — that page is
   the lightweight, proper report; a PDF would only add a renderer. A report written before the page
-  existed (or a ticket deleted before it) still opens: the dialog falls back to the markdown.
+  existed (or a ticket deleted before it) still opens: the dialog takes the saved page's `<main>` content,
+  and falls back to the markdown only when that page is missing.
 - **thread** opens the thread's details — title, project, status, created time and the raw id — from
   T3's own list, with a copy button. The board mirrors a thread; it does not own it.
 - **Drop a file** onto the attachment zone to copy it here (up to 20 MB, token-guarded) and pass its

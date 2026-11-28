@@ -96,7 +96,8 @@ curl -s http://127.0.0.1:8787/api/tickets | python3 -m json.tool
 
 Each ticket also carries `thread_state` and `review_state` (from T3's latest run and turn item:
 `status`, `last_type`, `last_state`, `last_at`) so a card can say "thread running · command execution ·
-3s ago" without another request.
+3s ago" without another request. `null` means the thread has no run yet or T3's database could not be
+read; the card then says the thread is starting rather than guessing a failure.
 
 `proof` is deliberately absent from this response — it can contain build logs or environment detail. The
 review is trimmed the same way: a ticket exposes `verify_verdict`, `verify_attempt`, `verify_provider`,

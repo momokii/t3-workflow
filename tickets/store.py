@@ -369,8 +369,12 @@ class TicketStore:
         reports_dir = Path(os.environ.get("T3_REPORTS_DIR", REPORTS_DIR))
         target = reports_dir / f"{ticket_id}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self.report(ticket_id), encoding="utf-8")
-        report_page_path(target).write_text(self.report_html(ticket_id, document=True), encoding="utf-8")
+        ticket = self.get(ticket_id)
+        events = self.events(ticket_id)
+        target.write_text(self.report(ticket_id, ticket=ticket, events=events), encoding="utf-8")
+        report_page_path(target).write_text(
+            self.report_html(ticket_id, document=True, ticket=ticket, events=events), encoding="utf-8"
+        )
         self.con.execute(
             "update tickets set report_path=?, updated_at=? where id=?", (str(target), now(), ticket_id)
         )
@@ -681,10 +685,11 @@ class TicketStore:
             return f"{verdict.lower()} · attempt {max(attempt, 1)} of {budget}"
         return f"pending · attempt {attempt} of {budget}"
 
-    def report(self, ticket_id: str, t3_link: str = "") -> str:
+    def report(self, ticket_id: str, t3_link: str = "", ticket: dict | None = None,
+               events: list[dict] | None = None) -> str:
         """Markdown report for a finished (or in-flight) ticket."""
-        ticket = self.get(ticket_id)
-        events = self.events(ticket_id)
+        ticket = ticket or self.get(ticket_id)
+        events = self.events(ticket_id) if events is None else events
         lines = [f"# {ticket['id']} · {ticket['title']}", ""]
         for label, value, mono in self.report_facts(ticket):
             lines.append(f"- **{label}**: {f'`{value}`' if mono else value}")
@@ -737,10 +742,11 @@ class TicketStore:
     def _report_part(anchor: str, title: str, lead: str, content: list[str]) -> dict:
         return {"id": anchor, "title": title, "lead": lead, "html": "\n".join(content)}
 
-    def report_sections(self, ticket_id: str) -> list[dict]:
+    def report_sections(self, ticket_id: str, ticket: dict | None = None,
+                        events: list[dict] | None = None) -> list[dict]:
         """The report as named, introduced sections: the board tabs and the HTML page share them."""
-        ticket = self.get(ticket_id)
-        events = self.events(ticket_id)
+        ticket = ticket or self.get(ticket_id)
+        events = self.events(ticket_id) if events is None else events
         esc = escape
         sections: list[dict] = []
 
@@ -802,11 +808,12 @@ class TicketStore:
         ))
         return sections
 
-    def report_html(self, ticket_id: str, document: bool = False) -> str:
+    def report_html(self, ticket_id: str, document: bool = False, ticket: dict | None = None,
+                    events: list[dict] | None = None) -> str:
         """The report as one page: a fragment for the board, a document for disk and Telegram."""
-        ticket = self.get(ticket_id)
+        ticket = ticket or self.get(ticket_id)
         esc = escape
-        sections = self.report_sections(ticket_id)
+        sections = self.report_sections(ticket_id, ticket=ticket, events=events)
         links = "".join(f'<a href="#{s["id"]}">{esc(s["title"])}</a>' for s in sections)
         body: list[str] = [
             f"<h1>{esc(ticket['id'])} · {esc(ticket['title'])}</h1>",
