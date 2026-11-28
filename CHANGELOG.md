@@ -15,6 +15,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **A usage limit retries itself, within bounds.** T3's error item marks a usage limit permanent but
+  never carries a reset time, so the watcher blocks the ticket with `retry_after` and `quota_attempts`
+  and returns it to `ready` after `retry.quotaBackoffMinutes` (default 60), up to
+  `retry.maxQuotaAttempts` (default 3) windows; then it waits for a person. Context overflow, a removed
+  model and a provider version mismatch still block immediately, because a retry cannot fix them. A
+  successful start clears the quota budget with the other counters.
+
+### Fixed
+
 - **The board reflects a deletion made in T3 instead of silently waiting.** When a ticket's thread is
   gone, the watcher reads the CLI's "no longer available" answer and blocks the ticket with that reason
   (including a deleted reviewer thread); when a ticket's project no longer exists in T3, `GET

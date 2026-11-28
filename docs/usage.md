@@ -132,7 +132,8 @@ The loop is meant to finish without you, so failures are classified rather than 
 | `t3 thread start`/`send` fails to run (crash, timeout, non-JSON) | same retry, with the exit code in the note | `retry.maxThreadAttempts` (3) |
 | The review rejects | findings into the dev thread, one review attempt spent | `verification.maxAttempts` (2) |
 | The ticket has no test command | `blocked` immediately: a retry cannot invent one | — |
-| Provider usage limit, context overflow, model removed, provider version mismatch | `blocked` at once: T3's error item marks these permanent, and a retry would loop for days | — |
+| Provider usage limit | `blocked` with a retry time; the watcher puts it back in `ready` by itself after `retry.quotaBackoffMinutes` | `retry.maxQuotaAttempts` (3), then it waits for you |
+| Context overflow, model removed, provider version mismatch | `blocked` at once: a retry re-sends the same history or needs an upgrade | — |
 | A model or preset is unknown, a remote is missing, a push fails, the reviewer never decides | `blocked`: retrying would loop forever, and a stuck ticket must not starve the queue | — |
 
 Two guards make the loop safe rather than optimistic: the resume anchor (`dev_run_id`) stops the
@@ -268,8 +269,9 @@ The board and T3 are not a mirror that copies deletions; they own different thin
 | Delete a ticket (board, `cli delete --yes`, API with `confirm: true`) | row removed after a `deleted` snapshot; report file kept | the T3 thread is **not** deleted — it is work history T3 owns |
 | Delete a report file by hand | kept | `/api/report/<id>` no longer serves it |
 
-A blocked ticket (including after a usage limit) is retried from its card: **Move → Ready**. That is the
-manual control; nothing else is needed from you.
+A usage limit is retried automatically: the ticket blocks with a time, and the watcher returns it to
+`ready` after `retry.quotaBackoffMinutes` (default 60) until `retry.maxQuotaAttempts` (default 3) windows
+are spent — then it waits for you. Any other blocked ticket is retried from its card: **Move → Ready**.
 
 ## 6. FAQ
 

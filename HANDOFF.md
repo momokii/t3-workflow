@@ -147,7 +147,7 @@ From `AGENTS.md`, repeated because they are the ones that get broken:
 |---|---|---|---|
 | 1 | ~~Edit and delete a ticket~~ | delivered: store + API + CLI + board dialog; a deleted ticket keeps its report and an audit snapshot | done |
 | 2 | ~~Plan acknowledgement~~ | delivered: the bridge forwards the first assistant message of the run, once per run (`plannedRuns` in the bridge state) | done |
-| 3 | **Scheduler for a quota window** — wake a `blocked` ticket after a known reset | only if T3 ever exposes a reset time; today the note carries the message | blocked on T3 |
+| 3 | ~~Scheduler for a quota window~~ | delivered as a bounded backoff (`retry.maxQuotaAttempts` × `retry.quotaBackoffMinutes`), because T3 exposes no reset time | done |
 | 2 | **Per-ticket cost evidence** — investigate what T3 exposes per run before building | a documented finding: where token/usage data lives, or a clear "not available"; then the smallest honest feature | wall-clock budget is the only guard now |
 | 3 | **Deploy + rollback** for one real target | a documented target, a deploy command, a tested rollback, prove with one release | pipeline stops at a pushed branch today |
 | 4 | **Pull-request automation** | needs `gh` or a GitHub token; until then the compare link + `T-xxxx.pr.md` stand | explicitly deferred by the owner |

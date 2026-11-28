@@ -38,8 +38,9 @@ schema or state machine → `docs/architecture.md`, procedures → `docs/operati
     or a tree that changed during the review blocks the ticket — prose is never read as approval.
 11. **Retries are bounded and only for transient failures.** A crashed `t3` call, a dead thread or a
     failing test goes back into the loop (findings into the dev thread) until `retry.maxThreadAttempts`
-    / `retry.maxTestAttempts` is spent, then blocks. A missing test command, an unknown model, a
-    missing remote and a review rejection never retry blindly.
+    / `retry.maxTestAttempts` is spent, then blocks. A usage limit schedules one bounded backoff
+    (`retry.maxQuotaAttempts`, `retry.quotaBackoffMinutes`). A missing test command, an unknown model,
+    a missing remote and a review rejection never retry blindly.
 
 ## Environment
 

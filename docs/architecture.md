@@ -53,6 +53,7 @@ T3 remains the owner of projects, threads and runs. This repository reads `state
 | `verify_started_at`, `verify_finished_at`, `verify_baseline` | text | budget, and the tree fingerprint the verdict belongs to |
 | `dev_attempts`, `test_attempts` | integer | retry budgets: thread failures and failing tests |
 | `dev_run_id` | text | resume anchor: the run the dev thread was on when findings were sent |
+| `retry_after`, `quota_attempts` | text, integer | when a quota-blocked ticket may try again, and how many windows it used |
 | `note` | text | last human or stage note |
 | `created_at`, `updated_at` | text | ISO-8601 UTC |
 
@@ -147,7 +148,8 @@ A failure that a second attempt can plausibly fix goes back into the queue, coun
 | Dev thread reported `failed`/`cancelled`/`interrupted`/`rolled_back` | same retry | `retry.maxThreadAttempts` |
 | Test failed (or timed out) | output tail sent into the dev thread, `in-progress`, findings event | `retry.maxTestAttempts` |
 | Test command empty | `blocked` (a retry cannot fix a missing command) | — |
-| Dev thread failed with a permanent cause (usage limit, context overflow, removed model, provider mismatch) | `blocked` with the error message, no retry | — |
+| Dev thread failed with a usage limit | `blocked` with `retry_after`; `release_due_retries()` in `step()` returns it to `ready` after the window | `retry.maxQuotaAttempts`, `retry.quotaBackoffMinutes` |
+| Dev thread failed with a permanent cause (context overflow, removed model, provider mismatch) | `blocked` with the error message, no retry | — |
 
 When findings are sent, the watcher stores the thread's current `latestRunId` as `dev_run_id`. The sync
 stage refuses `completed`/`idle` → `testing` while the thread is still on that run, so the code that just

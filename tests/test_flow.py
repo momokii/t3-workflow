@@ -404,6 +404,80 @@ class FailureClassificationTests(unittest.TestCase):
         self.assertEqual(stored["status"], "blocked")
         self.assertIn("usage limit", stored["note"])
 
+    def _sync_failed(self, status: str = "failed") -> None:
+        def fake(command, **kwargs):  # noqa: ARG001
+            body = {"thread": {"status": status, "latestRunId": "r1"}}
+            return subprocess.CompletedProcess(command, 0, json.dumps(body), "")
+
+        original = watcher.T3_DB
+        watcher.T3_DB = self.t3_db
+        try:
+            watcher.sync_threads(self.store, CONFIG, runner=fake)
+        finally:
+            watcher.T3_DB = original
+
+    def test_usage_limit_schedules_a_retry_instead_of_stopping(self) -> None:
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+        self.store.attach_thread(ticket["id"], "th-1")
+        self._failure("The usage limit has been reached", "usage_limit")
+        self._sync_failed()
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertTrue(stored["retry_after"])
+        self.assertEqual(stored["quota_attempts"], 1)
+        self.assertIn("retry 1/3", stored["note"])
+
+    def test_a_due_quota_retry_returns_to_ready(self) -> None:
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+        self.store.attach_thread(ticket["id"], "th-1")
+        self._failure("The usage limit has been reached", "usage_limit")
+        self._sync_failed()
+        due = watcher.release_due_retries(self.store, CONFIG, at="2999-01-01T00:00:00+00:00")
+        self.assertEqual(len(due), 1)
+        self.assertEqual(self.store.get(ticket["id"])["status"], "ready")
+        self.assertEqual(self.store.get(ticket["id"])["retry_after"], "")
+
+    def test_a_quota_retry_in_the_future_keeps_waiting(self) -> None:
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+        self.store.attach_thread(ticket["id"], "th-1")
+        self._failure("The usage limit has been reached", "usage_limit")
+        self._sync_failed()
+        self.assertEqual(watcher.release_due_retries(self.store, CONFIG, at="2000-01-01T00:00:00+00:00"), [])
+        self.assertEqual(self.store.get(ticket["id"])["status"], "blocked")
+
+    def test_quota_retries_are_bounded(self) -> None:
+        config = json.loads(json.dumps(CONFIG))
+        config["retry"] = {"maxQuotaAttempts": 1, "quotaBackoffMinutes": 5}
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+        self.store.attach_thread(ticket["id"], "th-1")
+        self._failure("The usage limit has been reached", "usage_limit")
+        original = watcher.T3_DB
+        watcher.T3_DB = self.t3_db
+        try:
+            def fake(command, **kwargs):  # noqa: ARG001
+                return subprocess.CompletedProcess(
+                    command, 0, json.dumps({"thread": {"status": "failed"}}), ""
+                )
+            watcher.sync_threads(self.store, config, runner=fake)
+            watcher.release_due_retries(self.store, config, at="2999-01-01T00:00:00+00:00")
+            self.store.claim(ticket["id"], "watcher")   # the next attempt starts
+            watcher.sync_threads(self.store, config, runner=fake)
+        finally:
+            watcher.T3_DB = original
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertEqual(stored["retry_after"], "")
+        self.assertIn("exhausted", stored["note"])
+
+    def test_context_overflow_does_not_schedule_a_retry(self) -> None:
+        self._failure("Input token count (454749) exceeds the context length")
+        ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
+        self.store.attach_thread(ticket["id"], "th-1")
+        self._sync_failed()
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertEqual(stored["retry_after"], "")
+
     def test_sync_retries_a_transient_failure(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
         self.store.attach_thread(ticket["id"], "th-1")

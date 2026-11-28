@@ -103,6 +103,8 @@ MIGRATIONS = [
     ("tickets", "dev_attempts", "integer not null default 0"),
     ("tickets", "test_attempts", "integer not null default 0"),
     ("tickets", "dev_run_id", "text not null default ''"),
+    ("tickets", "retry_after", "text not null default ''"),
+    ("tickets", "quota_attempts", "integer not null default 0"),
 ]
 
 
@@ -242,8 +244,9 @@ class TicketStore:
                 "use --force to override)"
             )
         self.con.execute(
-            "update tickets set status=?, updated_at=?, note=? where id=?",
-            (status, now(), note or ticket["note"], ticket_id),
+            "update tickets set status=?, updated_at=?, note=?, retry_after=? where id=?",
+            (status, now(), note or ticket["note"], "" if status == "ready" else ticket.get("retry_after", ""),
+             ticket_id),
         )
         kind = "moved" if allowed else "forced"
         self._event(ticket_id, kind, f"{ticket['status']} → {status} {note}".strip())
@@ -423,10 +426,36 @@ class TicketStore:
         self.con.commit()
         return self.get(ticket_id)
 
+    def schedule_retry(self, ticket_id: str, retry_after: str, quota_attempts: int) -> dict:
+        """Block a ticket with a time at which the watcher may try again by itself."""
+        self.con.execute(
+            "update tickets set retry_after=?, quota_attempts=?, updated_at=? where id=?",
+            (retry_after, int(quota_attempts), now(), ticket_id),
+        )
+        self._event(ticket_id, "retry-scheduled", retry_after)
+        self.con.commit()
+        return self.get(ticket_id)
+
+    def due_retries(self, at: str) -> list[dict]:
+        rows = self.con.execute(
+            "select * from tickets where status='blocked' and retry_after != '' and retry_after <= ?"
+            " order by retry_after",
+            (at,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def clear_retry(self, ticket_id: str) -> dict:
+        self.con.execute(
+            "update tickets set retry_after='', updated_at=? where id=?", (now(), ticket_id)
+        )
+        self.con.commit()
+        return self.get(ticket_id)
+
     def reset_attempts(self, ticket_id: str) -> dict:
         """A successful run clears the retry budget, including the resume anchor."""
         self.con.execute(
-            "update tickets set dev_attempts=0, test_attempts=0, dev_run_id='', updated_at=? where id=?",
+            "update tickets set dev_attempts=0, test_attempts=0, dev_run_id='', retry_after='',"
+            " quota_attempts=0, updated_at=? where id=?",
             (now(), ticket_id),
         )
         self.con.commit()

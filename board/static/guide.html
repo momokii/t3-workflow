@@ -129,6 +129,8 @@
         <tr><td>Thread reports failed / cancelled / interrupted</td><td>ticket back to <code>ready</code> for another attempt</td><td><code>retry.maxThreadAttempts</code></td></tr>
         <tr><td>A T3 call crashes, times out or returns unusable JSON</td><td>same retry, with the exit code in the note</td><td><code>retry.maxThreadAttempts</code></td></tr>
         <tr><td>Review rejects</td><td>findings into the dev thread, one review attempt spent</td><td><code>verification.maxAttempts</code></td></tr>
+        <tr><td>Provider usage limit</td><td><code>blocked</code> with a retry time; the watcher returns it to <code>ready</code> itself after the backoff window</td><td><code>retry.maxQuotaAttempts</code></td></tr>
+        <tr><td>Context overflow, model removed, provider version mismatch</td><td><code>blocked</code> at once: a retry re-sends the same history or needs an upgrade</td><td>—</td></tr>
         <tr><td>No test command, unknown model, missing remote, no verdict</td><td><code>blocked</code>: a retry would loop forever</td><td>—</td></tr>
       </tbody>
     </table>
@@ -361,7 +363,9 @@ npm test -- --run</code></pre>
         <tr><td>A ticket (board or CLI)</td><td>row removed after a snapshot; report kept</td><td>untouched: a thread is work history</td></tr>
       </tbody>
     </table>
-    <p>A blocked ticket (a usage limit, a deleted thread) comes back with <strong>Move → Ready</strong> on its card.</p>
+    <p>A usage limit retries itself: the ticket blocks with a retry time and the watcher puts it back in
+    <code>ready</code> after the backoff window, a bounded number of times. Any other blocked ticket comes
+    back with <strong>Move → Ready</strong> on its card.</p>
   </section>
 
   <section id="data">

@@ -27,7 +27,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import sqlite3
 import subprocess
 import sys
@@ -141,6 +141,9 @@ def sync_threads(store: TicketStore, config: dict, runner=None) -> list[str]:
         elif status in ("failed", "cancelled", "interrupted", "rolled_back"):
             failure = thread_failure(thread_id)
             if failure.get("permanent"):
+                if is_quota_failure(failure):
+                    notes.append(schedule_quota_retry(store, ticket, failure, config))
+                    continue
                 detail = failure.get("message") or failure.get("class") or status
                 store.move(ticket["id"], "blocked", f"thread {status}: {detail}"[:200])
                 notes.append(f"{ticket['id']} → blocked (permanent: {detail[:60]})")
@@ -172,7 +175,12 @@ def approval_gate(store: TicketStore, ticket: dict) -> str | None:
 
 # ------------------------------------------------------------- retry policy
 
-RETRY_DEFAULTS = {"maxThreadAttempts": 3, "maxTestAttempts": 3}
+RETRY_DEFAULTS = {
+    "maxThreadAttempts": 3,
+    "maxTestAttempts": 3,
+    "maxQuotaAttempts": 3,
+    "quotaBackoffMinutes": 60,
+}
 
 
 # Failure classes that a retry cannot fix. Measured from T3's own error item; the message is
@@ -234,6 +242,54 @@ def retry_settings(config: dict) -> dict:
     settings = dict(RETRY_DEFAULTS)
     settings.update(config.get("retry") or {})
     return settings
+
+
+QUOTA_MARKERS = ("usage limit", "usage_limit", "usagelimit")
+
+
+def is_quota_failure(failure: dict) -> bool:
+    message = f"{failure.get('class') or ''} {failure.get('message') or ''}".lower()
+    return any(marker in message for marker in QUOTA_MARKERS)
+
+
+def schedule_quota_retry(store: TicketStore, ticket: dict, failure: dict, config: dict) -> str:
+    """Block a quota failure with a time to try again, bounded like every other retry.
+
+    T3 never reports a reset time (`resetAt` is empty for every measured error), so this is
+    a bounded backoff, not a prediction: after `maxQuotaAttempts` windows the ticket waits
+    for a person instead of hammering a quota that may take days to return.
+    """
+    settings = retry_settings(config)
+    attempts = int(ticket.get("quota_attempts") or 0) + 1
+    limit = max(1, int(settings["maxQuotaAttempts"]))
+    message = (failure.get("message") or failure.get("class") or "usage limit")[:120]
+    if attempts > limit:
+        store.move(
+            ticket["id"], "blocked",
+            f"thread failed: {message} (quota retries {limit} exhausted)",
+        )
+        return f"{ticket['id']} → blocked (quota retries exhausted)"
+    when = (
+        datetime.now(timezone.utc)
+        + timedelta(minutes=max(1, int(settings["quotaBackoffMinutes"])))
+    ).isoformat()
+    store.schedule_retry(ticket["id"], when, attempts)
+    store.move(
+        ticket["id"], "blocked",
+        f"usage limit: {message} (retry {attempts}/{limit} at {when[:16]}Z)",
+    )
+    return f"{ticket['id']} → blocked (usage limit, retry {attempts}/{limit} at {when[:16]})"
+
+
+def release_due_retries(store: TicketStore, config: dict, at: str | None = None) -> list[str]:
+    """Put blocked tickets whose quota window has passed back into the queue."""
+    moment = at or datetime.now(timezone.utc).isoformat()
+    notes = []
+    for ticket in store.due_retries(moment):
+        store.clear_retry(ticket["id"])
+        store.move(ticket["id"], "ready", f"retry after quota window ({ticket.get('quota_attempts') or 1})")
+        notes.append(f"{ticket['id']} → ready (quota window passed)")
+    return notes
 
 
 def retry_or_block(store: TicketStore, ticket: dict, reason: str, *, counter: str,
@@ -916,6 +972,8 @@ def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: s
          runner=subprocess.run) -> str:
     """One unit of work: drain `testing` first, then start new work."""
     if not dry_run:
+        for note in release_due_retries(store, config):
+            print(note, flush=True)
         for note in sync_threads(store, config):
             print(note, flush=True)
 
