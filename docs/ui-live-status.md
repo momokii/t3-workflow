@@ -132,9 +132,11 @@ From a finished thread (`1a022144-3688-4c06-a9ba-8f71d7e89984`):
 
 ```
 role=assistant  created_at=2026-11-28T08:01:37.080Z
-text='Selesai, dan sekarang strukturnya benar-benar punya **kontrak integrasi**, bukan sekadar folder
-Markdown.\n\n## Jawaban singkat\n\nSebelumnya:\n- **GET** hanya teks manusia (`brain search`), tidak ada JSON.'
+text='<a status report in the owner's language: 55 words, two Markdown headings, a bullet list>'
 ```
+
+The literal text is paraphrased here because the repository keeps its files in English; the shape is
+what matters for the log (a long assistant message with Markdown, not a single line).
 
 ### How many rows a live thread accumulates `[measured]`
 
