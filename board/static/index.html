@@ -129,7 +129,7 @@
   .btn.danger { border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); color: var(--danger); }
   .btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border-color: var(--danger); color: var(--danger); }
   .btn.primary:hover { filter: brightness(1.06); color: var(--accent-ink); }
-  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); max-height: 88vh; overflow: auto; overflow-x: hidden; box-shadow: var(--shadow); }
+  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; background: var(--surface); color: var(--ink); width: min(520px, 92vw); max-height: 88vh; overflow: auto; box-shadow: var(--shadow); }
   dialog::backdrop { background: rgba(12, 14, 20, .45); }
   dialog form { padding: 18px 18px 16px; display: grid; gap: 12px; }
   dialog h3 { margin: 0; font-size: 16px; }
@@ -137,12 +137,13 @@
   dialog input, dialog select, dialog textarea { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 8px 9px; width: 100%; }
   dialog .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
   dialog .row.actions { position: sticky; bottom: 0; z-index: 1; background: var(--surface);
-    border-top: 1px solid var(--line); padding: 10px 0 2px; }
+    border-top: 1px solid var(--line); padding: 10px 0 6px; }
   dialog .check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-soft); }
   dialog .hint { font-size: 11px; color: var(--ink-soft); margin: -2px 0 0; }
   dialog textarea { min-height: 76px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   dialog .check input { width: auto; }
   dialog.wide { width: min(900px, 94vw); }
+  dialog.mid { width: min(640px, 94vw); }
   .md { padding: 2px 2px 10px; font-size: 14px; line-height: 1.6; max-height: 66vh; overflow: auto; }
   .md h1 { font-size: 20px; margin: 4px 0 10px; }
   .md h2 { font-size: 16px; margin: 18px 0 8px; }
@@ -165,14 +166,13 @@
   dl.facts dt { color: var(--ink-soft); }
   dl.facts dd { margin: 0; word-break: break-all; }
   .fs-path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; overflow-x: auto; white-space: nowrap; }
-  ul.fs { list-style: none; margin: 10px 0; padding: 0; max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 9px; }
+  ul.fs { list-style: none; margin: 10px 0; padding: 0; max-height: 46vh; border: 1px solid var(--line); border-radius: 9px; }
   ul.fs li + li { border-top: 1px solid var(--line); }
   ul.fs button { width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink); display: flex; justify-content: space-between; gap: 8px; }
   ul.fs button:hover, ul.fs button:focus-visible { background: var(--surface-2); }
   ul.fs li .path { color: var(--ink-soft); font-size: 11px; margin-left: 22px; }
-  dialog#dlg-project { width: min(640px, 94vw); }
-  .projects { display: grid; gap: 8px; margin: 4px 0 2px; min-width: 0;
-    max-height: 26vh; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+  .scroller { overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+  .projects { display: grid; gap: 8px; margin: 4px 0 2px; min-width: 0; max-height: 26vh; }
   .project-row { display: flex; justify-content: space-between; gap: 10px; align-items: center;
     border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; min-width: 0; }
   .project-row .meta { font-size: 12px; min-width: 0; flex: 1 1 auto; }
@@ -257,7 +257,7 @@
   </form>
 </dialog>
 
-<dialog id="dlg-project" aria-labelledby="dlg-project-title">
+<dialog id="dlg-project" class="mid" aria-labelledby="dlg-project-title">
   <form method="dialog" id="form-project">
     <h3 id="dlg-project-title">Register project</h3>
     <p class="hint" id="project-load" role="status"></p>
@@ -280,7 +280,7 @@
     <p class="hint">Removing a project deletes it and <strong>all of its threads</strong> in T3 (the CLI's
     <code>project remove --force</code>). Tickets and their reports are kept; their cards then show
     <strong>project missing</strong>. This cannot be undone.</p>
-    <div class="projects" id="project-rows"></div>
+    <div class="projects scroller" id="project-rows" role="group" aria-label="Existing projects" tabindex="0"></div>
     <p class="hint" id="project-status" role="status"></p>
     <div class="row actions"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Register</button></div>
   </form>
@@ -336,7 +336,7 @@
     <h3 id="dlg-fs-title">Choose a folder</h3>
     <p class="hint" id="fs-hint" role="status"></p>
     <div class="fs-path" id="fs-path"></div>
-    <ul class="fs" id="fs-list"></ul>
+    <ul class="fs scroller" id="fs-list"></ul>
     <div class="row">
       <button class="btn" type="button" id="fs-up">Up</button>
       <button class="btn" type="button" id="fs-home">Home</button>
@@ -472,8 +472,8 @@
     const label = document.createElement('label');
     label.htmlFor = `move-${t.id}`;
     label.textContent = 'Move';
-    label.title = 'Only the transitions the state machine allows are listed.';
     const sel = document.createElement('select');
+    sel.title = 'Only the transitions the state machine allows are listed.';
     sel.id = `move-${t.id}`;
     const allowed = state.transitions[t.status] || [];
     const placeholder = document.createElement('option');
@@ -859,7 +859,7 @@
         remove.type = 'button';
         remove.className = 'btn danger';
         remove.textContent = 'Remove…';
-        remove.title = 'Removes this project and every thread in it from T3 (typed confirmation).';
+
         remove.addEventListener('click', () => removeProject(project));
         row.append(meta, remove);
         rows.appendChild(row);
@@ -1195,10 +1195,18 @@
     } catch (err) { say(err.message, true); }
   });
 
-  // for visual checks: /#new opens the ticket dialog
-  if (location.hash === '#new') openTicketDialog().catch(() => {});
-  if (location.hash === '#projects') openProjectDialog();
-  if (location.hash === '#adopt') openAdoptDialog().catch(() => {});
+  // deep links for support and visual checks: /#new, /#adopt, /#projects
+  const deepLinks = { '#new': openTicketDialog, '#adopt': openAdoptDialog, '#projects': openProjectDialog };
+  if (deepLinks[location.hash]) {
+    try {
+      const opened = deepLinks[location.hash]();
+      if (opened && typeof opened.catch === 'function') {
+        opened.catch((err) => say(err.message || String(err), true));
+      }
+    } catch (err) {
+      say(err.message || String(err), true);
+    }
+  }
 
   q.addEventListener('input', render);
   projectSel.addEventListener('change', render);

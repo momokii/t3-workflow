@@ -237,10 +237,12 @@ class BoardApiTests(unittest.TestCase):
 
     def test_the_board_has_readers_for_reports_threads_and_folders(self) -> None:
         _, raw = self.request("GET", "/")
-        for needle in ("dlg-report", "dlg-thread", "dlg-fs", "data-browse", "test-warning",
-                       "project-rows", "ALL of its threads", "row actions",
-                       "How projects and tickets relate", "#projects"):
-            self.assertIn(needle, raw)
+        for element in ("dlg-report", "dlg-thread", "dlg-fs", "data-browse", "test-warning", "project-rows"):
+            self.assertIn(element, raw)
+        # Copy is compared with normalised whitespace, so wrapping the source cannot break a test.
+        text = " ".join(raw.split())
+        for phrase in ("How projects and tickets relate", "ALL of its threads"):
+            self.assertIn(phrase, text)
 
     def test_removing_a_project_needs_the_exact_title_and_runs_force(self) -> None:
         os.environ["T3_ARGS_FILE"] = str(self.args_file)

@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- **The Register-project dialog broke when the project list grew.** It now has its own scroll region
+  (`max-height`, shared `.scroller` styling with the folder picker), long paths ellipsize instead of
+  widening the dialog, the action row is sticky with room for a focus ring, and the dialog no longer
+  masks overflow with `overflow-x: hidden`. The list is keyboard-reachable (`tabindex`, `role=group`,
+  label), deep links (`/#new`, `/#adopt`, `/#projects`) share one handler that reports a failure, and
+  the Move control carries its explanation on the select rather than on a label that never receives
+  the tooltip.
+
 - **The review label on a card no longer shows a fraction that means nothing.** An acceptance reads
   `review accept · first attempt`; only a rejection shows the budget (`reject · attempt 1 of 2`). The
   label is computed once on the server (`review_label`), so the card, the markdown report and the HTML
