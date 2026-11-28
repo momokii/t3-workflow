@@ -13,6 +13,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- **The watcher crashed in production while polling a thread.** The service calls `sync_threads()`
+  without a runner; that `None` reached `thread_show()` as the callable and raised `TypeError`,
+  exiting the unit mid-loop twenty seconds after it started the dev thread. Both functions normalise
+  `runner or subprocess.run`, and a regression test asserts the callable reaches the polling helper.
+  Found by the first real end-to-end run (`T-0004`), not by the hermetic suite.
+- Successful report delivery is audited (`{"action": "report"}`) and logged, so a delivered document
+  can be told apart from a silent one.
+
 ### Added
 
 - **Retries are classified, not guessed.** The watcher reads the last run's error item from T3's
