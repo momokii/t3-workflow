@@ -614,7 +614,7 @@
       retry.addEventListener('click', () => moveTicket(t.id, 'ready', false));
       meta.appendChild(retry);
     }
-    if (t.thread_id) {
+    if (t.thread_id && ['in-progress', 'testing', 'review', 'done'].includes(t.status)) {
       const live = document.createElement('button');
       live.type = 'button';
       live.className = 'act';
@@ -625,7 +625,7 @@
       live.addEventListener('click', () => openLive(t));
       meta.appendChild(live);
     }
-    if (t.status !== 'done') {
+    if (!['in-progress', 'testing', 'review'].includes(t.status)) {
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'act danger';
@@ -695,21 +695,14 @@
       el.appendChild(retry);
     }
 
-    const threadState = t.status === 'review' && t.review_state
-      ? ['reviewer', t.review_state]
-      : (t.thread_state ? ['thread', t.thread_state] : null);
-    if (threadState) {
+    const stage = stageLine(t);
+    if (stage) {
       const line = document.createElement('div');
       line.className = 'state-line';
       const dot = document.createElement('span');
-      const status = threadState[1].status || 'unknown';
-      dot.className = 'dot ' + (['running', 'queued', 'preparing', 'starting'].includes(status) ? 'running'
-        : ['completed', 'idle'].includes(status) ? 'ok'
-        : ['failed', 'cancelled', 'interrupted', 'rolled_back'].includes(status) ? 'fail' : '');
+      dot.className = 'dot ' + stage.dot;
       const text = document.createElement('span');
-      text.textContent = `${threadState[0]} ${status}` +
-        (threadState[1].last_type ? ` · ${threadState[1].last_type.replaceAll('_', ' ')}` : '') +
-        (threadState[1].last_at ? ` · ${relativeTime(threadState[1].last_at)}` : '');
+      text.textContent = stage.text;
       line.append(dot, text);
       el.appendChild(line);
     }
@@ -829,7 +822,14 @@
         actions.appendChild(listAction('retry', 'Move back to Ready',
           () => moveTicket(ticket.id, 'ready', false)));
       }
-      if (ticket.status !== 'done') {
+      const approval = approvalFor(ticket);
+      if (approval) {
+        actions.appendChild(listAction('approve', 'Approve this ticket',
+          () => decide(approval.approval_id, true)));
+        actions.appendChild(listAction('reject', 'Reject this ticket',
+          () => decide(approval.approval_id, false), true));
+      }
+      if (!['in-progress', 'testing', 'review'].includes(ticket.status)) {
         actions.appendChild(listAction('delete', 'Delete the ticket', () => deleteTicket(ticket), true));
       }
       row.append(id, title, status, priority, project, review, updated, actions);
@@ -841,6 +841,7 @@
 
   function render() {
     syncViewToggle();
+    renderCounts();
     if (viewMode === 'list') {
       board.hidden = true;
       document.getElementById('list-view').hidden = false;
@@ -890,6 +891,9 @@
       for (const ticket of items) col.appendChild(card(ticket));
       board.appendChild(col);
     }
+  }
+
+  function renderCounts() {
     if ((state.approvalCount || 0) > 0) {
       counts.innerHTML = `<span class="chip" style="border-color:var(--warn);color:var(--warn)">Approvals: ${state.approvalCount}</span>`;
     } else {
@@ -1192,12 +1196,27 @@
       try {
         const response = await track(fetch(`/api/report/${ticket.id}?format=html`, { cache: 'no-store' }));
         if (!response.ok) throw err;
-        document.getElementById('report-body').innerHTML = await response.text();
+        const page = await response.text();
+        const parsed = new DOMParser().parseFromString(page, 'text/html');
+        const main = parsed.querySelector('main');
+        // Only the <main> content: the standalone page's body/main styles must not leak into the board.
+        document.getElementById('report-body').innerHTML = main ? main.innerHTML : page;
         setStatus(document.getElementById('report-status'),
-          'Showing the saved report page: the ticket row is gone, so sections are not available.');
+          'Showing the saved report: the ticket row is gone, so the tabbed sections are not available.');
       } catch {
-        setStatus(document.getElementById('report-status'),
-          'Could not load the report: ' + (err.message || err));
+        try {
+          const response = await track(fetch(`/api/report/${ticket.id}`, { cache: 'no-store' }));
+          if (!response.ok) throw err;
+          const pre = document.createElement('pre');
+          pre.textContent = await response.text();
+          document.getElementById('report-body').textContent = '';
+          document.getElementById('report-body').appendChild(pre);
+          setStatus(document.getElementById('report-status'),
+            'Showing the markdown report: no rendered page was saved for this ticket.');
+        } catch {
+          setStatus(document.getElementById('report-status'),
+            'Could not load the report: ' + (err.message || err));
+        }
       }
     }
   }
@@ -1521,6 +1540,44 @@
     const minutes = Math.round(seconds / 60);
     if (minutes < 90) return `${minutes}m ago`;
     return `${Math.round(minutes / 60)}h ago`;
+  }
+
+  function dotFor(status) {
+    if (['running', 'queued', 'preparing', 'starting'].includes(status)) return 'running';
+    if (['completed', 'idle'].includes(status)) return 'ok';
+    if (['failed', 'cancelled', 'interrupted', 'rolled_back'].includes(status)) return 'fail';
+    return '';
+  }
+
+  function stepSuffix(state) {
+    return (state.last_type ? ` · ${state.last_type.replaceAll('_', ' ')}` : '') +
+      (state.last_at ? ` · ${relativeTime(state.last_at)}` : '');
+  }
+
+  function stageLine(ticket) {
+    if (ticket.status === 'ready') return { dot: '', text: 'queued for the watcher' };
+    if (ticket.status === 'testing') {
+      return { dot: 'running', text: 'running the test command…' };
+    }
+    if (ticket.status === 'review') {
+      if (ticket.review_state) {
+        const status = ticket.review_state.status || 'unknown';
+        return { dot: dotFor(status), text: `reviewer ${status}${stepSuffix(ticket.review_state)}` };
+      }
+      return { dot: 'running', text: 'review queued — starting the reviewer…' };
+    }
+    if (ticket.status === 'in-progress') {
+      if (ticket.thread_state) {
+        return { dot: dotFor(ticket.thread_state.status), text:
+          `thread ${ticket.thread_state.status}${stepSuffix(ticket.thread_state)}` };
+      }
+      return { dot: 'running', text: 'claimed — starting the thread…' };
+    }
+    if (ticket.thread_state) {
+      const status = ticket.thread_state.status || 'unknown';
+      return { dot: dotFor(status), text: `thread ${status}${stepSuffix(ticket.thread_state)}` };
+    }
+    return null;
   }
 
   async function deleteTicket(ticket) {
@@ -1879,7 +1936,6 @@
   };
   if (location.hash === '#list') {
     viewMode = 'list';
-    localStorage.setItem('boardView', 'list');
     render();
   }
   const liveHash = location.hash.match(/^#live-(T-\d+)$/);

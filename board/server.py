@@ -461,7 +461,7 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             wanted = (query.get("format") or [""])[0].lower()
             as_html = wanted == "html"
-            as_json = wanted in ("json", "sections")
+            as_json = wanted == "json"
             store = self._store()
             kind = "text/html; charset=utf-8" if as_html else "text/markdown; charset=utf-8"
             if as_json:
