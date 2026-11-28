@@ -275,6 +275,7 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertIn("text/html", response.headers.get("Content-Type", ""))
         self.assertIn("Independent review", raw)
+        self.assertIn("Started", raw)   # the two renderers share one fact list
         self.assertIn("&lt;script&gt;", raw)
         self.assertNotIn("<script>alert(1)</script>", raw)
 
