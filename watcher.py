@@ -406,7 +406,7 @@ def run_once(
             )
         preview = [
             t3_cli, "thread", "start", project_path(ticket["project"]), "-",
-            "--title", ticket["title"][:70], "--provider", profile["provider"],
+            "--title", f"{ticket['id']} · {ticket['title'][:60]}", "--provider", profile["provider"],
             "--model", profile["model"], "--json",
         ]
         return (
@@ -438,7 +438,7 @@ def run_once(
         return f"{ticket['id']} → continuing thread {ticket['thread_id']} (profile {profile['name']})"
 
     command = [t3_cli, "thread", "start", project_path(ticket["project"]), "-",
-               "--title", ticket["title"][:70],
+               "--title", f"{ticket['id']} · {ticket['title'][:60]}",
                "--provider", profile["provider"], "--model", profile["model"], "--json"]
     try:
         proc = runner(command, input=prompt, capture_output=True, text=True, timeout=300)
@@ -754,7 +754,7 @@ def start_verification(store: TicketStore, ticket: dict, config: dict, t3_cli: s
     baseline = project_fingerprint(path)
     command = [
         t3_cli, "thread", "start", path, "-",
-        "--title", f"Review {ticket['id']}: {ticket['title'][:50]}",
+        "--title", f"{ticket['id']} · review · {ticket['title'][:50]}",
         "--provider", selection["provider"], "--model", selection["model"], "--json",
     ]
     try:

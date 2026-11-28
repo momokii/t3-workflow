@@ -246,12 +246,21 @@ defaults remove the typing, not the proof.
 
 ### Watching the watcher
 
+The header is grouped: ticket actions, watcher/operations, then search, project and **time zone**.
+Timestamps are stored and returned in UTC; the selector only changes the display (UTC, WIB, WITA, WIT or
+the browser's zone) and is remembered. A thread started by the watcher is titled `<ticket id> · <title>`
+(and `<ticket id> · review · …` for the reviewer), so T3's own sidebar shows which threads belong to the
+automation.
+
 The header carries the watcher's heartbeat (`watcher: 12s ago`), written by every loop and by a
 one-shot step. While a step runs it says `checking (Ns)` — a step may legitimately take the test timeout,
 so that is not called stale until 2 000 seconds. Otherwise it turns amber with `(stale)` after three
 intervals, and its tooltip carries the last message. **Check now** runs `watcher.py --once` immediately
 (the claim is atomic, so it cannot double-start a ticket) and shows its last line. Cards for tickets with
-a thread gain a **history** control once done, and every ticket's card carries a stage line: `queued for
+a thread gain a **history** control once done. The live modal has a thread selector (implementation or
+review), merges that thread's steps and messages in time order, and — when the thread is `waiting` —
+offers an answer box that sends the reply and resumes the ticket without re-sending the prompt. Every
+ticket's card carries a stage line: `queued for
 the watcher`, `running the test command…`, `review queued — starting the reviewer…`, `reviewer running ·
 …`, or `thread running · command execution · 3s ago`. The **list** switch in the header shows the same
 tickets as a table (id, title, status, priority, project, review, updated, actions), keeps the status
@@ -278,8 +287,9 @@ and `/#legend` open those dialogs directly (used for support links and screensho
   and falls back to the markdown only when that page is missing.
 - **thread** opens the thread's details — title, project, status, created time and the raw id — from
   T3's own list, with a copy button. The board mirrors a thread; it does not own it.
-- **Drop a file** onto the attachment zone to copy it here (up to 20 MB, token-guarded) and pass its
-  path to the agent, or use the picker.
+- **Drop a file** onto the attachment zone to copy it here (up to 20 MB, token-guarded); the zone shows
+  a thumbnail for images or the file name and size, with a Remove button, and passes the stored path to
+  the agent. The picker offers the same.
 - **Browse…** next to an attachment or a project path opens a folder picker that reads this machine,
   starting at your home directory. It lists names only, refuses `/proc`, `/sys`, `/dev`, `/root`,
   `/boot`, `/run` and hidden directories, and requires the board token; pick a file for an attachment,

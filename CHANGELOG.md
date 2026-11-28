@@ -49,6 +49,17 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **The board can answer a waiting thread.** `POST /api/tickets/<id>/answer` sends the owner's reply into
+  the implementation or review thread, records an `answered` event, and resumes a blocked ticket
+  (`ready` + claim) without letting the watcher send the prompt again. The live modal merges a thread's
+  steps and messages into one timeline, selects between implementation and review, and shows the answer
+  box only while the thread is `waiting`.
+- **Time zone and a tidier header.** A remembered selector converts displayed timestamps (UTC, WIB, WITA,
+  WIT, browser local); the header is grouped into actions, operations and filters instead of one long row.
+  Attachment drops show an image thumbnail or name + size with Remove.
+- **Automation is visible in T3 itself.** Watcher-created threads are titled `<T-xxxx> · title` and
+  `<T-xxxx> · review · title`; reviewer findings render as sanitised Markdown instead of raw text.
+
 - **Cards say which stage is running, not a raw T3 status.** `queued for the watcher`, `running the
   test command…`, `review queued — starting the reviewer…`, `reviewer …`, or the thread's last step, so
   "loading" is distinguishable from "finished". Delete is offered on backlog/ready/blocked/done but never

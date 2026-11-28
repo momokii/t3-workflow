@@ -202,9 +202,12 @@ npm test -- --run</code></pre>
   <section id="fields">
     <h2>What each ticket field does</h2>
     <p>The header shows when the watcher last checked and turns amber when that is stale; <strong>Check
-    now</strong> runs one step immediately. Every card carries a stage line (queued, running the test
-    command, starting the reviewer, reviewer running, or the thread's last step and age) and a
-    <strong>live</strong> control — <strong>history</strong> once done —
+    now</strong> runs one step immediately. The live modal selects between the implementation and review
+    thread, shows their steps and messages in one timeline, and lets you answer a thread that is waiting.
+    Timestamps follow the header's time-zone selector; the API stays UTC. The watcher titles its threads
+    with the ticket id, so they are recognisable in T3 itself. Every card carries a stage line (queued,
+    running the test command, starting the reviewer, reviewer running, or the thread's last step and age)
+    and a <strong>live</strong> control — <strong>history</strong> once done —
     that follows the thread's turn items and messages. The <strong>List</strong> switch shows the same
     tickets as a table; blocked cards have <strong>retry</strong>, open cards have <strong>delete</strong>. The report is split into Summary, Test command, What was asked, Evidence,
     Independent review and History, each with a sentence saying what it proves.</p>

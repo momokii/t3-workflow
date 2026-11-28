@@ -117,6 +117,71 @@ def migrate(con: sqlite3.Connection) -> None:
     con.commit()
 
 
+def markdown_to_html(text: str) -> str:
+    """A small, safe renderer for the prose the app stores (findings, ticket context).
+
+    Everything is escaped first; only the shapes this repository writes are recognised: headings,
+    unordered lists, fenced code, bold, inline code and links. Anything else stays as a paragraph.
+    """
+    import re as _re
+
+    def inline(value: str) -> str:
+        value = escape(value)
+        value = _re.sub(r"`([^`]+)`", r"<code>\1</code>", value)
+        value = _re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", value)
+        value = _re.sub(r"\[([^\]]+)\]\((https?[^)\s]+)\)", r'<a href="\2" rel="noopener">\1</a>', value)
+        return value
+
+    lines = (text or "").replace("\r\n", "\n").split("\n")
+    out: list[str] = []
+    in_code = False
+    code: list[str] = []
+    list_open = False
+    for line in lines:
+        if line.startswith("```"):
+            if not in_code:
+                if list_open:
+                    out.append("</ul>")
+                    list_open = False
+                in_code, code = True, []
+            else:
+                out.append(f"<pre><code>{escape(chr(10).join(code))}</code></pre>")
+                in_code = False
+            continue
+        if in_code:
+            code.append(line)
+            continue
+        if not line.strip():
+            if list_open:
+                out.append("</ul>")
+                list_open = False
+            continue
+        match = _re.match(r"^(#{1,4})\s+(.*)$", line)
+        if match:
+            if list_open:
+                out.append("</ul>")
+                list_open = False
+            level = len(match.group(1))
+            out.append(f"<h{level}>{inline(match.group(2))}</h{level}>")
+            continue
+        match = _re.match(r"^\s*[-*]\s+(.*)$", line)
+        if match:
+            if not list_open:
+                out.append("<ul>")
+                list_open = True
+            out.append(f"<li>{inline(match.group(1))}</li>")
+            continue
+        if list_open:
+            out.append("</ul>")
+            list_open = False
+        out.append(f"<p>{inline(line)}</p>")
+    if in_code:
+        out.append(f"<pre><code>{escape(chr(10).join(code))}</code></pre>")
+    if list_open:
+        out.append("</ul>")
+    return "\n".join(out)
+
+
 class TicketError(Exception):
     """Raised for a rejected operation; the message is meant for the operator."""
 
@@ -789,7 +854,8 @@ class TicketStore:
                 review.append(f"<dt>{esc(label)}</dt><dd>{shown}</dd>")
             review.append("</dl>")
             if ticket.get("verify_findings"):
-                review += ["<h3>Findings</h3>", f"<pre>{esc(ticket['verify_findings'])}</pre>"]
+                review += ["<h3>Findings</h3>",
+                           f'<div class="findings">{markdown_to_html(ticket["verify_findings"])}</div>']
             sections.append(self._report_part(
                 "review", "Independent review",
                 "A second thread, in a fresh context, judged the work against the ticket and the "

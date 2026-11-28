@@ -437,10 +437,11 @@ class BoardApiTests(unittest.TestCase):
         response, raw = self.request("GET", "/api/tickets/T-0002/live", token="secret")
         self.assertEqual(response.status, 200, raw)
         payload = json.loads(raw)
-        self.assertEqual(payload["thread"]["status"], "running")
-        self.assertEqual(payload["thread"]["model"], "pi/m")
-        self.assertIn("working on it", payload["messages"][0]["text"])
-        self.assertEqual(payload["activity"][0]["type"], "command_execution")
+        implementation = next(item for item in payload["threads"] if item["role"] == "implementation")
+        self.assertEqual(implementation["thread"]["status"], "running")
+        self.assertEqual(implementation["thread"]["model"], "pi/m")
+        self.assertIn("working on it", implementation["messages"][0]["text"])
+        self.assertEqual(implementation["activity"][0]["type"], "command_execution")
 
     def test_live_status_needs_a_thread(self) -> None:
         response, _ = self.request("GET", "/api/tickets/T-0001/live", token="secret")
@@ -463,7 +464,8 @@ class BoardApiTests(unittest.TestCase):
     def test_the_board_has_confirm_dialogs_and_a_drop_zone(self) -> None:
         _, raw = self.request("GET", "/")
         for needle in ('id="dlg-confirm"', 'id="attachment-drop"', 'id="watcher"',
-                       'id="dlg-live"', 'id="live-activity"', 'class="req"'):
+                       'id="dlg-live"', 'id="live-thread"', 'id="live-answer"',
+                       'id="attachment-preview"', 'id="timezone"', 'class="req"'):
             self.assertIn(needle, raw)
 
     def test_the_report_is_available_as_named_sections(self) -> None:
@@ -497,6 +499,35 @@ class BoardApiTests(unittest.TestCase):
         for needle in ('id="report-tabs"', 'id="list-view"', 'id="view-toggle"',
                        "renderReportTabs", "renderList"):
             self.assertIn(needle, raw)
+
+    def test_findings_are_rendered_but_escaped(self) -> None:
+        store = TicketStore(self.db, self.config)
+        store.attach_verifier("T-0001", "rev-1", "run-1", "pi", "m", "base")
+        store.record_verdict("T-0001", "REJECT", "**Wrong**\n\n- `app.py:1` fails\n- <script>x</script>")
+        store.close()
+        _, raw = self.request("GET", "/api/report/T-0001?format=json")
+        review = next(section for section in json.loads(raw)["sections"] if section["id"] == "review")
+        self.assertIn("<strong>Wrong</strong>", review["html"])
+        self.assertIn("<li><code>app.py:1</code> fails</li>", review["html"])
+        self.assertNotIn("**Wrong**", review["html"])
+        self.assertIn("&lt;script&gt;", review["html"])
+
+    def test_an_answer_resumes_a_blocked_ticket(self) -> None:
+        os.environ["T3_ARGS_FILE"] = str(self.args_file)
+        con = sqlite3.connect(self.db)
+        con.execute("update tickets set status='blocked', thread_id='th-1' where id='T-0001'")
+        con.commit(); con.close()
+        response, raw = self.request(
+            "POST", "/api/tickets/T-0001/answer", {"thread": "implementation", "text": "use PostgreSQL"},
+            token="secret",
+        )
+        self.assertEqual(response.status, 200, raw)
+        ticket = json.loads(raw)["ticket"]
+        self.assertEqual(ticket["status"], "in-progress")
+        events = TicketStore(self.db, self.config).events("T-0001")
+        answered = next(event for event in events if event["kind"] == "answered")
+        self.assertIn("use PostgreSQL", answered["detail"])
+        self.assertIn("th-1", self.args_file.read_text() or "")
 
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")

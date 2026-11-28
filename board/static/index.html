@@ -42,6 +42,7 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--bg); color: var(--ink); }
   body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif; }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
@@ -53,7 +54,11 @@
   .counts { display: flex; gap: 8px; flex-wrap: wrap; }
   .chip { font-size: 12px; color: var(--ink-soft); background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
   .spacer { flex: 1 1 auto; }
-  .controls { display: flex; gap: 8px; align-items: center; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .controls .group { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .controls .group + .group { border-left: 1px solid var(--line); padding-left: 12px; }
+  .controls .btn { white-space: nowrap; }
+  @media (max-width: 980px) { .controls .group + .group { border-left: 0; padding-left: 0; } }
   input[type="search"], select.filter {
     font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
     border-radius: 10px; padding: 8px 10px; min-width: 180px;
@@ -211,12 +216,20 @@
   .live .msg.assistant { border-left: 3px solid var(--accent); }
   .live .role { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); display: block; margin-bottom: 4px; }
   .live .group { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); margin-top: 4px; }
-  .activity-strip { display: grid; gap: 3px; margin: 6px 0 2px; }
-  .activity-strip .step { display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 4px 8px;
+  #live-thread { margin: 2px 0 6px; }
+  .answer { border: 1px solid var(--accent); border-radius: 9px; padding: 10px 12px; margin: 10px 0 4px; }
+  .answer textarea { min-height: 64px; }
+  .live .step { display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 5px 8px;
     border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
-  .activity-strip .step.running { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
-  .activity-strip .kind { font-weight: 600; }
-  .activity-strip .when { color: var(--ink-soft); margin-left: auto; font-size: 11px; }
+  .live .step.running { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  .live .step .kind { font-weight: 600; }
+  .live .step .when { color: var(--ink-soft); margin-left: auto; font-size: 11px; }
+  .attach { display: flex; gap: 10px; align-items: center; margin-top: 8px;
+    border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+  .attach img { width: 56px; height: 56px; object-fit: cover; border-radius: 7px; display: block; }
+  .attach .meta { flex: 1 1 auto; min-width: 0; }
+  .attach .name { font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attach .size { font-size: 11px; color: var(--ink-soft); }
   .live .step { display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 3px 2px; border-bottom: 1px dashed var(--line); }
   .live .step .kind { font-weight: 600; }
   .live .step .when { color: var(--ink-soft); margin-left: auto; font-size: 11px; }
@@ -263,22 +276,36 @@
     <div class="counts" id="counts" aria-label="Status summary"></div>
     <div class="spacer"></div>
     <div class="controls">
-      <button class="btn primary" id="new-ticket" type="button">＋ Ticket</button>
-      <button class="btn" id="adopt-thread" type="button">Adopt thread</button>
-      <button class="btn" id="new-project" type="button">Register project</button>
-      <button class="btn icon" id="legend" type="button"
-        aria-label="What the columns, priorities and badges mean">?</button>
-      <span class="chip watcher" id="watcher" title="Last watcher check">watcher: unknown</span>
-      <button class="btn" id="check-now" type="button" title="Run one watcher step now">Check now</button>
-      <button class="btn" id="view-toggle" type="button" title="Switch between the board and a list">List</button>
-      <a class="btn guide" href="/guide" aria-label="Open the guide: how tickets, reviews and releases work">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15"/><path d="M8 7h8M8 11h6"/></svg>
-        Guide
-      </a>
-      <label class="sr-only" for="q">Search tickets</label>
-      <input id="q" type="search" placeholder="Search title, id, project…" autocomplete="off">
-      <label class="sr-only" for="project">Filter by project</label>
-      <select id="project" class="filter"><option value="">All projects</option></select>
+      <div class="group actions">
+        <button class="btn primary" id="new-ticket" type="button">＋ Ticket</button>
+        <button class="btn" id="adopt-thread" type="button">Adopt thread</button>
+        <button class="btn" id="new-project" type="button">Register project</button>
+      </div>
+      <div class="group operations">
+        <span class="chip watcher" id="watcher" title="Last watcher check">watcher: unknown</span>
+        <button class="btn" id="check-now" type="button" title="Run one watcher step now">Check now</button>
+        <button class="btn" id="view-toggle" type="button" title="Switch between the board and a list">List</button>
+        <button class="btn icon" id="legend" type="button"
+          aria-label="What the columns, priorities and badges mean">?</button>
+        <a class="btn guide" href="/guide" aria-label="Open the guide: how tickets, reviews and releases work">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15"/><path d="M8 7h8M8 11h6"/></svg>
+          Guide
+        </a>
+      </div>
+      <div class="group filters">
+        <label class="sr-only" for="q">Search tickets</label>
+        <input id="q" type="search" placeholder="Search title, id, project…" autocomplete="off">
+        <label class="sr-only" for="project">Filter by project</label>
+        <select id="project" class="filter"><option value="">All projects</option></select>
+        <label class="sr-only" for="timezone">Time zone</label>
+        <select id="timezone" class="filter" title="Times are stored in UTC; this only changes the display">
+          <option value="UTC">UTC</option>
+          <option value="Asia/Jakarta">WIB · UTC+7</option>
+          <option value="Asia/Makassar">WITA · UTC+8</option>
+          <option value="Asia/Jayapura">WIT · UTC+9</option>
+          <option value="local">Browser local</option>
+        </select>
+      </div>
     </div>
   </div>
 </header>
@@ -315,6 +342,7 @@
         <button class="btn" type="button" data-browse="ticket:attachment_path" data-mode="file">Browse files…</button>
         — the file is copied to this machine and its path is passed to the agent.</p>
       <p class="hint" id="attachment-status" role="status"></p>
+      <div class="attach" id="attachment-preview" hidden></div>
     </div>
     <label>Test command (optional) <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
     <p class="hint">Run by the watcher in the project folder after the agent finishes: exit code 0 is the proof, anything else sends the ticket back. Prefilled from the project's defaults when configured. <a href="/guide#test-command">Why this field exists</a>.</p>
@@ -407,8 +435,18 @@
   <form method="dialog">
     <h3 id="dlg-live-title">Live</h3>
     <p class="hint" id="live-status" role="status"></p>
-    <div class="activity-strip" id="live-activity" aria-label="What the thread is doing now"></div>
+    <label class="sr-only" for="live-thread">Thread</label>
+    <select id="live-thread" class="filter" title="This ticket can own an implementation thread and a review thread"></select>
     <div class="live" id="live-log" aria-live="off"></div>
+    <div id="live-answer" class="answer" hidden>
+      <label>Answer the thread's question
+        <textarea id="live-answer-text" placeholder="Type the answer; it is sent into this thread"></textarea>
+      </label>
+      <div class="row"><span class="hint">The ticket resumes as in-progress; the watcher does not send the prompt again.</span>
+        <span class="spacer"></span>
+        <button class="btn primary" type="button" id="live-answer-send">Send answer</button>
+      </div>
+    </div>
     <div class="row actions">
       <button class="btn" type="button" id="live-refresh">Refresh</button>
       <span class="spacer"></span>
@@ -687,6 +725,7 @@
       const text = document.createElement('span');
       text.textContent = stage.text;
       line.append(dot, text);
+      if (t.thread_state && t.thread_state.last_at) line.title = stamp(t.thread_state.last_at, true);
       el.appendChild(line);
     }
 
@@ -793,6 +832,7 @@
       review.textContent = ticket.review_label || '';
       const updated = document.createElement('td');
       updated.textContent = relativeTime(ticket.updated_at);
+      updated.title = stamp(ticket.updated_at, true);
       const actions = document.createElement('td');
       actions.className = 'acts';
       if (ticket.thread_id) {
@@ -992,6 +1032,7 @@
     const submit = form.querySelector('button[type="submit"]');
     editingId = null;
     form.reset();
+    renderAttachmentPreview('', 0, null);
     document.getElementById('dlg-ticket-title').textContent = 'New ticket';
     submit.textContent = 'Create ticket';
     document.getElementById('delete-ticket').hidden = true;
@@ -1432,6 +1473,45 @@
     document.getElementById('dlg-confirm-ok').click();
   });
 
+  let attachmentObjectUrl = null;
+
+  function renderAttachmentPreview(name, size, file) {
+    const box = document.getElementById('attachment-preview');
+    box.textContent = '';
+    if (attachmentObjectUrl) URL.revokeObjectURL(attachmentObjectUrl);
+    attachmentObjectUrl = null;
+    if (!name) {
+      box.hidden = true;
+      return;
+    }
+    if (file && file.type && file.type.startsWith('image/')) {
+      attachmentObjectUrl = URL.createObjectURL(file);
+      const image = document.createElement('img');
+      image.src = attachmentObjectUrl;
+      image.alt = '';
+      box.appendChild(image);
+    }
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const title = document.createElement('div');
+    title.className = 'name';
+    title.textContent = name;
+    const hint = document.createElement('div');
+    hint.className = 'size';
+    hint.textContent = size ? `${Math.round(size / 1024)} KB · copied to the state folder` : 'path only';
+    meta.append(title, hint);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn';
+    remove.textContent = 'Remove';
+    remove.addEventListener('click', () => {
+      document.getElementById('form-ticket').attachment_path.value = '';
+      renderAttachmentPreview('', 0, null);
+    });
+    box.append(meta, remove);
+    box.hidden = false;
+  }
+
   const attachmentDrop = document.getElementById('attachment-drop');
   const attachmentInput = document.getElementById('form-ticket').attachment_path;
   const attachmentStatus = document.getElementById('attachment-status');
@@ -1457,8 +1537,8 @@
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       attachmentInput.value = data.path;
-      setStatus(attachmentStatus,
-        `Attached ${data.name} (${Math.round(data.size / 1024)} KB) · ${data.path}`);
+      renderAttachmentPreview(data.name, data.size, file);
+      setStatus(attachmentStatus, `${data.name} attached · ${data.path}`);
     } catch (err) {
       setStatus(attachmentStatus, 'Upload failed: ' + (err.message || err));
     }
@@ -1494,6 +1574,7 @@
     form.test_cmd.value = ticket.test_cmd || '';
     form.priority.value = String(ticket.priority || 3);
     form.attachment_path.value = ticket.attachment_path || '';
+    renderAttachmentPreview(ticket.attachment_path ? ticket.attachment_path.split('/').pop() : '', 0, null);
     updateTestWarning();
     setStatus(note, 'Loading the model list…', true);
     dlg.showModal();  // the ticket data is already here; only the pickers need the catalogue
@@ -1581,7 +1662,8 @@
     const confirmed = await askConfirm({
       title: 'Delete ticket',
       body: `${ticket.id} will be removed from the board. Its report and a snapshot in the event ` +
-        'history are kept; this cannot be undone.',
+        'history are kept, and its T3 thread is not deleted (T3 owns threads; only removing a ' +
+        'project deletes its threads). This cannot be undone.',
       confirmLabel: 'Delete ticket',
     });
     if (!confirmed) return;
@@ -1617,65 +1699,109 @@
     chip.title = `${watcher.message || ''} · every ${watcher.interval}s · ${watcher.status}`;
   }
 
+  let boardTimeZone = localStorage.getItem('boardTimeZone') || 'UTC';
+  const timezoneSelect = document.getElementById('timezone');
+  timezoneSelect.value = boardTimeZone;
+  timezoneSelect.addEventListener('change', () => {
+    boardTimeZone = timezoneSelect.value;
+    localStorage.setItem('boardTimeZone', boardTimeZone);
+    render();
+    if (liveTicket) pollLive();
+  });
+
+  function stamp(iso, withDate = false) {
+    const date = new Date(iso || '');
+    if (Number.isNaN(date.getTime())) return iso || '';
+    const options = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+    if (withDate) Object.assign(options, { year: 'numeric', month: '2-digit', day: '2-digit' });
+    if (boardTimeZone !== 'local') options.timeZone = boardTimeZone;
+    try {
+      return new Intl.DateTimeFormat('en-GB', options).format(date);
+    } catch (err) {
+      return iso;
+    }
+  }
+
   let liveTicket = null;
   let liveTimer = null;
   let liveFailures = 0;
+  let liveThreads = [];
+  let liveSelected = '';
+
+  function liveThread() {
+    return liveThreads.find((item) => item.thread_id === liveSelected) || liveThreads[0] || null;
+  }
 
   async function pollLive() {
     if (!liveTicket) return;
     const status = document.getElementById('live-status');
     const log = document.getElementById('live-log');
     try {
-      if (document.hidden) return;
       const data = await api(`/api/tickets/${liveTicket.id}/live`);
       liveFailures = 0;
-      const finished = ['completed', 'failed', 'cancelled', 'interrupted', 'rolled_back', 'idle']
-        .includes(data.thread.status);
-      if (finished && liveTimer) {
+      liveThreads = data.threads || [];
+      if (!liveThreads.length) {
+        setStatus(status, 'No thread can be read for this ticket.');
+        return;
+      }
+      if (!liveThreads.some((item) => item.thread_id === liveSelected)) {
+        const preferred = liveThreads.find((item) => item.role === 'implementation') || liveThreads[0];
+        liveSelected = preferred.thread_id;
+      }
+      const select = document.getElementById('live-thread');
+      select.textContent = '';
+      for (const item of liveThreads) {
+        const option = document.createElement('option');
+        option.value = item.thread_id;
+        option.textContent = `${item.role} · ${item.thread ? item.thread.status : 'unreadable'}`;
+        select.appendChild(option);
+      }
+      select.value = liveSelected;
+      const selected = liveThread();
+      const thread = selected.thread || {};
+      const running = liveThreads.some((item) =>
+        ['running', 'queued', 'preparing', 'starting'].includes((item.thread || {}).status));
+      if (!running && liveTimer) {
         clearInterval(liveTimer);
         liveTimer = null;
       }
-      setStatus(status, `thread ${data.thread.status || '?'} · ${data.thread.model || ''} · ` +
-        `${(data.activity || []).length} steps · ${data.messages.length} messages` +
-        (finished ? ' · finished, this is the record' : ''));
+      setStatus(status, `${selected.role} · ${thread.status || '?'} · ${thread.model || ''} · ` +
+        `${(selected.activity || []).length} steps · ${(selected.messages || []).length} messages` +
+        (running ? '' : ' · finished, this is the record'));
+      const answer = document.getElementById('live-answer');
+      answer.hidden = (thread.status || '') !== 'waiting';
       const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+      const entries = [
+        ...(selected.activity || []).map((step) => ({ kind: 'step', at: step.at, step })),
+        ...(selected.messages || []).map((message) => ({ kind: 'message', at: message.at, message })),
+      ].sort((left, right) => String(left.at || '').localeCompare(String(right.at || '')));
       log.textContent = '';
-      const strip = document.getElementById('live-activity');
-      strip.textContent = '';
-      for (const step of (data.activity || []).slice(-5)) {
-        const row = document.createElement('div');
-        row.className = 'step' + (step.status === 'running' ? ' running' : '');
-        const kind = document.createElement('span');
-        kind.className = 'kind';
-        kind.textContent = (step.type || 'step').replaceAll('_', ' ');
-        const detail = document.createElement('span');
-        detail.textContent = [step.status, step.tool, step.title].filter(Boolean).join(' · ');
-        const when = document.createElement('span');
-        when.className = 'when';
-        when.textContent = step.at ? step.at.slice(11, 19) : '';
-        row.append(kind, detail, when);
-        strip.appendChild(row);
-      }
-      if (!(data.activity || []).length) {
-        strip.textContent = 'No steps yet.';
-        strip.className = 'activity-strip hint';
-      } else {
-        strip.className = 'activity-strip';
-      }
-      const messagesLabel = document.createElement('div');
-      messagesLabel.className = 'group';
-      messagesLabel.textContent = 'Messages';
-      log.appendChild(messagesLabel);
-      for (const message of data.messages) {
-        const box = document.createElement('div');
-        box.className = 'msg ' + (message.role === 'user' ? 'user' : 'assistant');
-        const role = document.createElement('span');
-        role.className = 'role';
-        role.textContent = `${message.role || 'message'}${message.at ? ' · ' + message.at.slice(11, 19) : ''}`;
-        const body = document.createElement('div');
-        body.textContent = message.text || '';
-        box.append(role, body);
-        log.appendChild(box);
+      for (const entry of entries) {
+        if (entry.kind === 'step') {
+          const row = document.createElement('div');
+          row.className = 'step' + (entry.step.status === 'running' ? ' running' : '');
+          const kind = document.createElement('span');
+          kind.className = 'kind';
+          kind.textContent = (entry.step.type || 'step').replaceAll('_', ' ');
+          const detail = document.createElement('span');
+          detail.textContent = [entry.step.status, entry.step.tool, entry.step.title]
+            .filter(Boolean).join(' · ');
+          const when = document.createElement('span');
+          when.className = 'when';
+          when.textContent = stamp(entry.at);
+          row.append(kind, detail, when);
+          log.appendChild(row);
+        } else {
+          const box = document.createElement('div');
+          box.className = 'msg ' + (entry.message.role === 'user' ? 'user' : 'assistant');
+          const role = document.createElement('span');
+          role.className = 'role';
+          role.textContent = `${entry.message.role || 'message'} · ${stamp(entry.at)}`;
+          const body = document.createElement('div');
+          body.textContent = entry.message.text || '';
+          box.append(role, body);
+          log.appendChild(box);
+        }
       }
       if (atBottom) log.scrollTop = log.scrollHeight;
     } catch (err) {
@@ -1692,9 +1818,11 @@
   function openLive(ticket) {
     liveTicket = ticket;
     liveFailures = 0;
+    liveSelected = '';
     document.getElementById('dlg-live-title').textContent = `${ticket.id} · live`;
     document.getElementById('live-log').textContent = '';
-    setStatus(document.getElementById('live-status'), 'Reading the thread…', true);
+    document.getElementById('live-answer').hidden = true;
+    setStatus(document.getElementById('live-status'), 'Reading the threads…', true);
     document.getElementById('dlg-live').showModal();
     pollLive();
     if (liveTimer) clearInterval(liveTimer);
@@ -1705,15 +1833,34 @@
     if (liveTimer) clearInterval(liveTimer);
     liveTimer = null;
     liveTicket = null;
+    liveThreads = [];
+  });
+  document.getElementById('live-thread').addEventListener('change', (event) => {
+    liveSelected = event.currentTarget.value;
+    pollLive();
   });
   document.getElementById('live-refresh').addEventListener('click', () => {
     liveFailures = 0;
     pollLive();
   });
-  document.getElementById('view-toggle').addEventListener('click', () => {
-    viewMode = viewMode === 'list' ? 'board' : 'list';
-    localStorage.setItem('boardView', viewMode);
-    render();
+  document.getElementById('live-answer-send').addEventListener('click', (event) => {
+    const selected = liveThread();
+    const text = document.getElementById('live-answer-text').value.trim();
+    if (!liveTicket || !selected || !text) return;
+    withBusy(event.currentTarget, async () => {
+      try {
+        await api(`/api/tickets/${liveTicket.id}/answer`, {
+          method: 'POST',
+          body: JSON.stringify({ thread: selected.role, text }),
+        });
+        document.getElementById('live-answer-text').value = '';
+        say('Answer sent into the thread');
+        await load();
+        await pollLive();
+      } catch (err) {
+        say(err.message || String(err), true);
+      }
+    });
   });
   document.getElementById('check-now').addEventListener('click', (event) =>
     withBusy(event.currentTarget, async () => {
@@ -1857,7 +2004,7 @@
     const confirmed = await askConfirm({
       title: 'Delete ticket',
       body: `${editingId} will be removed from the board. Its report and a snapshot in the event ` +
-        'history are kept; this cannot be undone.',
+        'history are kept, and its T3 thread is not deleted (T3 owns threads). This cannot be undone.',
       confirmLabel: 'Delete ticket',
     });
     if (!confirmed) return;

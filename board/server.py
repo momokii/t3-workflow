@@ -383,19 +383,29 @@ class Handler(BaseHTTPRequestHandler):
                 return
             finally:
                 store.close()
-            thread_id = (ticket.get("thread_id") or "").strip() or (ticket.get("verify_thread_id") or "").strip()
-            if not thread_id:
+            threads = []
+            for role, thread_id in (
+                ("implementation", (ticket.get("thread_id") or "").strip()),
+                ("review", (ticket.get("verify_thread_id") or "").strip()),
+            ):
+                if not thread_id:
+                    continue
+                log = thread_log(Path(self.t3_db_path), thread_id)
+                if "error" in log:
+                    threads.append({"role": role, "thread_id": thread_id, "error": log["error"]})
+                    continue
+                threads.append({
+                    "role": role,
+                    "thread_id": thread_id,
+                    "thread": log["thread"],
+                    "messages": log["messages"],
+                    "activity": log["activity"],
+                })
+            if not threads:
                 self._json(400, {"error": "this ticket has no thread yet"})
                 return
-            log = self._thread_log(thread_id)
-            if "error" in log:
-                self._json(502, {"error": log["error"]})
-                return
             self._json(200, {
-                "thread_id": thread_id,
-                "thread": log["thread"],
-                "messages": log["messages"],
-                "activity": log["activity"],
+                "threads": threads,
                 "ticket": {"id": ticket["id"], "status": ticket["status"], "note": ticket["note"]},
             })
             return
@@ -509,6 +519,63 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        if path.startswith("/api/tickets/") and path.endswith("/answer"):
+            if not self._authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            payload = self._payload()
+            if payload is None:
+                return
+            text = str(payload.get("text", "")).strip()
+            if not text:
+                self._json(400, {"error": "an answer text is required"})
+                return
+            ticket_id = path.split("/")[3]
+            store = self._store()
+            try:
+                ticket = store.get(ticket_id)
+            except TicketError as exc:
+                self._json(404, {"error": str(exc)})
+                return
+            role = str(payload.get("thread", "implementation"))
+            if role == "review":
+                thread_id = (ticket.get("verify_thread_id") or "").strip()
+            else:
+                thread_id = (ticket.get("thread_id") or "").strip() or (ticket.get("verify_thread_id") or "").strip()
+            if not thread_id:
+                store.close()
+                self._json(400, {"error": "this ticket has no thread to answer"})
+                return
+            if ticket["status"] not in ("blocked", "in-progress", "review"):
+                store.close()
+                self._json(409, {"error": f"ticket {ticket_id} is {ticket['status']}; nothing is waiting"})
+                return
+            config = load_config(Path(self.config_path))
+            cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+            try:
+                proc = subprocess.run(
+                    [cli, "thread", "send", thread_id, "-", "--json"],
+                    input=text, capture_output=True, text=True, timeout=120,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                store.close()
+                self._json(502, {"error": f"{type(exc).__name__}: {exc}"})
+                return
+            if proc.returncode != 0:
+                store.close()
+                detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+                self._json(409, {"error": (detail[0] if detail else "thread send failed")[:300]})
+                return
+            try:
+                store.record_event(ticket_id, "answered", text[:200])
+                if ticket["status"] == "blocked":
+                    store.move(ticket_id, "ready", "answer sent to the thread")
+                    store.claim(ticket_id, "board:answer")
+                result = store.get(ticket_id)
+            finally:
+                store.close()
+            self._json(200, {"ticket": result})
+            return
         if path == "/api/watcher/run":
             if not self._authorised():
                 self._json(401, {"error": "invalid token"})
