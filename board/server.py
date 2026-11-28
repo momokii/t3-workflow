@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tickets"))
 
 from catalog import CatalogError, load_catalog_cached, resolve_selection  # noqa: E402
+from project_test import detect_test_command  # noqa: E402
 from store import (  # noqa: E402
     CONFIG_PATH,
     DB_PATH,
@@ -47,6 +48,14 @@ FS_BLOCKED_ROOTS = ("/proc", "/sys", "/dev", "/root", "/boot", "/run")
 
 T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
 CATALOG_DIR = Path.home() / ".t3/caches"
+
+
+def project_test_command(config: dict, title: str, workspace_root: str) -> tuple[str, str]:
+    """A project's configured default wins; otherwise read what the project declares."""
+    configured = (project_defaults(config, title) or {}).get("test_cmd", "")
+    if configured:
+        return configured, "project default"
+    return detect_test_command(Path(workspace_root))
 
 
 def t3_projects(db_path: Path) -> list[dict]:
@@ -230,7 +239,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(status, payload)
             return
         if path == "/api/projects":
-            self._json(200, {"projects": t3_projects(Path(self.t3_db_path))})
+            config = load_config(Path(self.config_path))
+            items = t3_projects(Path(self.t3_db_path))
+            for item in items:
+                command, source = project_test_command(config, item["title"], item["workspace_root"])
+                item["test_command"] = command
+                item["test_command_source"] = source
+            self._json(200, {"projects": items})
             return
         if path == "/api/threads":
             self._json(200, {"threads": t3_threads(Path(self.t3_db_path))})
@@ -335,13 +350,26 @@ class Handler(BaseHTTPRequestHandler):
             store = self._store()
             try:
                 project = str(payload.get("project", ""))
-                defaults = project_defaults(load_config(Path(self.config_path)), project)
+                config = load_config(Path(self.config_path))
+                defaults = project_defaults(config, project)
+                detected, _source = "", ""
+                if not project.startswith("/"):
+                    match = next(
+                        (item for item in t3_projects(Path(self.t3_db_path))
+                         if item["title"].lower() == project.lower()),
+                        None,
+                    )
+                    if match:
+                        detected, _source = project_test_command(
+                            config, match["title"], match["workspace_root"]
+                        )
                 ticket = store.add(
                     title=str(payload.get("title", "")),
                     project=project,
                     body=str(payload.get("body", "")),
                     model_profile=str(payload.get("profile", "")) or defaults.get("profile", ""),
-                    test_cmd=str(payload.get("test_cmd", "")) or defaults.get("test_cmd", ""),
+                    test_cmd=(str(payload.get("test_cmd", "")) or defaults.get("test_cmd", "")
+                              or detected),
                     priority=int(payload.get("priority", 3) or 3),
                     status=str(payload.get("status", "backlog")),
                     requires_approval=bool(payload.get("requires_approval", False)),

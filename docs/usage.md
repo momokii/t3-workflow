@@ -271,10 +271,16 @@ says which project owns it, instead of a raw CLI error).
 
 ### The test command, and when it can wait
 
-The test command is the proof: the watcher runs it on the host and only the exit code decides. A project
-can carry a default (`projects.<title>.test_cmd`), and the dialog suggests common commands, but the
-watcher never invents one: an empty field blocks the ticket at `testing` with `test_cmd is empty` so you
-can fill it in and move it back to `ready`. The dialog warns while the field is empty.
+The test command is the proof: the watcher runs it on the host and only the exit code decides. Its
+precedence is: **what you type** → a project default in config (`projects.<title>.test_cmd`) → **what the
+project declares**, detected by reading the repository (a `Makefile` target `check`/`test`, `go.mod`,
+`package.json` scripts, `Cargo.toml`, pytest configuration, or a `tests/` directory). The dialog fills the
+detected command and says where it came from; editing the field wins over all of it.
+
+The watcher never invents a command, and never derives one from the ticket text: a model-authored proof
+could be shaped by the model it is meant to judge. A project with nothing declared (a notes vault, for
+instance) still asks, and an empty field blocks the ticket at `testing` with `test_cmd is empty` so it can
+be filled in; that is the only honest outcome when there is nothing to run.
 
 ## 5. Walkthrough: adopt a running thread
 

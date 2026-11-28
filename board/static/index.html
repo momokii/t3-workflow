@@ -261,6 +261,7 @@
     <div class="picker"><button class="btn" type="button" data-browse="ticket:attachment_path" data-mode="file">Browse files…</button><span class="hint">reads this machine, starting at your home folder</span></div>
     <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
     <p class="hint">Run by the watcher in the project folder after the agent finishes: exit code 0 is the proof, anything else sends the ticket back. Prefilled from the project's defaults when configured. <a href="/guide#test-command">Why this field exists</a>.</p>
+    <p class="hint" id="test-source"></p>
     <p class="hint warn" id="test-warning" hidden>No test command yet: the ticket will block at testing until one is filled in.</p>
     <datalist id="test-suggestions">
       <option value="make check"></option>
@@ -748,11 +749,21 @@
       : 'This model has no extra options.';
   }
 
+  let autoTest = '';
+
   function applyProjectDefaults(form) {
-    const defaults = ((state.projectDefaults || {})[form.project.value]) || {};
-    if (defaults.test_cmd && !form.test_cmd.value.trim()) {
-      form.test_cmd.value = defaults.test_cmd;
+    const project = form.project.value;
+    const defaults = ((state.projectDefaults || {})[project]) || {};
+    const declared = projectCache.find((item) => item.title === project) || {};
+    const command = defaults.test_cmd || declared.test_command || '';
+    const source = defaults.test_cmd ? 'project default' : (declared.test_command_source || 'detected');
+    if (command && (!form.test_cmd.value.trim() || form.test_cmd.value === autoTest)) {
+      form.test_cmd.value = command;
+      autoTest = command;
     }
+    document.getElementById('test-source').textContent = command
+      ? `Using ${command} (${source}). Change it if this project needs something else.`
+      : '';
     if (defaults.profile && !form.profile.value) {
       form.profile.value = defaults.profile;
       form.profile.dispatchEvent(new Event('change'));
@@ -788,7 +799,8 @@
     let ready = false;
     try {
       const [projects] = await Promise.all([api('/api/projects'), ensureCatalog(true)]);
-      const titles = (projects.projects || []).map(p => p.title);
+      projectCache = projects.projects || [];
+      const titles = projectCache.map(p => p.title);
       form.project.innerHTML = titles.length
         ? titles.map(title => `<option value="${title}">${title}</option>`).join('')
         : '<option value="">(no T3 project — register one first)</option>';
@@ -1109,7 +1121,10 @@
     const warning = document.getElementById('test-warning');
     warning.hidden = Boolean(form.test_cmd.value.trim());
   }
-  document.getElementById('form-ticket').test_cmd.addEventListener('input', () => updateTestWarning());
+  document.getElementById('form-ticket').test_cmd.addEventListener('input', () => {
+    autoTest = '';
+    updateTestWarning();
+  });
 
   function updateAdoptWarning() {
     const form = document.getElementById('form-adopt');
@@ -1251,7 +1266,8 @@
     };
     if (!editingId && !form.test_cmd.value.trim()) {
       const proceed = window.confirm(
-        'No test command: this ticket will block at testing until you fill one in. Create it anyway?'
+        'No test command could be detected for this project, so the ticket will block at testing ' +
+        'until you fill one in. Create it anyway?'
       );
       if (!proceed) return;
     }

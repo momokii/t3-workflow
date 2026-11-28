@@ -152,8 +152,13 @@
     <h2>Test command</h2>
     <p>This field is the definition of "done" that a model cannot talk its way out of. It is a shell command
     the <strong>watcher</strong> runs on this machine, in the project folder, after the agent thread has
-    finished — not inside the thread. Only the exit code is judged. A project can provide a default for it and
-    the field suggests common commands, but the watcher never invents one: empty blocks at <code>testing</code>.</p>
+    finished — not inside the thread. Only the exit code is judged.</p>
+    <p>The field fills itself from the project: a Configured default wins, otherwise the board reads what the
+    repository declares (<code>Makefile</code> target <code>check</code>/<code>test</code>, <code>go.mod</code>,
+    a <code>package.json</code> test script, <code>Cargo.toml</code>, pytest configuration, a <code>tests/</code>
+    directory) and shows the source. What you type wins. The watcher never invents a command or derives one
+    from the ticket text; a project with nothing declared asks, and an empty field blocks at
+    <code>testing</code> rather than pretending.</p>
     <table>
       <thead><tr><th>Exit code</th><th>What happens</th></tr></thead>
       <tbody>

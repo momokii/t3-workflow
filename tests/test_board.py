@@ -347,6 +347,31 @@ class BoardApiTests(unittest.TestCase):
         for needle in ('id="progress"', "spinner", "is-busy", "withBusy"):
             self.assertIn(needle, raw)
 
+    def test_projects_report_the_test_command_they_declare(self) -> None:
+        workspace = Path(tempfile.mkdtemp(prefix="declared-"))
+        (workspace / "Makefile").write_text("check:\n\ttrue\n")
+        con = sqlite3.connect(self.t3_db)
+        con.execute("insert into projection_projects values ('p7','declared','%s',null)" % workspace)
+        con.commit(); con.close()
+        _, raw = self.request("GET", "/api/projects")
+        project = next(item for item in json.loads(raw)["projects"] if item["title"] == "declared")
+        self.assertEqual(project["test_command"], "make check")
+        self.assertIn("Makefile", project["test_command_source"])
+
+    def test_a_new_ticket_takes_the_projects_test_command(self) -> None:
+        workspace = Path(tempfile.mkdtemp(prefix="declared-"))
+        (workspace / "Makefile").write_text("check:\n\ttrue\n")
+        con = sqlite3.connect(self.t3_db)
+        con.execute("insert into projection_projects values ('p8','declared2','%s',null)" % workspace)
+        con.commit(); con.close()
+        response, raw = self.request(
+            "POST", "/api/tickets",
+            {"title": "one line", "project": "declared2", "profile": "fast"},
+            token="secret",
+        )
+        self.assertEqual(response.status, 200, raw)
+        self.assertEqual(json.loads(raw)["ticket"]["test_cmd"], "make check")
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)

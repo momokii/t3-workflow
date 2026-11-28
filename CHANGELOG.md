@@ -42,6 +42,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **A ticket's test command comes from what the project declares.** When nothing is configured or typed,
+  the board reads the repository (`Makefile` target `check`/`test`, `go.mod`, a `package.json` test script
+  with a single-run flag for vitest, `Cargo.toml`, pytest configuration, a `tests/` directory), fills the
+  field and names the source; user input still wins. `GET /api/projects` exposes
+  `test_command`/`test_command_source`, and `POST /api/tickets` fills an omitted command from the same
+  order. The watcher still never invents a command or derives one from the ticket text.
+
 - **The board explains itself where a phone can see it.** A `?` button opens a legend covering every
   column, the `p1…p5` scale, the review badges and the move controls; column headers, counters and
   priority tags also carry their meaning for assistive tech. `/#legend` and `/#projects` are documented

@@ -294,7 +294,11 @@ project are kept, their reports stay on disk, and their cards show **project mis
 { "projects": [ { "project_id": "cf3876ca-…", "title": "kelanach", "workspace_root": "/home/kelanach" } ] }
 ```
 
-Read from T3's `statev2.sqlite`, `deleted_at is null`, ordered by title.
+Read from T3's `statev2.sqlite`, `deleted_at is null`, ordered by title. Each entry also carries the
+`test_command` the project declares (`Makefile` target, `go.mod`, `package.json` script, `Cargo.toml`,
+pytest configuration or a `tests/` directory) and its `test_command_source`; a configured
+`projects.<title>.test_cmd` wins and reports `project default`. An omitted `test_cmd` in
+`POST /api/tickets` is filled from the same order (configured default, then detected).
 
 ## GET /api/fs
 
