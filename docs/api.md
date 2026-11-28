@@ -22,6 +22,9 @@ GET  /api/catalog                      harnesses, models, presets, defaults
 GET  /api/projects                     T3 projects
 GET  /api/threads                      recent T3 threads (up to 200)
 GET  /api/fs?path=<dir>                folder picker: names under a directory (token)
+GET  /api/tickets/<id>/live            thread status and last messages (token)
+POST /api/watcher/run                  run one watcher step now (token)
+POST /api/attachments                  upload a file for a ticket (token, 20 MB)
 ```
 
 Authentication: `X-Board-Token: <token>` on every `POST`, and on `GET /api/fs` — that route lists
@@ -301,6 +304,33 @@ Read from T3's `statev2.sqlite`, `deleted_at is null`, ordered by title. Each en
 a database, Docker, a browser or a watch process. A configured `projects.<title>.test_cmd` wins and
 reports `project default`. An omitted `test_cmd` in `POST /api/tickets` is filled from the same order,
 but never from a command flagged `needs_setup`.
+
+## GET /api/tickets/<id>/live
+
+The live modal's source: the ticket's thread (the dev thread, or the reviewer's when there is no dev
+thread) with its status, model and last twelve messages. Token required. `400` when the ticket has no
+thread, `404` for an unknown ticket, `502` when `t3 thread show` fails.
+
+```json
+{ "thread_id": "mcp:…",
+  "thread": { "title": "Brain Research", "status": "running", "model": "opencode-go/deepseek-v4.1-flash",
+              "link": "https://…", "runCount": 1 },
+  "messages": [ { "role": "assistant", "runId": "run:…", "text": "…" } ] }
+```
+
+## POST /api/watcher/run
+
+Runs `watcher.py --once` with the board's database and config, then answers with the last 4 000
+characters of its output and the fresh heartbeat (`200`; `409` when the step reported an error). It is the
+header's **Check now**: the claim is atomic, so this cannot start a ticket twice. Token required.
+
+## POST /api/attachments
+
+The drop zone's target. Send the file bytes as the body, the name URL-encoded in `X-Filename`, and the
+board token. The file is copied to `~/.local/state/t3-workflow/attachments/<id>-<name>` (override with
+`T3_ATTACHMENTS_DIR`); the response is `{"path", "name", "size"}` and the path is what the ticket passes
+to the agent. Limits: `20 MB` (`413`), empty body (`400`), missing or dot-leading name (`400`), token
+required (`401`).
 
 ## GET /api/fs
 

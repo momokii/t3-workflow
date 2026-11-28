@@ -244,6 +244,15 @@ defaults remove the typing, not the proof.
   event with a snapshot of the row, then removes it. `GET /api/report/<id>` keeps serving the file, so
   the evidence outlives the ticket.
 
+### Watching the watcher
+
+The header carries the watcher's heartbeat (`watcher: 12s ago`), written by every loop and by a
+one-shot step; it turns amber with `(stale)` when the last check is older than three intervals, and its
+tooltip carries the last message. **Check now** runs `watcher.py --once` immediately (the claim is
+atomic, so it cannot double-start a ticket) and shows its last line. Cards for tickets with a thread
+gain a **live** control: a modal follows the thread's messages every five seconds, stops when closed or
+after three failures, and keeps a manual Refresh.
+
 ### Reading in the board
 
 The header's **?** button opens a legend: what each column means, what `p1…p5` are, what the review
@@ -257,6 +266,8 @@ and `/#legend` open those dialogs directly (used for support links and screensho
   existed (or a ticket deleted before it) still opens: the dialog falls back to the markdown.
 - **thread** opens the thread's details — title, project, status, created time and the raw id — from
   T3's own list, with a copy button. The board mirrors a thread; it does not own it.
+- **Drop a file** onto the attachment zone to copy it here (up to 20 MB, token-guarded) and pass its
+  path to the agent, or use the picker.
 - **Browse…** next to an attachment or a project path opens a folder picker that reads this machine,
   starting at your home directory. It lists names only, refuses `/proc`, `/sys`, `/dev`, `/root`,
   `/boot`, `/run` and hidden directories, and requires the board token; pick a file for an attachment,
@@ -271,7 +282,9 @@ says which project owns it, instead of a raw CLI error).
 
 ### The test command, and when it can wait
 
-The test command is the proof: the watcher runs it on the host and only the exit code decides. Its
+The test command is the proof: the watcher runs it on the host and only the exit code decides. The
+dialog marks required fields with a red asterisk and the browser refuses an empty one; the agent prompt
+also asks the agent to check which skills exist and use the ones that fit the ticket. Its
 precedence is: **what you type** → a project default in config (`projects.<title>.test_cmd`) → **what the
 project declares**, detected by reading the repository (a `Makefile` target `check`/`test`, `go.mod`,
 `package.json` scripts, `Cargo.toml`, pytest configuration, or a `tests/` directory). The dialog fills the

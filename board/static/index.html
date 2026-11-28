@@ -174,6 +174,19 @@
   .md a { color: var(--accent); }
   .md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
   .hint.warn { color: var(--warn); }
+  .req { color: var(--danger); font-weight: 700; }
+  input:required:invalid:not(:placeholder-shown), select:required:invalid { border-color: var(--danger); }
+  .drop { border: 1px dashed var(--line); border-radius: 9px; padding: 10px; margin-top: 4px; }
+  .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+  .drop p { margin: 0; }
+  .chip.watcher { white-space: nowrap; }
+  .chip.watcher.stale { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+  .chip.watcher.fresh { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+  .live { max-height: 56vh; overflow-y: auto; display: grid; gap: 8px; padding: 8px 2px; }
+  .live .msg { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .live .msg.user { background: var(--surface-2); }
+  .live .msg.assistant { border-left: 3px solid var(--accent); }
+  .live .role { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); display: block; margin-bottom: 4px; }
   .hint[role="status"]:empty { display: none; }
   .picker { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
   .picker .btn { padding: 5px 10px; font-size: 12px; }
@@ -221,6 +234,8 @@
       <button class="btn" id="new-project" type="button">Register project</button>
       <button class="btn icon" id="legend" type="button"
         aria-label="What the columns, priorities and badges mean">?</button>
+      <span class="chip watcher" id="watcher" title="Last watcher check">watcher: unknown</span>
+      <button class="btn" id="check-now" type="button" title="Run one watcher step now">Check now</button>
       <a class="btn guide" href="/guide" aria-label="Open the guide: how tickets, reviews and releases work">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 5.5v15"/><path d="M8 7h8M8 11h6"/></svg>
         Guide
@@ -245,21 +260,27 @@
 <dialog id="dlg-ticket" aria-labelledby="dlg-ticket-title">
   <form method="dialog" id="form-ticket">
     <h3 id="dlg-ticket-title">New ticket</h3>
+    <p class="hint">Fields marked <span class="req">*</span> are required; the rest are optional.</p>
     <p class="hint" id="ticket-load" role="status"></p>
-    <label>Title <input name="title" required autocomplete="off"></label>
-    <label>Project <select name="project" required></select></label>
+    <label>Title <span class="req" aria-hidden="true">*</span> <input name="title" required autocomplete="off"></label>
+    <label>Project <span class="req" aria-hidden="true">*</span> <select name="project" required></select></label>
     <p class="hint">Where the agent works and where the test command runs. Register a new folder with <strong>Register project</strong>.</p>
     <label>Preset (optional) <select name="profile"></select></label>
     <p class="hint">A preset fills the harness and model at once. Leave it empty to choose manually below.</p>
-    <label>Harness <select name="provider" required></select></label>
+    <label>Harness <span class="req" aria-hidden="true">*</span> <select name="provider" required></select></label>
     <p class="hint">The T3 harness that runs the thread. Only harnesses T3 reports as enabled are listed.</p>
-    <label>Model <select name="model" required></select></label>
+    <label>Model <span class="req" aria-hidden="true">*</span> <select name="model" required></select></label>
     <p class="hint" id="model-hint">This list comes from the T3 cache — only enabled harnesses can be chosen.</p>
     <label>Context / specification <textarea name="body" placeholder="Context, acceptance criteria, links, or important notes…"></textarea></label>
-    <label>Attachment (path on this machine) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
+    <label>Attachment (optional) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
     <p class="hint">The attachment is not uploaded; its path is passed to the agent so it can read it directly.</p>
-    <div class="picker"><button class="btn" type="button" data-browse="ticket:attachment_path" data-mode="file">Browse files…</button><span class="hint">reads this machine, starting at your home folder</span></div>
-    <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
+    <div class="drop" id="attachment-drop">
+      <p class="hint">Drop a file here (up to 20 MB), or
+        <button class="btn" type="button" data-browse="ticket:attachment_path" data-mode="file">Browse files…</button>
+        — the file is copied to this machine and its path is passed to the agent.</p>
+      <p class="hint" id="attachment-status" role="status"></p>
+    </div>
+    <label>Test command (optional) <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
     <p class="hint">Run by the watcher in the project folder after the agent finishes: exit code 0 is the proof, anything else sends the ticket back. Prefilled from the project's defaults when configured. <a href="/guide#test-command">Why this field exists</a>.</p>
     <p class="hint" id="test-source"></p>
     <p class="hint warn" id="test-warning" hidden>No test command yet: the ticket will block at testing until one is filled in.</p>
@@ -269,7 +290,7 @@
       <option value="go test ./..."></option>
       <option value="npm test -- --run"></option>
     </datalist>
-    <label>Priority <select name="priority">
+    <label>Priority <span class="req" aria-hidden="true">*</span> <select name="priority">
       <option value="1">1 — Urgent (do first)</option>
       <option value="2">2 — High</option>
       <option value="3" selected>3 — Normal</option>
@@ -288,11 +309,11 @@
     <h3 id="dlg-project-title">Register project</h3>
     <p class="hint" id="project-load" role="status"></p>
     <p style="margin:0;color:var(--ink-soft);font-size:12px">A T3 project is a folder the agents may work in. Registering runs <code>t3 project add</code>, so T3 owns the project exactly as it owns the ones created in its own UI; this board only mirrors it.</p>
-    <label>Project name
+    <label>Project name <span class="req" aria-hidden="true">*</span>
       <input name="title" required autocomplete="off">
     </label>
     <p class="hint">The label shown in ticket dialogs and the board filter; T3 stores it as the project title. Keep it short and unique.</p>
-    <label>Absolute path
+    <label>Absolute path <span class="req" aria-hidden="true">*</span>
       <input name="path" required placeholder="/home/kelanach/projects/my-project" autocomplete="off">
     </label>
     <div class="picker"><button class="btn" type="button" data-browse="project:path" data-mode="dir">Browse folders…</button></div>
@@ -316,16 +337,46 @@
     <h3 id="dlg-adopt-title">Adopt a T3 thread</h3>
     <p class="hint" id="adopt-load" role="status"></p>
     <p style="margin:0;color:var(--ink-soft);font-size:12px">This ticket <strong>continues the same thread</strong>: the watcher sends the ticket instructions into that thread, waits for it to finish, then moves it to testing. No new thread is created.</p>
-    <label>Thread <select name="thread_id" required></select></label>
+    <label>Thread <span class="req" aria-hidden="true">*</span> <select name="thread_id" required></select></label>
     <p class="hint">The 40 most recent T3 threads, newest first, with their project and current status. A running thread is fine: the prompt becomes its next turn, queued behind what it is doing.</p>
     <label>Preset (informational) <select name="profile"></select></label>
     <p class="hint">A thread already has its harness and model, and this dialog cannot change them. The preset is stored on the ticket for the record and for the report, so pick the one that matches the thread.</p>
     <label>Additional context <textarea name="body" placeholder="What should this thread finish?"></textarea></label>
     <p class="hint">Sent into the thread verbatim, together with the title. Write the acceptance criteria here: this is the whole contract the agent receives.</p>
-    <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
+    <label>Test command (optional) <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
     <p class="hint">Runs in the project folder after the thread finishes; exit code 0 is the proof, anything else sends the ticket back. <a href="/guide#test-command">Why this field exists</a>.</p>
     <p class="hint warn" id="adopt-test-warning" hidden>No test command yet: the ticket will block at testing until one is filled in.</p>
     <div class="row actions"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Adopt</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-confirm" aria-labelledby="dlg-confirm-title">
+  <form method="dialog">
+    <h3 id="dlg-confirm-title">Confirm</h3>
+    <p class="hint" id="dlg-confirm-body"></p>
+    <label id="dlg-confirm-label" hidden>
+      <span id="dlg-confirm-label-text"></span>
+      <input id="dlg-confirm-input" autocomplete="off">
+    </label>
+    <p class="hint warn" id="dlg-confirm-error" role="alert"></p>
+    <div class="row actions">
+      <button class="btn" type="button" id="dlg-confirm-cancel">Cancel</button>
+      <span class="spacer"></span>
+      <button class="btn danger" type="button" id="dlg-confirm-ok">Confirm</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-live" class="wide" aria-labelledby="dlg-live-title">
+  <form method="dialog">
+    <h3 id="dlg-live-title">Live</h3>
+    <p class="hint" id="live-status" role="status"></p>
+    <div class="live" id="live-log" role="log" aria-live="polite"></div>
+    <div class="row actions">
+      <button class="btn" type="button" id="live-refresh">Refresh</button>
+      <span class="spacer"></span>
+      <button class="btn primary" type="submit" value="close">Close</button>
+    </div>
   </form>
 </dialog>
 
@@ -514,6 +565,15 @@
       missing.textContent = 'project missing';
       missing.title = 'This project no longer exists in T3; the ticket and its report are kept';
       meta.appendChild(missing);
+    }
+    if (t.thread_id && ['in-progress', 'testing', 'review'].includes(t.status)) {
+      const live = document.createElement('button');
+      live.type = 'button';
+      live.className = 'act';
+      live.textContent = 'live';
+      live.title = 'Follow this ticket\'s thread while it works';
+      live.addEventListener('click', () => openLive(t));
+      meta.appendChild(live);
     }
     if (t.thread_id) {
       const a = document.createElement('a');
@@ -1026,16 +1086,15 @@
   }
 
   async function removeProject(project, button) {
-    const typed = window.prompt(
-      `Removing “${project.title}” deletes the project and ALL of its threads in T3.\n` +
-      'Tickets and reports are kept. This cannot be undone.\n\n' +
-      'Type the project title to confirm:'
-    );
-    if (typed === null) return;
-    if (typed.trim() !== project.title) {
-      say('Removal cancelled: the title did not match', true);
-      return;
-    }
+    const typed = await askConfirm({
+      title: 'Remove project',
+      body: `Removing “${project.title}” deletes the project and ALL of its threads in T3. ` +
+        'Tickets and reports are kept. This cannot be undone.',
+      inputLabel: `Type “${project.title}” to confirm`,
+      expect: project.title,
+      confirmLabel: 'Remove project',
+    });
+    if (!typed) return;
     try {
       await withBusy(button, () => api(`/api/projects/${encodeURIComponent(project.project_id)}/remove`, {
         method: 'POST', body: JSON.stringify({ confirm: project.title }),
@@ -1050,6 +1109,44 @@
   }
 
   // ------------------------------------------------------------ folder picker
+  function askConfirm({ title, body, inputLabel = '', expect = '', confirmLabel = 'Confirm', danger = true }) {
+    return new Promise((resolve) => {
+      const dialog = document.getElementById('dlg-confirm');
+      const ok = document.getElementById('dlg-confirm-ok');
+      const cancel = document.getElementById('dlg-confirm-cancel');
+      const input = document.getElementById('dlg-confirm-input');
+      const label = document.getElementById('dlg-confirm-label');
+      const error = document.getElementById('dlg-confirm-error');
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        dialog.close();
+        resolve(value);
+      };
+      document.getElementById('dlg-confirm-title').textContent = title;
+      document.getElementById('dlg-confirm-body').textContent = body;
+      document.getElementById('dlg-confirm-label-text').textContent = inputLabel;
+      label.hidden = !inputLabel;
+      input.value = '';
+      error.textContent = '';
+      ok.textContent = confirmLabel;
+      ok.className = 'btn ' + (danger ? 'danger' : 'primary');
+      ok.onclick = () => {
+        if (inputLabel && expect && input.value.trim() !== expect) {
+          error.textContent = 'Type the exact text shown to continue.';
+          input.focus();
+          return;
+        }
+        finish(inputLabel ? input.value.trim() : true);
+      };
+      cancel.onclick = () => finish(null);
+      dialog.onclose = () => finish(null);
+      dialog.showModal();
+      if (inputLabel) setTimeout(() => input.focus(), 0);
+    });
+  }
+
   const fsState = { target: null, mode: 'dir', current: '' };
 
   function fsOffer(path, name, kind) {
@@ -1120,6 +1217,43 @@
   document.getElementById('fs-home').addEventListener('click', () => loadFs(''));
   document.getElementById('fs-use').addEventListener('click', () => { if (fsState.current) chooseFs(fsState.current); });
 
+  document.querySelector('#dlg-confirm form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    document.getElementById('dlg-confirm-ok').click();
+  });
+
+  const attachmentDrop = document.getElementById('attachment-drop');
+  const attachmentInput = document.getElementById('form-ticket').attachment_path;
+  const attachmentStatus = document.getElementById('attachment-status');
+  for (const event of ['dragenter', 'dragover']) {
+    attachmentDrop.addEventListener(event, (domEvent) => {
+      domEvent.preventDefault();
+      attachmentDrop.classList.add('over');
+    });
+  }
+  for (const event of ['dragleave', 'dragend']) {
+    attachmentDrop.addEventListener(event, () => attachmentDrop.classList.remove('over'));
+  }
+  attachmentDrop.addEventListener('drop', async (domEvent) => {
+    domEvent.preventDefault();
+    attachmentDrop.classList.remove('over');
+    const file = domEvent.dataTransfer.files && domEvent.dataTransfer.files[0];
+    if (!file) return;
+    setStatus(attachmentStatus, `Uploading ${file.name}…`, true);
+    try {
+      const headers = TOKEN ? { 'X-Board-Token': TOKEN } : {};
+      headers['X-Filename'] = encodeURIComponent(file.name);
+      const response = await track(fetch('/api/attachments', { method: 'POST', headers, body: file }));
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      attachmentInput.value = data.path;
+      setStatus(attachmentStatus,
+        `Attached ${data.name} (${Math.round(data.size / 1024)} KB) · ${data.path}`);
+    } catch (err) {
+      setStatus(attachmentStatus, 'Upload failed: ' + (err.message || err));
+    }
+  });
+
   function updateTestWarning() {
     const form = document.getElementById('form-ticket');
     const warning = document.getElementById('test-warning');
@@ -1175,6 +1309,92 @@
     }
   }
 
+  function updateWatcher(watcher) {
+    const chip = document.getElementById('watcher');
+    if (!watcher) {
+      chip.textContent = 'watcher: no heartbeat';
+      chip.className = 'chip watcher stale';
+      chip.title = 'The watcher has not written a heartbeat yet';
+      return;
+    }
+    const age = watcher.ageSeconds || 0;
+    const shown = age < 90 ? `${age}s ago` : `${Math.round(age / 60)}m ago`;
+    chip.textContent = `watcher: ${shown}${watcher.stale ? ' (stale)' : ''}`;
+    chip.className = 'chip watcher ' + (watcher.stale ? 'stale' : 'fresh');
+    chip.title = `${watcher.message || ''} · every ${watcher.interval}s · ${watcher.status}`;
+  }
+
+  let liveTicket = null;
+  let liveTimer = null;
+  let liveFailures = 0;
+
+  async function pollLive() {
+    if (!liveTicket) return;
+    const status = document.getElementById('live-status');
+    const log = document.getElementById('live-log');
+    try {
+      const data = await api(`/api/tickets/${liveTicket.id}/live`);
+      liveFailures = 0;
+      setStatus(status, `thread ${data.thread.status || '?'} · ${data.thread.model || ''} · ` +
+        `${data.messages.length} messages`);
+      const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+      log.textContent = '';
+      for (const message of data.messages) {
+        const box = document.createElement('div');
+        box.className = 'msg ' + (message.role === 'user' ? 'user' : 'assistant');
+        const role = document.createElement('span');
+        role.className = 'role';
+        role.textContent = message.role || 'message';
+        const body = document.createElement('div');
+        body.textContent = message.text || '';
+        box.append(role, body);
+        log.appendChild(box);
+      }
+      if (atBottom) log.scrollTop = log.scrollHeight;
+    } catch (err) {
+      liveFailures += 1;
+      setStatus(status, 'Could not read the thread: ' + (err.message || err));
+      if (liveFailures >= 3 && liveTimer) {
+        clearInterval(liveTimer);
+        liveTimer = null;
+        setStatus(status, 'Stopped after three failures; press Refresh.');
+      }
+    }
+  }
+
+  function openLive(ticket) {
+    liveTicket = ticket;
+    liveFailures = 0;
+    document.getElementById('dlg-live-title').textContent = `${ticket.id} · live`;
+    document.getElementById('live-log').textContent = '';
+    setStatus(document.getElementById('live-status'), 'Reading the thread…', true);
+    document.getElementById('dlg-live').showModal();
+    pollLive();
+    if (liveTimer) clearInterval(liveTimer);
+    liveTimer = setInterval(pollLive, 5000);
+  }
+
+  document.getElementById('dlg-live').addEventListener('close', () => {
+    if (liveTimer) clearInterval(liveTimer);
+    liveTimer = null;
+    liveTicket = null;
+  });
+  document.getElementById('live-refresh').addEventListener('click', () => {
+    liveFailures = 0;
+    pollLive();
+  });
+  document.getElementById('check-now').addEventListener('click', (event) =>
+    withBusy(event.currentTarget, async () => {
+      try {
+        const data = await api('/api/watcher/run', { method: 'POST', body: '{}' });
+        const line = (data.output || 'watcher step finished').trim().split('\n').pop();
+        say(line || 'watcher step finished');
+      } catch (err) {
+        say(err.message || String(err), true);
+      }
+      await load();
+    }));
+
   async function load() {
     const data = await api('/api/tickets');
     const projects = [...new Set(data.tickets.map(t => t.project))].sort();
@@ -1183,6 +1403,7 @@
       projects.map(p => `<option value="${p}">${p}</option>`).join('');
     projectSel.value = projects.includes(keep) ? keep : '';
     state = Object.assign({}, data, { catalog: state.catalog });
+    updateWatcher(data.watcher);
     render();
     ensureCatalog().catch(() => {});  // prefetch so the first dialog open has no wait
     foot.textContent = `${data.tickets.length} tickets · profiles available: ${(data.profiles || []).join(', ') || '-'}`;
@@ -1269,10 +1490,13 @@
       requires_approval: form.requires_approval.checked,
     };
     if (!editingId && !form.test_cmd.value.trim()) {
-      const proceed = window.confirm(
-        'No test command could be detected for this project, so the ticket will block at testing ' +
-        'until you fill one in. Create it anyway?'
-      );
+      const proceed = await askConfirm({
+        title: 'No test command',
+        body: 'Nothing was detected for this project, so the ticket will block at testing until you ' +
+          'fill one in. Create it anyway?',
+        confirmLabel: 'Create anyway',
+        danger: false,
+      });
       if (!proceed) return;
     }
     const submit = form.querySelector('button[type="submit"]');
@@ -1298,7 +1522,13 @@
 
   document.getElementById('delete-ticket').addEventListener('click', async () => {
     if (!editingId) return;
-    if (!window.confirm(`Delete ${editingId}? The report is kept; this cannot be undone.`)) return;
+    const confirmed = await askConfirm({
+      title: 'Delete ticket',
+      body: `${editingId} will be removed from the board. Its report and a snapshot in the event ` +
+        'history are kept; this cannot be undone.',
+      confirmLabel: 'Delete ticket',
+    });
+    if (!confirmed) return;
     const button = document.getElementById('delete-ticket');
     try {
       await withBusy(button, () => api(`/api/tickets/${editingId}/delete`, {

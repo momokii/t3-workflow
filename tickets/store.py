@@ -726,6 +726,11 @@ class TicketStore:
     th, td { border-bottom: 1px solid #dfe3ea; padding: 6px 10px; text-align: left; vertical-align: top; }
     dt { color: #5b6472; float: left; clear: left; width: 130px; } dd { margin: 0 0 4px 140px; word-break: break-all; }
     .verdict { font-weight: 700; }
+    .lead { color: #5b6472; }
+    .part { border-top: 1px solid #dfe3ea; margin-top: 18px; padding-top: 6px; }
+    .toc-lite { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; margin: 8px 0 4px; }
+    .toc-lite span { color: #5b6472; }
+    .toc-lite a { color: #4f46e5; text-decoration: none; }
     """
 
     def report_html(self, ticket_id: str, document: bool = False) -> str:
@@ -733,42 +738,79 @@ class TicketStore:
 
         The board inserts the fragment (`document=False`); the release writes the full page next
         to the markdown so the delivered document reads properly on a phone. Every field is
-        escaped: a ticket title is user input.
+        escaped: a ticket title is user input. Sections are explicit and introduced, so a reader
+        knows what each part is evidence of.
         """
         ticket = self.get(ticket_id)
         events = self.events(ticket_id)
         esc = escape
-        body: list[str] = [f"<h1>{esc(ticket['id'])} · {esc(ticket['title'])}</h1>", "<dl>"]
+
+        def part(anchor: str, title: str, lead: str, content: list[str]) -> list[str]:
+            return [
+                f'<section class="part" id="{anchor}">',
+                f"<h2>{esc(title)}</h2>",
+                f'<p class="lead">{esc(lead)}</p>',
+                *content,
+                "</section>",
+            ]
+
+        toc = ['<nav class="toc-lite" aria-label="Report sections"><span>Jump to:</span>']
+        summary = ["<dl>"]
         for label, value, mono in self.report_facts(ticket):
             shown = f"<code>{esc(value)}</code>" if mono else esc(value)
-            body.append(f"<dt>{esc(label)}</dt><dd>{shown}</dd>")
-        body.append("</dl>")
+            summary.append(f"<dt>{esc(label)}</dt><dd>{shown}</dd>")
+        summary.append("</dl>")
+
+        body: list[str] = [
+            f"<h1>{esc(ticket['id'])} · {esc(ticket['title'])}</h1>",
+            '<p class="lead">Generated from the ticket and its event history. Nothing here is '
+            "written by hand; the same data is behind the markdown file.</p>",
+            '<nav class="toc-lite" aria-label="Report sections"><span>Jump to:</span>'
+            '<a href="#summary">Summary</a>'
+            + ('<a href="#test">Test command</a>' if ticket["test_cmd"] else "")
+            + ('<a href="#description">What was asked</a>' if ticket["body"] else "")
+            + '<a href="#evidence">Evidence</a>'
+            + ('<a href="#review">Independent review</a>'
+               if (ticket.get("verify_verdict") or ticket.get("verify_attempt")) else "")
+            + '<a href="#history">History</a></nav>',
+        ]
+        body += part("summary", "Summary", "The facts of the ticket.", summary)
         if ticket["test_cmd"]:
-            body += ["<h2>Test command</h2>", f"<pre><code>{esc(ticket['test_cmd'])}</code></pre>"]
+            body += part("test", "Test command",
+                         "The command the host ran after the thread finished; its exit code is the proof.",
+                         [f"<pre><code>{esc(ticket['test_cmd'])}</code></pre>"])
         if ticket["body"]:
-            body += ["<h2>Description</h2>", f"<p>{esc(ticket['body'])}</p>"]
+            body += part("description", "What was asked",
+                         "The ticket body, handed to the agent verbatim.", [f"<p>{esc(ticket['body'])}</p>"])
+        evidence = [f"<p>{esc(ticket['note'] or 'no evidence note yet')}</p>"]
         approval = self.approval_state(ticket_id)
         if approval != "none":
-            body.append(f"<p><strong>Approval</strong>: {esc(approval)}</p>")
-        body += ["<h2>Evidence and notes</h2>", f"<p>{esc(ticket['note'] or 'no evidence note yet')}</p>"]
+            evidence.append(f"<p><strong>Approval</strong>: {esc(approval)}</p>")
         if ticket.get("proof"):
-            body += ["<h3>Test evidence</h3>", f"<pre>{esc(ticket['proof'])}</pre>"]
+            evidence += ["<h3>Test output</h3>", f"<pre>{esc(ticket['proof'])}</pre>"]
+        body += part("evidence", "Evidence",
+                     "What the host recorded, independently of the agent's own words.", evidence)
         verdict = (ticket.get("verify_verdict") or "").strip()
         if verdict or ticket.get("verify_attempt"):
-            body += ["<h2>Independent review</h2>", "<dl>"]
+            review = ["<dl>"]
             for label, value, mono in self.review_facts(ticket):
                 shown = f"<code>{esc(value)}</code>" if mono else esc(value)
-                body.append(f"<dt>{esc(label)}</dt><dd>{shown}</dd>")
-            body.append("</dl>")
+                review.append(f"<dt>{esc(label)}</dt><dd>{shown}</dd>")
+            review.append("</dl>")
             if ticket.get("verify_findings"):
-                body += ["<h3>Findings</h3>", f"<pre>{esc(ticket['verify_findings'])}</pre>"]
-        body += ["<h2>History</h2>", "<table><thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead><tbody>"]
+                review += ["<h3>Findings</h3>", f"<pre>{esc(ticket['verify_findings'])}</pre>"]
+            body += part("review", "Independent review",
+                         "A second thread, in a fresh context, judged the work against the ticket "
+                         "and the recorded evidence.", review)
+        history = ["<table><thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead><tbody>"]
         for event in events:
-            body.append(
+            history.append(
                 f"<tr><td>{esc(event['at'][:19])}</td><td>{esc(event['kind'])}</td>"
                 f"<td>{esc(event['detail'])}</td></tr>"
             )
-        body += ["</tbody></table>"]
+        history.append("</tbody></table>")
+        body += part("history", "History",
+                     "Every state change and stage action, in order.", history)
         fragment = "\n".join(body)
         if not document:
             return fragment

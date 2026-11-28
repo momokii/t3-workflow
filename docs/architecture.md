@@ -23,6 +23,7 @@ flowchart LR
 | `tickets/store.py` | the state machine, atomic claim, approvals, proofs, reports | call T3 or the network |
 | `watcher.py` | the dev, test, review and release stages | invent a model profile; push the base branch |
 | `bridge/t3_bridge.py` | Telegram commands, audit log, approval notices, plan/verdict/report delivery | answer a T3 approval request itself |
+| `board/static/index.html` | queue, dialogs, live thread view, watcher heartbeat, attachments | write a ticket outside the store API |
 | `board/server.py` + `index.html` | HTTP API and the single-page board | write a ticket outside `store.move`/`store.add` |
 | `scripts/alert.py` | one Telegram alert per failing unit | retry, restart, or decide anything |
 

@@ -42,6 +42,23 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **The board shows the watcher and the work, live.** A heartbeat file written by every watcher loop
+  powers a `watcher: 12s ago` chip (amber when stale) and a **Check now** button that runs one
+  `watcher.py --once` step; running tickets gain a **live** modal that follows the thread's last
+  messages every five seconds, stops on close or after three failures, and offers a manual refresh.
+- **The report is sectioned and explained.** Summary, Test command, What was asked, Evidence,
+  Independent review and History each get a heading, a one-line explanation of what it proves and a jump
+  link; the stylesheet separates them as cards.
+- **Required fields are visible.** A red asterisk and a legend on the ticket, project and adopt dialogs;
+  invalid required inputs outline red. Native `prompt`/`confirm` are gone: a real dialog handles the
+  typed project removal, ticket deletion and creating a ticket without a test command.
+- **Files can be dropped onto the ticket dialog.** The drop zone uploads to
+  `POST /api/attachments` (token, 20 MB, sanitized name) and puts the stored path in the attachment
+  field, which is what the agent receives.
+- **The agent prompt asks for skills.** Before planning, the ticket prompt tells the agent to check
+  which skills exist (`~/.agents/skills`, or its harness's list) and use the ones that fit, then name them
+  in its report.
+
 - **Detection now refuses a command that cannot run unattended.** A Makefile recipe with Docker or a
   Python `conftest.py` that reaches for a database marks the command `needs_setup`: the board shows it as
   a suggestion but leaves the field empty, and `POST /api/tickets` never fills it. Pytest is run through

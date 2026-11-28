@@ -18,10 +18,12 @@ import json
 import os
 import sqlite3
 import subprocess
+import uuid
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tickets"))
@@ -56,6 +58,22 @@ def project_test_command(config: dict, title: str, workspace_root: str) -> dict:
     if configured:
         return {"command": configured, "source": "project default", "needs_setup": False}
     return detect_test_command_info(Path(workspace_root))
+
+
+def read_heartbeat(store_path: Path) -> dict | None:
+    path = Path(store_path).with_name("watcher.json")
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        checked = datetime.fromisoformat(data["at"])
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+    age = max(0, int((datetime.now(timezone.utc) - checked).total_seconds()))
+    interval = int(data.get("interval") or 0)
+    data["ageSeconds"] = age
+    data["stale"] = bool(interval and age > max(90, interval * 3))
+    return data
 
 
 def t3_projects(db_path: Path) -> list[dict]:
@@ -105,6 +123,8 @@ class Handler(BaseHTTPRequestHandler):
     catalog_dir = CATALOG_DIR
     token = ""
     inject_token = True
+    max_upload_bytes = 20 * 1024 * 1024
+    attachment_dir = str(Path.home() / ".local/state/t3-workflow/attachments")
     server_version = "t3-kanban/1.0"
 
     # ------------------------------------------------------------ helpers
@@ -238,6 +258,61 @@ class Handler(BaseHTTPRequestHandler):
             status, payload = self._fs_listing((query.get("path") or [""])[0])
             self._json(status, payload)
             return
+        if path.startswith("/api/tickets/") and path.endswith("/live"):
+            if not self._authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            ticket_id = path.split("/")[3]
+            store = self._store()
+            try:
+                ticket = store.get(ticket_id)
+            except TicketError as exc:
+                self._json(404, {"error": str(exc)})
+                return
+            finally:
+                store.close()
+            thread_id = (ticket.get("thread_id") or "").strip() or (ticket.get("verify_thread_id") or "").strip()
+            if not thread_id:
+                self._json(400, {"error": "this ticket has no thread yet"})
+                return
+            config = load_config(Path(self.config_path))
+            cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+            try:
+                proc = subprocess.run(
+                    [cli, "thread", "show", thread_id, "--json", "--messages", "12"],
+                    capture_output=True, text=True, timeout=25,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                self._json(502, {"error": f"t3 thread show failed: {type(exc).__name__}"})
+                return
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+                self._json(502, {"error": (detail[0] if detail else "t3 thread show failed")[:300]})
+                return
+            try:
+                data = json.loads(proc.stdout)
+            except json.JSONDecodeError:
+                self._json(502, {"error": "t3 thread show did not return JSON"})
+                return
+            messages = [
+                {"role": item.get("role"), "runId": item.get("runId"),
+                 "text": (item.get("text") or "")[:4000]}
+                for item in (data.get("messages") or [])
+            ]
+            thread = data.get("thread") or {}
+            self._json(200, {
+                "thread_id": thread_id,
+                "thread": {
+                    "title": thread.get("title"),
+                    "status": thread.get("status"),
+                    "model": thread.get("model"),
+                    "link": thread.get("link"),
+                    "runCount": thread.get("runCount"),
+                },
+                "messages": messages,
+                "ticket": {"id": ticket["id"], "status": ticket["status"], "note": ticket["note"]},
+            })
+            return
         if path == "/api/projects":
             config = load_config(Path(self.config_path))
             items = t3_projects(Path(self.t3_db_path))
@@ -288,6 +363,7 @@ class Handler(BaseHTTPRequestHandler):
                         "maxAttempts": int((config.get("verification") or {}).get("maxAttempts", 2) or 2),
                     },
                     "projectDefaults": config.get("projects") or {},
+                    "watcher": read_heartbeat(Path(self.store_path)),
                 })
             finally:
                 store.close()
@@ -330,6 +406,52 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        if path == "/api/watcher/run":
+            if not self._authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            try:
+                proc = subprocess.run(
+                    [sys.executable, str(ROOT / "watcher.py"), "--once",
+                     "--db", str(self.store_path), "--config", str(self.config_path)],
+                    capture_output=True, text=True, timeout=600,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                self._json(500, {"error": f"{type(exc).__name__}: {exc}"})
+                return
+            output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+            self._json(200 if proc.returncode == 0 else 409, {
+                "ok": proc.returncode == 0,
+                "output": output[-4000:],
+                "heartbeat": read_heartbeat(Path(self.store_path)),
+            })
+            return
+        if path == "/api/attachments":
+            if not self._authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length <= 0:
+                self._json(400, {"error": "empty upload"})
+                return
+            if length > self.max_upload_bytes:
+                self._json(413, {"error": "file is larger than 20 MB"})
+                return
+            raw_name = unquote(self.headers.get("X-Filename", "")).strip()
+            name = Path(raw_name).name
+            if not name or name.startswith("."):
+                self._json(400, {"error": "a filename is required"})
+                return
+            target_dir = Path(os.environ.get("T3_ATTACHMENTS_DIR", self.attachment_dir))
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                target = target_dir / f"{uuid.uuid4().hex[:8]}-{name}"
+                target.write_bytes(self.rfile.read(length))
+            except OSError as exc:
+                self._json(500, {"error": str(exc)})
+                return
+            self._json(200, {"path": str(target), "name": name, "size": length})
+            return
         if path == "/api/tickets":
             if not self._authorised():
                 self._json(401, {"error": "invalid token"})

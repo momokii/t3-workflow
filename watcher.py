@@ -47,7 +47,27 @@ from store import (  # noqa: E402
 )
 
 T3_DB = Path.home() / ".t3/userdata/statev2.sqlite"
+HEARTBEAT_NAME = "watcher.json"
 TEST_TIMEOUT = 1800
+
+
+def write_heartbeat(db_path: Path | str, interval: int, status: str, message: str) -> None:
+    """A small file the board can read to say when the watcher last looked."""
+    path = Path(db_path).with_name(HEARTBEAT_NAME)
+    payload = {
+        "at": datetime.now(timezone.utc).isoformat(),
+        "interval": int(interval),
+        "status": status,
+        "message": message[:300],
+        "pid": os.getpid(),
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(temporary, path)
+    except OSError:
+        pass  # a heartbeat is never allowed to stop the loop
 
 
 def project_path(project: str, t3_db: Path = T3_DB) -> str:
@@ -78,6 +98,10 @@ def build_prompt(ticket: dict) -> str:
     if ticket["test_cmd"]:
         parts += ["", "Test command that must pass:", ticket["test_cmd"]]
     parts += [
+        "",
+        "Before planning, check which skills are available to you (for example skill files under",
+        "~/.agents/skills/*/SKILL.md, or the skill list of your harness) and use the ones that fit",
+        "this ticket. Name the skills you used in your report.",
         "",
         f"Ticket: {ticket['id']} · project: {ticket['project']}",
         "Finish this ticket and report the result. The watcher owns the ticket status; "
@@ -1020,20 +1044,27 @@ def step(store: TicketStore, config: dict, t3_cli: str, dry_run: bool, worker: s
     return run_once(store, config, t3_cli, dry_run, worker, runner=runner)
 
 
-def loop(store_factory, config: dict, t3_cli: str, interval: int, worker: str) -> None:
+def loop(store_factory, config: dict, t3_cli: str, interval: int, worker: str,
+         db_path: Path | None = None) -> None:
     print(f"watcher started (interval {interval}s)", flush=True)
     while True:
         if not (config.get("watcher") or {}).get("enabled", True):
+            if db_path:
+                write_heartbeat(db_path, interval, "paused", "watcher.enabled=false")
             print("watcher paused by config (watcher.enabled=false)", flush=True)
             time.sleep(max(60, interval))
             continue
         store = store_factory()
         try:
             message = step(store, config, t3_cli, dry_run=False, worker=worker)
+            status = "ok"
         except TicketError as exc:
             message = f"error: {exc}"
+            status = "error"
         finally:
+            heartbeat_path = store.path if db_path is None else db_path
             store.close()
+        write_heartbeat(heartbeat_path, interval, status, message)
         print(f"{time.strftime('%H:%M:%S')} {message}", flush=True)
         time.sleep(interval)
 
@@ -1060,10 +1091,12 @@ def main() -> int:
     try:
         if args.loop:
             store.close()
-            loop(factory, config, t3_cli, interval, args.worker)
+            loop(factory, config, t3_cli, interval, args.worker, db_path=Path(args.db))
             return 0
         if args.once:
-            print(step(store, config, t3_cli, args.dry_run, args.worker))
+            message = step(store, config, t3_cli, args.dry_run, args.worker)
+            write_heartbeat(Path(args.db), interval, "ok", message)
+            print(message)
         else:
             print("use --once or --loop")
     except TicketError as exc:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import http.client
 import importlib.util
+import datetime
 import json
 import re
 import os
@@ -51,7 +52,10 @@ class BoardApiTests(unittest.TestCase):
         self.fake_cli.write_text(
             "#!/bin/sh\n"
             "printf '%s\\n' \"$@\" > \"$T3_ARGS_FILE\"\n"
-            "case \"$*\" in *fail*) echo 'first line of the failure'; echo 'second line with /a/path'; exit 1 ;; esac\n"
+            "case \"$*\" in\n"
+            "  *'thread show'*) printf '%s\\n' '{\"thread\":{\"title\":\"t\",\"status\":\"running\",\"model\":\"pi/m\",\"runCount\":1,\"link\":\"\"},\"messages\":[{\"role\":\"assistant\",\"runId\":\"r1\",\"text\":\"working on it\"}]}'; exit 0 ;;\n"
+            "  *fail*) echo 'first line of the failure'; echo 'second line with /a/path'; exit 1 ;;\n"
+            "esac\n"
         )
         self.fake_cli.chmod(0o755)
         config = json.loads(json.dumps(CONFIG))
@@ -391,6 +395,52 @@ class BoardApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status, 200, raw)
         self.assertEqual(json.loads(raw)["ticket"]["test_cmd"], "")
+
+    def test_the_payload_carries_watcher_liveness(self) -> None:
+        heartbeat = self.db.with_name("watcher.json")
+        heartbeat.write_text(json.dumps({
+            "at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "interval": 120, "status": "ok", "message": "no ticket is ready",
+        }))
+        _, raw = self.request("GET", "/api/tickets")
+        watcher = json.loads(raw)["watcher"]
+        self.assertFalse(watcher["stale"])
+        self.assertEqual(watcher["interval"], 120)
+        self.assertLess(watcher["ageSeconds"], 60)
+
+    def test_live_status_returns_thread_messages(self) -> None:
+        con = sqlite3.connect(self.db)
+        con.execute("update tickets set thread_id='th-1' where id='T-0002'")
+        con.commit(); con.close()
+        response, raw = self.request("GET", "/api/tickets/T-0002/live", token="secret")
+        self.assertEqual(response.status, 200, raw)
+        payload = json.loads(raw)
+        self.assertEqual(payload["thread"]["status"], "running")
+        self.assertIn("working on it", payload["messages"][0]["text"])
+
+    def test_live_status_needs_a_thread(self) -> None:
+        response, _ = self.request("GET", "/api/tickets/T-0001/live", token="secret")
+        self.assertEqual(response.status, 400)
+
+    def test_an_uploaded_attachment_is_stored_and_returned(self) -> None:
+        os.environ["T3_ATTACHMENTS_DIR"] = str(self.tmp / "attachments")
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", "/api/attachments", body=b"hello file",
+                     headers={"X-Board-Token": "secret", "X-Filename": "spec%20note.txt"})
+        response = conn.getresponse()
+        raw = response.read().decode()
+        conn.close()
+        self.assertEqual(response.status, 200, raw)
+        payload = json.loads(raw)
+        self.assertEqual(payload["name"], "spec note.txt")
+        self.assertTrue(Path(payload["path"]).is_file())
+        self.assertEqual(Path(payload["path"]).read_bytes(), b"hello file")
+
+    def test_the_board_has_confirm_dialogs_and_a_drop_zone(self) -> None:
+        _, raw = self.request("GET", "/")
+        for needle in ('id="dlg-confirm"', 'id="attachment-drop"', 'id="watcher"',
+                       'id="dlg-live"', 'class="req"'):
+            self.assertIn(needle, raw)
 
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
