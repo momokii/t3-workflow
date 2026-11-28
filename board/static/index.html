@@ -187,6 +187,11 @@
   .live .msg.user { background: var(--surface-2); }
   .live .msg.assistant { border-left: 3px solid var(--accent); }
   .live .role { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); display: block; margin-bottom: 4px; }
+  .live .group { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); margin-top: 4px; }
+  .live .step { display: flex; gap: 8px; align-items: baseline; font-size: 12px; padding: 3px 2px; border-bottom: 1px dashed var(--line); }
+  .live .step .kind { font-weight: 600; }
+  .live .step .when { color: var(--ink-soft); margin-left: auto; font-size: 11px; }
+  .chip.watcher.checking { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
   .hint[role="status"]:empty { display: none; }
   .picker { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
   .picker .btn { padding: 5px 10px; font-size: 12px; }
@@ -371,7 +376,7 @@
   <form method="dialog">
     <h3 id="dlg-live-title">Live</h3>
     <p class="hint" id="live-status" role="status"></p>
-    <div class="live" id="live-log" role="log" aria-live="polite"></div>
+    <div class="live" id="live-log" aria-live="off"></div>
     <div class="row actions">
       <button class="btn" type="button" id="live-refresh">Refresh</button>
       <span class="spacer"></span>
@@ -1319,6 +1324,12 @@
     }
     const age = watcher.ageSeconds || 0;
     const shown = age < 90 ? `${age}s ago` : `${Math.round(age / 60)}m ago`;
+    if (watcher.status === 'checking') {
+      chip.textContent = `watcher: checking (${age}s)`;
+      chip.className = 'chip watcher checking';
+      chip.title = 'A watcher step is running; a long test can take up to 30 minutes.';
+      return;
+    }
     chip.textContent = `watcher: ${shown}${watcher.stale ? ' (stale)' : ''}`;
     chip.className = 'chip watcher ' + (watcher.stale ? 'stale' : 'fresh');
     chip.title = `${watcher.message || ''} · every ${watcher.interval}s · ${watcher.status}`;
@@ -1333,18 +1344,43 @@
     const status = document.getElementById('live-status');
     const log = document.getElementById('live-log');
     try {
+      if (document.hidden) return;
       const data = await api(`/api/tickets/${liveTicket.id}/live`);
       liveFailures = 0;
       setStatus(status, `thread ${data.thread.status || '?'} · ${data.thread.model || ''} · ` +
-        `${data.messages.length} messages`);
+        `${(data.activity || []).length} steps · ${data.messages.length} messages`);
       const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
       log.textContent = '';
+      if ((data.activity || []).length) {
+        const label = document.createElement('div');
+        label.className = 'group';
+        label.textContent = 'What the thread is doing';
+        log.appendChild(label);
+        for (const step of data.activity.slice(-8)) {
+          const row = document.createElement('div');
+          row.className = 'step';
+          const kind = document.createElement('span');
+          kind.className = 'kind';
+          kind.textContent = (step.type || 'step').replaceAll('_', ' ');
+          const detail = document.createElement('span');
+          detail.textContent = [step.status, step.tool, step.title].filter(Boolean).join(' · ');
+          const when = document.createElement('span');
+          when.className = 'when';
+          when.textContent = step.at ? step.at.slice(11, 19) : '';
+          row.append(kind, detail, when);
+          log.appendChild(row);
+        }
+      }
+      const messagesLabel = document.createElement('div');
+      messagesLabel.className = 'group';
+      messagesLabel.textContent = 'Messages';
+      log.appendChild(messagesLabel);
       for (const message of data.messages) {
         const box = document.createElement('div');
         box.className = 'msg ' + (message.role === 'user' ? 'user' : 'assistant');
         const role = document.createElement('span');
         role.className = 'role';
-        role.textContent = message.role || 'message';
+        role.textContent = `${message.role || 'message'}${message.at ? ' · ' + message.at.slice(11, 19) : ''}`;
         const body = document.createElement('div');
         body.textContent = message.text || '';
         box.append(role, body);

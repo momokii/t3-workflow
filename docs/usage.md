@@ -247,11 +247,14 @@ defaults remove the typing, not the proof.
 ### Watching the watcher
 
 The header carries the watcher's heartbeat (`watcher: 12s ago`), written by every loop and by a
-one-shot step; it turns amber with `(stale)` when the last check is older than three intervals, and its
-tooltip carries the last message. **Check now** runs `watcher.py --once` immediately (the claim is
-atomic, so it cannot double-start a ticket) and shows its last line. Cards for tickets with a thread
-gain a **live** control: a modal follows the thread's messages every five seconds, stops when closed or
-after three failures, and keeps a manual Refresh.
+one-shot step. While a step runs it says `checking (Ns)` — a step may legitimately take the test timeout,
+so that is not called stale until 2 000 seconds. Otherwise it turns amber with `(stale)` after three
+intervals, and its tooltip carries the last message. **Check now** runs `watcher.py --once` immediately
+(the claim is atomic, so it cannot double-start a ticket) and shows its last line. Cards for tickets with
+a thread gain a **live** control: a modal follows the thread every five seconds — the last turn items
+(what it is doing now) and messages (what it said) — stops when closed or after three failures, pauses
+while the tab is hidden, and keeps a manual Refresh. The log is not an `aria-live` region, so a poll does
+not re-announce the conversation; the status line announces the change instead.
 
 ### Reading in the board
 

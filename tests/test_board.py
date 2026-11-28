@@ -74,11 +74,20 @@ class BoardApiTests(unittest.TestCase):
         con = sqlite3.connect(self.t3_db)
         con.executescript(
             "create table projection_projects (project_id text, title text, workspace_root text, deleted_at text);"
-            "create table orchestration_v2_projection_threads (thread_id text, project_id text, title text, created_at text);"
+            "create table orchestration_v2_projection_threads"
+            " (thread_id text, project_id text, title text, created_at text, payload_json text);"
             "create table orchestration_v2_projection_runs (run_id text, thread_id text, ordinal integer, status text);"
+            "create table orchestration_v2_projection_messages"
+            " (message_id text, thread_id text, role text, created_at text, payload_json text);"
+            "create table orchestration_v2_projection_turn_items"
+            " (turn_item_id text, thread_id text, ordinal integer, type text, status text,"
+            " updated_at text, payload_json text);"
         )
         con.execute("insert into projection_projects values ('p1','t3-workflow','/tmp/p',null)")
-        con.execute("insert into orchestration_v2_projection_threads values ('th-1','p1','Thread lama','2026-11-01')")
+        con.execute(
+            "insert into orchestration_v2_projection_threads values"
+            " ('th-1','p1','Thread lama','2026-11-01','{\"modelSelection\":{\"model\":\"pi/m\"}}')"
+        )
         con.execute("insert into orchestration_v2_projection_runs values ('r1','th-1',1,'completed')")
         con.commit()
         con.close()
@@ -408,15 +417,30 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(watcher["interval"], 120)
         self.assertLess(watcher["ageSeconds"], 60)
 
-    def test_live_status_returns_thread_messages(self) -> None:
+    def test_live_status_reads_the_t3_database(self) -> None:
         con = sqlite3.connect(self.db)
         con.execute("update tickets set thread_id='th-1' where id='T-0002'")
+        con.commit(); con.close()
+        con = sqlite3.connect(self.t3_db)
+        con.execute("insert into orchestration_v2_projection_runs values ('r2','th-1',2,'running')")
+        con.execute(
+            "insert into orchestration_v2_projection_messages values"
+            " ('m1','th-1','assistant','2026-11-28T09:09:50Z',"
+            " '{\"text\":\"working on it\"}')"
+        )
+        con.execute(
+            "insert into orchestration_v2_projection_turn_items values"
+            " ('t1','th-1',1,'command_execution','completed','2026-11-28T09:09:51Z',"
+            " '{\"title\":\"pytest -q\"}')"
+        )
         con.commit(); con.close()
         response, raw = self.request("GET", "/api/tickets/T-0002/live", token="secret")
         self.assertEqual(response.status, 200, raw)
         payload = json.loads(raw)
         self.assertEqual(payload["thread"]["status"], "running")
+        self.assertEqual(payload["thread"]["model"], "pi/m")
         self.assertIn("working on it", payload["messages"][0]["text"])
+        self.assertEqual(payload["activity"][0]["type"], "command_execution")
 
     def test_live_status_needs_a_thread(self) -> None:
         response, _ = self.request("GET", "/api/tickets/T-0001/live", token="secret")

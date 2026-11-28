@@ -1055,6 +1055,10 @@ def loop(store_factory, config: dict, t3_cli: str, interval: int, worker: str,
             time.sleep(max(60, interval))
             continue
         store = store_factory()
+        if db_path:
+            # A step may legitimately take up to TEST_TIMEOUT, so say "checking" before it runs;
+            # otherwise a healthy watcher looks stale while it is working.
+            write_heartbeat(db_path, interval, "checking", "one step in progress")
         try:
             message = step(store, config, t3_cli, dry_run=False, worker=worker)
             status = "ok"
@@ -1094,6 +1098,7 @@ def main() -> int:
             loop(factory, config, t3_cli, interval, args.worker, db_path=Path(args.db))
             return 0
         if args.once:
+            write_heartbeat(Path(args.db), interval, "checking", "one step in progress")
             message = step(store, config, t3_cli, args.dry_run, args.worker)
             write_heartbeat(Path(args.db), interval, "ok", message)
             print(message)

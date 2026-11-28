@@ -42,6 +42,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Live status reads T3's database, not a subprocess.** The live modal shows the last turn items
+  (what the thread is doing now) and messages with timestamps, both indexed; measured at ~1.4 ms
+  instead of ~1 s and ~299 MB per `t3 thread show` call. The log is silent to screen readers and the
+  status line announces changes; polling pauses on a hidden tab.
+- **The heartbeat is honest while a step runs.** `checking (Ns)` replaces a false "stale" during a
+  step that may legitimately take the test timeout, and "stale" only applies after 2 000 seconds in
+  that state. Evidence and measurements: `docs/ui-live-status.md`.
+
 - **The board shows the watcher and the work, live.** A heartbeat file written by every watcher loop
   powers a `watcher: 12s ago` chip (amber when stale) and a **Check now** button that runs one
   `watcher.py --once` step; running tickets gain a **live** modal that follows the thread's last

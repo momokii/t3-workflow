@@ -60,6 +60,69 @@ def project_test_command(config: dict, title: str, workspace_root: str) -> dict:
     return detect_test_command_info(Path(workspace_root))
 
 
+def thread_log(db_path: Path, thread_id: str, messages: int = 12, activity: int = 20) -> dict:
+    """The thread's recent messages and turn items, read through T3's indexes."""
+    if not db_path.exists():
+        return {"error": "the T3 database is missing"}
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2)
+        con.row_factory = sqlite3.Row
+        try:
+            con.execute("pragma query_only=ON")
+            con.execute("pragma busy_timeout=200")
+            thread = con.execute(
+                "select title, json_extract(payload_json,'$.modelSelection.model') as model"
+                " from orchestration_v2_projection_threads where thread_id=?",
+                (thread_id,),
+            ).fetchone()
+            if thread is None:
+                return {"error": "the thread is not in T3"}
+            run = con.execute(
+                "select status from orchestration_v2_projection_runs"
+                " where thread_id=? order by ordinal desc limit 1",
+                (thread_id,),
+            ).fetchone()
+            run_count = con.execute(
+                "select count(*) from orchestration_v2_projection_runs where thread_id=?",
+                (thread_id,),
+            ).fetchone()[0]
+            rows = con.execute(
+                "select role, created_at, json_extract(payload_json,'$.text') as text"
+                " from orchestration_v2_projection_messages"
+                " where thread_id=? order by created_at desc limit ?",
+                (thread_id, messages),
+            ).fetchall()
+            items = con.execute(
+                "select type, status, updated_at,"
+                " json_extract(payload_json,'$.title') as title,"
+                " json_extract(payload_json,'$.toolName') as tool"
+                " from orchestration_v2_projection_turn_items"
+                " where thread_id=? order by ordinal desc limit ?",
+                (thread_id, activity),
+            ).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error as exc:
+        return {"error": f"cannot read T3: {exc}"}
+    return {
+        "thread": {
+            "title": thread["title"],
+            "status": (run["status"] if run else "unknown"),
+            "model": thread["model"] or "",
+            "runCount": run_count,
+        },
+        "messages": [
+            {"role": row["role"], "at": row["created_at"], "text": (row["text"] or "")[:4000]}
+            for row in reversed(rows)
+        ],
+        "activity": [
+            {"type": row["type"], "status": row["status"], "at": row["updated_at"],
+             "title": row["title"] or "", "tool": row["tool"] or ""}
+            for row in reversed(items)
+        ],
+    }
+
+
 def read_heartbeat(store_path: Path) -> dict | None:
     path = Path(store_path).with_name("watcher.json")
     if not path.is_file():
@@ -72,7 +135,10 @@ def read_heartbeat(store_path: Path) -> dict | None:
     age = max(0, int((datetime.now(timezone.utc) - checked).total_seconds()))
     interval = int(data.get("interval") or 0)
     data["ageSeconds"] = age
-    data["stale"] = bool(interval and age > max(90, interval * 3))
+    if data.get("status") == "checking":
+        data["stale"] = age > 2000
+    else:
+        data["stale"] = bool(interval and age > max(90, interval * 3))
     return data
 
 
@@ -139,6 +205,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _thread_log(self, thread_id: str) -> dict:
+        return thread_log(Path(self.t3_db_path), thread_id)
 
     @staticmethod
     def _fs_listing(raw: str) -> tuple[int, dict]:
@@ -275,41 +344,15 @@ class Handler(BaseHTTPRequestHandler):
             if not thread_id:
                 self._json(400, {"error": "this ticket has no thread yet"})
                 return
-            config = load_config(Path(self.config_path))
-            cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
-            try:
-                proc = subprocess.run(
-                    [cli, "thread", "show", thread_id, "--json", "--messages", "12"],
-                    capture_output=True, text=True, timeout=25,
-                )
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                self._json(502, {"error": f"t3 thread show failed: {type(exc).__name__}"})
+            log = self._thread_log(thread_id)
+            if "error" in log:
+                self._json(502, {"error": log["error"]})
                 return
-            if proc.returncode != 0:
-                detail = (proc.stderr or proc.stdout or "").strip().splitlines()
-                self._json(502, {"error": (detail[0] if detail else "t3 thread show failed")[:300]})
-                return
-            try:
-                data = json.loads(proc.stdout)
-            except json.JSONDecodeError:
-                self._json(502, {"error": "t3 thread show did not return JSON"})
-                return
-            messages = [
-                {"role": item.get("role"), "runId": item.get("runId"),
-                 "text": (item.get("text") or "")[:4000]}
-                for item in (data.get("messages") or [])
-            ]
-            thread = data.get("thread") or {}
             self._json(200, {
                 "thread_id": thread_id,
-                "thread": {
-                    "title": thread.get("title"),
-                    "status": thread.get("status"),
-                    "model": thread.get("model"),
-                    "link": thread.get("link"),
-                    "runCount": thread.get("runCount"),
-                },
-                "messages": messages,
+                "thread": log["thread"],
+                "messages": log["messages"],
+                "activity": log["activity"],
                 "ticket": {"id": ticket["id"], "status": ticket["status"], "note": ticket["note"]},
             })
             return

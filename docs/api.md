@@ -308,15 +308,22 @@ but never from a command flagged `needs_setup`.
 ## GET /api/tickets/<id>/live
 
 The live modal's source: the ticket's thread (the dev thread, or the reviewer's when there is no dev
-thread) with its status, model and last twelve messages. Token required. `400` when the ticket has no
-thread, `404` for an unknown ticket, `502` when `t3 thread show` fails.
+thread) with its status, model, last twelve messages and last twenty turn items, read from T3's database
+through its `(thread_id, created_at)` index (sub-millisecond; the CLI costs ~1 s and ~299 MB per call).
+Token required. `400` when the ticket has no thread, `404` for an unknown ticket, `502` when the database
+cannot be read.
 
 ```json
 { "thread_id": "mcp:…",
   "thread": { "title": "Brain Research", "status": "running", "model": "opencode-go/deepseek-v4.1-flash",
-              "link": "https://…", "runCount": 1 },
-  "messages": [ { "role": "assistant", "runId": "run:…", "text": "…" } ] }
+              "runCount": 1 },
+  "messages": [ { "role": "assistant", "at": "2026-11-28T09:09:50Z", "text": "…" } ],
+  "activity": [ { "type": "command_execution", "status": "completed",
+                  "at": "2026-11-28T09:09:51Z", "title": "pytest -q", "tool": "shell" } ] }
 ```
+
+`messages` only changes when an assistant turn closes; `activity` (turn items) is what grows during a
+running step, which is why the modal shows both.
 
 ## POST /api/watcher/run
 
