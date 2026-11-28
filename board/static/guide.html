@@ -58,8 +58,8 @@
   .lede { color: var(--ink-soft); margin: 0 0 26px; max-width: 70ch; }
   nav.toc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 26px; }
   nav.toc h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); margin: 0 0 8px; }
-  nav.toc ol { margin: 0; padding-left: 18px; columns: 2; column-gap: 28px; }
-  @media (max-width: 660px) { nav.toc ol { columns: 1; } }
+  nav.toc ol { margin: 0; padding-left: 20px; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 2px 28px; }
   nav.toc a { color: var(--accent); text-decoration: none; }
   nav.toc a:hover { text-decoration: underline; }
   section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 14px; box-shadow: var(--shadow); }
@@ -69,7 +69,8 @@
   code, kbd { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; }
   pre { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; overflow-x: auto; }
   pre code { background: none; border: 0; padding: 0; }
-  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0 4px;
+    display: block; overflow-x: auto; }
   th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
   th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
   .flow { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; overflow-x: auto; background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; }
@@ -119,24 +120,6 @@
       <li><a href="#telegram">Driving it from Telegram</a></li>
       <li><a href="#deletion">Deleting here or in T3</a></li>
       <li><a href="#data">Where the data lives</a></li>
-  <section id="retries">
-    <h2>When something fails</h2>
-    <p>Failures a retry can fix do not stop the queue; they go back into the loop with a counter on the ticket.</p>
-    <table>
-      <thead><tr><th>Failure</th><th>What happens</th><th>Limit</th></tr></thead>
-      <tbody>
-        <tr><td>Test fails</td><td>the output tail is sent into the dev thread; the ticket returns to <code>in-progress</code> and testing waits for the thread's next run</td><td><code>retry.maxTestAttempts</code></td></tr>
-        <tr><td>Thread reports failed / cancelled / interrupted</td><td>ticket back to <code>ready</code> for another attempt</td><td><code>retry.maxThreadAttempts</code></td></tr>
-        <tr><td>A T3 call crashes, times out or returns unusable JSON</td><td>same retry, with the exit code in the note</td><td><code>retry.maxThreadAttempts</code></td></tr>
-        <tr><td>Review rejects</td><td>findings into the dev thread, one review attempt spent</td><td><code>verification.maxAttempts</code></td></tr>
-        <tr><td>Provider usage limit</td><td><code>blocked</code> with a retry time; the watcher returns it to <code>ready</code> itself after the backoff window</td><td><code>retry.maxQuotaAttempts</code></td></tr>
-        <tr><td>Context overflow, model removed, provider version mismatch</td><td><code>blocked</code> at once: a retry re-sends the same history or needs an upgrade</td><td>—</td></tr>
-        <tr><td>No test command, unknown model, missing remote, no verdict</td><td><code>blocked</code>: a retry would loop forever</td><td>—</td></tr>
-      </tbody>
-    </table>
-    <p>Telegram announces the work as it moves — acknowledged when claimed, a retry notice, the verdict, and on
-    <code>done</code> the markdown report as a document.</p>
-  </section>
 
       <li><a href="#gaps">What is not built yet</a></li>
     </ol>
@@ -161,21 +144,22 @@
         <tr><td><code>blocked</code></td><td>Something needs a person: a failed test, a failed thread, a rejected approval, a missed budget.</td><td>Watcher or you</td></tr>
       </tbody>
     </table>
-    <p class="note">A ticket in <code>blocked</code> does not retry by itself. Fix the cause, then move it back to
-    <code>ready</code>; the note and the event history keep the reason.</p>
+    <p class="note">A ticket in <code>blocked</code> either waits for a quota window it scheduled, or waits for
+    you: fix the cause and use <strong>Move → Ready</strong>. The note and the event history keep the reason.</p>
   </section>
 
   <section id="test-command">
     <h2>Test command</h2>
     <p>This field is the definition of "done" that a model cannot talk its way out of. It is a shell command
     the <strong>watcher</strong> runs on this machine, in the project folder, after the agent thread has
-    finished — not inside the thread. Only the exit code is judged:</p>
+    finished — not inside the thread. Only the exit code is judged. A project can provide a default for it and
+    the field suggests common commands, but the watcher never invents one: empty blocks at <code>testing</code>.</p>
     <table>
       <thead><tr><th>Exit code</th><th>What happens</th></tr></thead>
       <tbody>
         <tr><td><code>0</code></td><td>The last 40 lines are stored as proof, and the ticket moves to <code>review</code>.</td></tr>
         <tr><td>anything else</td><td>The ticket goes back to <code>in-progress</code> with the failing output in its note.</td></tr>
-        <tr><td>empty field</td><td>The ticket cannot advance: it is recorded as a skipped test and returned to <code>in-progress</code>.</td></tr>
+        <tr><td>empty field</td><td>The ticket blocks at <code>testing</code> with <code>test_cmd is empty</code>: the watcher never guesses a command.</td></tr>
       </tbody>
     </table>
     <p>So the command has to be runnable from the project directory and end with a status:</p>
@@ -210,6 +194,9 @@ npm test -- --run</code></pre>
 
   <section id="fields">
     <h2>What each ticket field does</h2>
+    <p class="note">Reading is part of the dialog: <strong>report</strong> opens the report as a rendered page,
+    <strong>thread</strong> shows the thread's title, project and status beside its id, and every path field has a
+    <strong>Browse…</strong> picker that reads this machine (home folder, names only).</p>
     <figure class="shot">
       <img src="/static/shots/new-ticket.png" alt="The New ticket dialog: title, project, preset, harness, model, context, attachment, test command, priority and the approval checkbox, each with a short explanation." width="1100" height="900" loading="lazy" decoding="async">
       <figcaption>Every field carries its own explanation under it. The dialog opens immediately and fills its pickers from T3; submit stays disabled until they are ready.</figcaption>
@@ -331,6 +318,26 @@ npm test -- --run</code></pre>
       <li><strong>Force move</strong> is the human override. It skips the state machine and is recorded as a
       <code>forced</code> event, so a report can tell a decision from a normal transition.</li>
     </ul>
+  </section>
+
+  <section id="retries">
+    <h2>When something fails</h2>
+    <p>Failures a retry can fix do not stop the queue; they go back into the loop with a counter on the ticket.</p>
+    <table>
+      <thead><tr><th>Failure</th><th>What happens</th><th>Limit</th></tr></thead>
+      <tbody>
+        <tr><td>Test fails</td><td>the output tail is sent into the dev thread; the ticket returns to <code>in-progress</code> and testing waits for the thread's next run</td><td><code>retry.maxTestAttempts</code></td></tr>
+        <tr><td>Thread reports failed / cancelled / interrupted</td><td>ticket back to <code>ready</code> for another attempt</td><td><code>retry.maxThreadAttempts</code></td></tr>
+        <tr><td>A T3 call crashes, times out or returns unusable JSON</td><td>same retry, with the exit code in the note</td><td><code>retry.maxThreadAttempts</code></td></tr>
+        <tr><td>Review rejects</td><td>findings into the dev thread, one review attempt spent</td><td><code>verification.maxAttempts</code></td></tr>
+        <tr><td>Provider usage limit</td><td><code>blocked</code> with a retry time; the watcher returns it to <code>ready</code> itself after the backoff window</td><td><code>retry.maxQuotaAttempts</code></td></tr>
+        <tr><td>Context overflow, model removed, provider version mismatch</td><td><code>blocked</code> at once: a retry re-sends the same history or needs an upgrade</td><td>—</td></tr>
+        <tr><td>No test command, unknown model, missing remote, no verdict</td><td><code>blocked</code>: a retry would loop forever</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <p>Telegram announces the work as it moves — acknowledged when claimed, a retry notice, the verdict, and on
+    <code>done</code> the markdown report as a document. Ticket-driven messages start with
+    <code>🤖 ticket automation</code>; replies to commands you typed do not, so the two are easy to tell apart.</p>
   </section>
 
   <section id="telegram">

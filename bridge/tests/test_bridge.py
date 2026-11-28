@@ -162,6 +162,7 @@ class TicketCommandTests(unittest.TestCase):
             self.assertEqual(bridge.notify_ticket_states(self.config, state), 1)
             self.assertIn("in-progress", sent[0])
             self.assertIn("T-0001", sent[0])
+            self.assertIn("ticket automation", sent[0])  # distinguished from manual replies
         finally:
             bridge.reply = original
 
@@ -192,6 +193,7 @@ class TicketCommandTests(unittest.TestCase):
             self.assertEqual(bridge.notify_ticket_states(self.config, state), 2)
             self.assertIn("in-progress", sent[0])
             self.assertIn("Plan: read, patch, test.", sent[1])
+            self.assertIn("ticket automation", sent[1])
             self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)
         finally:
             bridge.reply = original_reply

@@ -583,7 +583,7 @@ def notify_approvals(config: dict, state: dict) -> int:
         reply(
             config,
             str(chats[0]),
-            f"Approval #{key} · {approval['ticket_id']}\n{approval['question']}\n\n"
+            f"{AUTOMATION} · approval #{key} · {approval['ticket_id']}\n{approval['question']}\n\n"
             f"Reply: /approve {key} or /reject {key}",
         )
         notified.add(key)
@@ -593,6 +593,7 @@ def notify_approvals(config: dict, state: dict) -> int:
     return sent
 
 
+AUTOMATION = "🤖 ticket automation"
 NOTIFY_STATUSES = ("in-progress", "ready", "review", "done", "blocked")
 STATUS_ICON = {"in-progress": "▶", "ready": "↻", "review": "🔍", "done": "✅", "blocked": "⛔"}
 
@@ -630,7 +631,10 @@ def announce_plan(config: dict, state: dict, ticket: dict) -> int:
     text = assistant[0]["text"].strip()
     if len(text) > 900:
         text = text[:900].rstrip() + " …"
-    reply(config, str(config["telegram"]["allowChatIds"][0]), f"🧭 {ticket['id']} plan:\n{text}")
+    reply(
+        config, str(config["telegram"]["allowChatIds"][0]),
+        f"{AUTOMATION} · 🧭 {ticket['id']} plan:\n{text}",
+    )
     seen.add(key)
     state["plannedRuns"] = sorted(seen)[-200:]
     save_state(state)
@@ -678,7 +682,8 @@ def notify_ticket_states(config: dict, state: dict) -> int:
         icon = STATUS_ICON.get(ticket["status"], "•")
         reply(
             config, str(chats[0]),
-            f"{icon} {ticket['id']} → {ticket['status']}: {ticket['title']}{verdict}{note}{link}",
+            f"{AUTOMATION} · {icon} {ticket['id']} → {ticket['status']}: "
+            f"{ticket['title']}{verdict}{note}{link}",
         )
         sent += 1
         if ticket["status"] == "in-progress" and ticket.get("thread_id"):

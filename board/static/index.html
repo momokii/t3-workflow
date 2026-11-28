@@ -140,6 +140,34 @@
   dialog .hint { font-size: 11px; color: var(--ink-soft); margin: -2px 0 0; }
   dialog textarea { min-height: 76px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   dialog .check input { width: auto; }
+  dialog.wide { width: min(900px, 94vw); }
+  .md { padding: 2px 2px 10px; font-size: 14px; line-height: 1.6; max-height: 66vh; overflow: auto; }
+  .md h1 { font-size: 20px; margin: 4px 0 10px; }
+  .md h2 { font-size: 16px; margin: 18px 0 8px; }
+  .md h3 { font-size: 14px; margin: 14px 0 6px; }
+  .md p { margin: 8px 0; }
+  .md ul, .md ol { margin: 8px 0 8px 20px; padding: 0; }
+  .md li { margin: 3px 0; }
+  .md code { background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; font-size: 12px; }
+  .md pre { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; overflow-x: auto; }
+  .md pre code { border: 0; background: none; padding: 0; }
+  .md table { display: block; overflow-x: auto; border-collapse: collapse; margin: 8px 0; }
+  .md th, .md td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .md blockquote { margin: 8px 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--ink-soft); }
+  .md a { color: var(--accent); }
+  .md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+  .hint.warn { color: var(--warn); }
+  .hint[role="status"]:empty { display: none; }
+  .picker { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  .picker .btn { padding: 5px 10px; font-size: 12px; }
+  dl.facts { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; margin: 10px 0; font-size: 13px; }
+  dl.facts dt { color: var(--ink-soft); }
+  dl.facts dd { margin: 0; word-break: break-all; }
+  .fs-path { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; overflow-x: auto; white-space: nowrap; }
+  ul.fs { list-style: none; margin: 10px 0; padding: 0; max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 9px; }
+  ul.fs li + li { border-top: 1px solid var(--line); }
+  ul.fs button { width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink); display: flex; justify-content: space-between; gap: 8px; }
+  ul.fs button:hover, ul.fs button:focus-visible { background: var(--surface-2); }
   #toast { position: fixed; inset-inline: 0; bottom: 20px; display: flex; justify-content: center; pointer-events: none; }
   #toast .item { pointer-events: auto; margin-top: 8px; background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 999px; font-size: 13px; box-shadow: var(--shadow); }
   #toast .item.err { background: var(--danger); color: #fff; }
@@ -194,8 +222,16 @@
     <label>Context / specification <textarea name="body" placeholder="Context, acceptance criteria, links, or important notes…"></textarea></label>
     <label>Attachment (path on this machine) <input name="attachment_path" placeholder="/home/kelanach/docs/spec.pdf" autocomplete="off"></label>
     <p class="hint">The attachment is not uploaded; its path is passed to the agent so it can read it directly.</p>
-    <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
+    <div class="picker"><button class="btn" type="button" data-browse="ticket:attachment_path" data-mode="file">Browse files…</button><span class="hint">reads this machine, starting at your home folder</span></div>
+    <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
     <p class="hint">Run by the watcher in the project folder after the agent finishes: exit code 0 is the proof, anything else sends the ticket back. Prefilled from the project's defaults when configured. <a href="/guide#test-command">Why this field exists</a>.</p>
+    <p class="hint warn" id="test-warning" hidden>No test command yet: the ticket will block at testing until one is filled in.</p>
+    <datalist id="test-suggestions">
+      <option value="make check"></option>
+      <option value="python3 -m unittest discover -s tests"></option>
+      <option value="go test ./..."></option>
+      <option value="npm test -- --run"></option>
+    </datalist>
     <label>Priority <select name="priority">
       <option value="1">1 — Urgent (do first)</option>
       <option value="2">2 — High</option>
@@ -222,6 +258,7 @@
     <label>Absolute path
       <input name="path" required placeholder="/home/kelanach/projects/my-project" autocomplete="off">
     </label>
+    <div class="picker"><button class="btn" type="button" data-browse="project:path" data-mode="dir">Browse folders…</button></div>
     <p class="hint">Must already exist on this machine. Point at the repository root, not a subfolder: the agent works here and the test command runs here. A folder that is not a git repository can still be registered, but release then fails loudly.</p>
     <p class="hint">After registering, the project appears in <strong>New ticket</strong> immediately; the board reads the list from T3 on every dialog open.</p>
     <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Register</button></div>
@@ -239,9 +276,52 @@
     <p class="hint">A thread already has its harness and model, and this dialog cannot change them. The preset is stored on the ticket for the record and for the report, so pick the one that matches the thread.</p>
     <label>Additional context <textarea name="body" placeholder="What should this thread finish?"></textarea></label>
     <p class="hint">Sent into the thread verbatim, together with the title. Write the acceptance criteria here: this is the whole contract the agent receives.</p>
-    <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off"></label>
+    <label>Test command <input name="test_cmd" placeholder="make check" autocomplete="off" list="test-suggestions"></label>
     <p class="hint">Runs in the project folder after the thread finishes; exit code 0 is the proof, anything else sends the ticket back. <a href="/guide#test-command">Why this field exists</a>.</p>
     <div class="row"><button class="btn" value="cancel" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Adopt</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlg-report" class="wide" aria-labelledby="dlg-report-title">
+  <form method="dialog">
+    <h3 id="dlg-report-title">Report</h3>
+    <p class="hint" id="report-status" role="status"></p>
+    <article class="md" id="report-body"></article>
+    <div class="row">
+      <a class="btn" id="report-raw" href="#" target="_blank" rel="noopener">Open raw markdown</a>
+      <span class="spacer"></span>
+      <button class="btn primary" type="submit" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-thread" aria-labelledby="dlg-thread-title">
+  <form method="dialog">
+    <h3 id="dlg-thread-title">T3 thread</h3>
+    <p class="hint" id="thread-status" role="status"></p>
+    <dl class="facts" id="thread-facts"></dl>
+    <p class="hint">This thread lives in T3 Code. The board only mirrors its status and id; open T3 to read the conversation or steer it.</p>
+    <div class="row">
+      <button class="btn" type="button" id="copy-thread">Copy thread id</button>
+      <span class="spacer"></span>
+      <button class="btn primary" type="submit" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-fs" aria-labelledby="dlg-fs-title">
+  <form method="dialog">
+    <h3 id="dlg-fs-title">Choose a folder</h3>
+    <p class="hint" id="fs-hint" role="status"></p>
+    <div class="fs-path" id="fs-path"></div>
+    <ul class="fs" id="fs-list"></ul>
+    <div class="row">
+      <button class="btn" type="button" id="fs-up">Up</button>
+      <button class="btn" type="button" id="fs-home">Home</button>
+      <span class="spacer"></span>
+      <button class="btn" type="button" data-close>Cancel</button>
+      <button class="btn primary" type="button" id="fs-use">Use this folder</button>
+    </div>
   </form>
 </dialog>
 
@@ -342,14 +422,16 @@
       a.className = 'thread';
       a.href = '#';
       a.textContent = 'thread';
-      a.title = t.thread_id;
-      a.addEventListener('click', (e) => { e.preventDefault(); say(`Thread: ${t.thread_id}`); });
+      a.title = 'Thread details';
+      a.addEventListener('click', (e) => { e.preventDefault(); openThreadDialog(t.thread_id); });
       meta.appendChild(a);
     }
     const report = document.createElement('a');
     report.className = 'thread';
     report.href = `/api/report/${t.id}`;
     report.textContent = 'report';
+    report.title = 'Read the report';
+    report.addEventListener('click', (e) => { e.preventDefault(); openReport(t); });
     meta.appendChild(report);
     if (t.status !== 'done') {
       const edit = document.createElement('button');
@@ -616,6 +698,7 @@
       fillModels(form, preferred ? preferred.model : '');
       if (projectSel.value) form.project.value = projectSel.value;
       applyProjectDefaults(form);
+      updateTestWarning();
       ready = enabledProviders().length > 0 && titles.length > 0;
       note.textContent = ready
         ? ''
@@ -657,6 +740,209 @@
     }
   }
 
+  // ---------------------------------------------------------------- reading
+  const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+
+  function inlineMd(line) {
+    return escapeHtml(line)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+
+  function renderMarkdown(text) {
+    const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
+    const out = [];
+    let index = 0;
+    let inCode = false;
+    let code = [];
+    let list = null;
+    const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+    while (index < lines.length) {
+      const line = lines[index];
+      if (line.startsWith('```')) {
+        if (!inCode) { closeList(); inCode = true; code = []; }
+        else { out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`); inCode = false; }
+        index += 1; continue;
+      }
+      if (inCode) { code.push(line); index += 1; continue; }
+      if (!line.trim()) { closeList(); index += 1; continue; }
+      let match;
+      if (/^---+$/.test(line.trim())) { closeList(); out.push('<hr>'); index += 1; continue; }
+      if ((match = line.match(/^(#{1,4})\s+(.*)$/))) {
+        closeList();
+        const level = match[1].length;
+        out.push(`<h${level}>${inlineMd(match[2])}</h${level}>`);
+        index += 1; continue;
+      }
+      if (line.trim().startsWith('|')) {
+        closeList();
+        const rows = [];
+        while (index < lines.length && lines[index].trim().startsWith('|')) {
+          const cells = lines[index].trim().replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim());
+          if (!cells.every((cell) => /^:?-{2,}:?$/.test(cell))) rows.push(cells);
+          index += 1;
+        }
+        if (rows.length) {
+          const [head, ...body] = rows;
+          out.push('<table><thead><tr>' + head.map((c) => `<th>${inlineMd(c)}</th>`).join('') + '</tr></thead><tbody>');
+          for (const row of body) {
+            out.push('<tr>' + row.map((c) => `<td>${inlineMd(c)}</td>`).join('') + '</tr>');
+          }
+          out.push('</tbody></table>');
+        }
+        continue;
+      }
+      if ((match = line.match(/^\s*[-*]\s+(.*)$/))) {
+        if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+        out.push(`<li>${inlineMd(match[1])}</li>`); index += 1; continue;
+      }
+      if ((match = line.match(/^\s*\d+[.)]\s+(.*)$/))) {
+        if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+        out.push(`<li>${inlineMd(match[1])}</li>`); index += 1; continue;
+      }
+      closeList();
+      out.push(`<p>${inlineMd(line)}</p>`);
+      index += 1;
+    }
+    closeList();
+    if (inCode) out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
+    return out.join('\n');
+  }
+
+  async function openReport(ticket) {
+    const dlg = document.getElementById('dlg-report');
+    document.getElementById('dlg-report-title').textContent = `${ticket.id} · report`;
+    document.getElementById('report-body').innerHTML = '';
+    document.getElementById('report-status').textContent = 'Loading the report…';
+    document.getElementById('report-raw').href = `/api/report/${ticket.id}`;
+    dlg.showModal();
+    try {
+      const res = await fetch(`/api/report/${ticket.id}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      document.getElementById('report-body').innerHTML = renderMarkdown(await res.text());
+      document.getElementById('report-status').textContent = '';
+    } catch (err) {
+      document.getElementById('report-status').textContent = 'Could not load the report: ' + (err.message || err);
+    }
+  }
+
+  let threadsCache = null;
+  async function threadDetails(threadId) {
+    if (!threadsCache) threadsCache = (await api('/api/threads')).threads || [];
+    return threadsCache.find((item) => item.thread_id === threadId) || null;
+  }
+
+  async function openThreadDialog(threadId) {
+    const dlg = document.getElementById('dlg-thread');
+    const facts = document.getElementById('thread-facts');
+    const status = document.getElementById('thread-status');
+    dlg.dataset.threadId = threadId;
+    facts.innerHTML = '';
+    status.textContent = 'Looking up the thread…';
+    dlg.showModal();
+    try {
+      const found = await threadDetails(threadId);
+      const rows = found ? [
+        ['Title', found.title || '(untitled)'],
+        ['Project', found.project || '?'],
+        ['Status', found.status || '?'],
+        ['Created', found.created_at || '?'],
+      ] : [];
+      rows.push(['Thread id', threadId]);
+      facts.innerHTML = rows.map(([key, value]) =>
+        `<dt>${escapeHtml(key)}</dt><dd>${key === 'Thread id' ? `<code>${escapeHtml(value)}</code>` : escapeHtml(value)}</dd>`
+      ).join('');
+      status.textContent = found ? '' : 'T3 did not list this thread among the recent ones; the id is still valid.';
+    } catch (err) {
+      status.textContent = 'Could not load the thread details: ' + (err.message || err);
+    }
+  }
+
+  document.getElementById('copy-thread').addEventListener('click', async () => {
+    const id = document.getElementById('dlg-thread').dataset.threadId || '';
+    try { await navigator.clipboard.writeText(id); say('Thread id copied'); }
+    catch { say('Copy failed; select the id manually', true); }
+  });
+
+  // ------------------------------------------------------------ folder picker
+  let fsTarget = null;
+  let fsMode = 'dir';
+  let fsCurrent = '';
+
+  function fsOffer(path, name, kind) {
+    const list = document.getElementById('fs-list');
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.innerHTML = `<span>${kind === 'dir' ? '📁' : '📄'} ${escapeHtml(name)}</span>` +
+      `<span class="hint">${kind === 'dir' ? 'folder' : 'file'}</span>`;
+    button.addEventListener('click', () => {
+      if (kind === 'dir') loadFs(path); else chooseFs(path);
+    });
+    item.appendChild(button);
+    list.appendChild(item);
+  }
+
+  async function loadFs(path) {
+    const status = document.getElementById('fs-hint');
+    const list = document.getElementById('fs-list');
+    status.textContent = 'Reading…';
+    try {
+      const data = await api(`/api/fs?path=${encodeURIComponent(path || '')}`);
+      fsCurrent = data.path;
+      document.getElementById('fs-path').textContent = data.path;
+      list.innerHTML = '';
+      data.directories.forEach((entry) => fsOffer(entry.path, entry.name, 'dir'));
+      if (fsMode === 'file') data.files.forEach((entry) => fsOffer(entry.path, entry.name, 'file'));
+      const up = document.getElementById('fs-up');
+      up.disabled = !data.parent;
+      up.dataset.parent = data.parent || '';
+      document.getElementById('fs-use').hidden = fsMode !== 'dir';
+      status.textContent = (data.directories.length || (fsMode === 'file' && data.files.length))
+        ? '' : 'This folder is empty.';
+    } catch (err) {
+      status.textContent = 'Could not read that folder: ' + (err.message || err);
+    }
+  }
+
+  function chooseFs(path) {
+    if (fsTarget) {
+      fsTarget.value = path;
+      fsTarget.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    document.getElementById('dlg-fs').close();
+  }
+
+  function openFsDialog(input, mode) {
+    fsTarget = input;
+    fsMode = mode || 'dir';
+    document.getElementById('dlg-fs-title').textContent =
+      fsMode === 'file' ? 'Choose a file' : 'Choose a folder';
+    document.getElementById('fs-hint').textContent = '';
+    document.getElementById('dlg-fs').showModal();
+    const start = input && input.value.startsWith('/') ? input.value
+      : (input && input.value.startsWith('~') ? input.value : '');
+    loadFs(start);
+  }
+
+  document.getElementById('fs-up').addEventListener('click', (event) => {
+    const parent = event.currentTarget.dataset.parent;
+    if (parent) loadFs(parent);
+  });
+  document.getElementById('fs-home').addEventListener('click', () => loadFs(''));
+  document.getElementById('fs-use').addEventListener('click', () => { if (fsCurrent) chooseFs(fsCurrent); });
+
+  function updateTestWarning() {
+    const form = document.getElementById('form-ticket');
+    const warning = document.getElementById('test-warning');
+    warning.hidden = Boolean(form.test_cmd.value.trim());
+  }
+  document.getElementById('form-ticket').test_cmd.addEventListener('input', updateTestWarning);
+
   async function openEditDialog(ticket) {
     const dlg = document.getElementById('dlg-ticket');
     const form = document.getElementById('form-ticket');
@@ -671,6 +957,7 @@
     form.test_cmd.value = ticket.test_cmd || '';
     form.priority.value = String(ticket.priority || 3);
     form.attachment_path.value = ticket.attachment_path || '';
+    updateTestWarning();
     note.textContent = 'Loading the model list…';
     dlg.showModal();  // the ticket data is already here; only the pickers need the catalogue
     try {
@@ -767,6 +1054,16 @@
 
   document.querySelectorAll('[data-close]').forEach(btn =>
     btn.addEventListener('click', () => btn.closest('dialog').close()));
+
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-browse]');
+    if (!button) return;
+    const [scope, name] = button.dataset.browse.split(':');
+    const form = scope === 'ticket'
+      ? document.getElementById('form-ticket')
+      : document.getElementById('form-project');
+    openFsDialog(form.elements[name], button.dataset.mode);
+  });
 
   document.getElementById('form-ticket').addEventListener('submit', async (event) => {
     event.preventDefault();

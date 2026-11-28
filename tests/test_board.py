@@ -211,6 +211,23 @@ class BoardApiTests(unittest.TestCase):
         self.assertTrue(by_project["no-such-project"]["project_missing"])
         self.assertFalse(by_project["t3-workflow"]["project_missing"])
 
+    def test_folder_picker_needs_the_token_and_stays_inside_home(self) -> None:
+        response, _ = self.request("GET", "/api/fs?path=")
+        self.assertEqual(response.status, 401)
+        response, raw = self.request("GET", f"/api/fs?path={Path.home()}", token="secret")
+        self.assertEqual(response.status, 200, raw)
+        payload = json.loads(raw)
+        self.assertEqual(payload["path"], str(Path.home()))
+        self.assertIn("directories", payload)
+        response, raw = self.request("GET", "/api/fs?path=/etc", token="secret")
+        self.assertEqual(response.status, 403)
+
+    def test_the_board_has_readers_for_reports_threads_and_folders(self) -> None:
+        _, raw = self.request("GET", "/")
+        for needle in ("dlg-report", "dlg-thread", "dlg-fs", "renderMarkdown",
+                       "openThreadDialog", "openFsDialog", "data-browse", "test-warning"):
+            self.assertIn(needle, raw)
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)

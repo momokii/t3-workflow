@@ -144,7 +144,8 @@ read-only; the measured taxonomy is in `docs/retry-evidence.md`.
 
 Telegram announces the work as it moves: an acknowledgement when a ticket is claimed, the agent's plan
 (the first assistant message of the run, once per run), a retry notice, the review verdict, and on `done`
-the markdown report as a document, so the evidence arrives with the news.
+the markdown report as a document. Every ticket-driven message starts with `🤖 ticket automation`, so it is
+distinguishable from a reply to a command you typed (`/send`, `/ctx`, …), which carries no prefix.
 
 ## 4. Recommendations
 
@@ -242,6 +243,23 @@ defaults remove the typing, not the proof.
   /api/tickets/<id>/delete` with `{"confirm": true}`) writes the report first, records a `deleted`
   event with a snapshot of the row, then removes it. `GET /api/report/<id>` keeps serving the file, so
   the evidence outlives the ticket.
+
+### Reading in the board
+
+- **report** on a card opens a reader: the markdown is rendered in a dialog (headings, lists, tables,
+  code, links), with "Open raw markdown" for the original file.
+- **thread** opens the thread's details — title, project, status, created time and the raw id — from
+  T3's own list, with a copy button. The board mirrors a thread; it does not own it.
+- **Browse…** next to an attachment or a project path opens a folder picker that reads this machine,
+  starting at your home directory. It lists names only, stays inside `$HOME`, and requires the board
+  token; pick a file for an attachment, or a folder for a project.
+
+### The test command, and when it can wait
+
+The test command is the proof: the watcher runs it on the host and only the exit code decides. A project
+can carry a default (`projects.<title>.test_cmd`), and the dialog suggests common commands, but the
+watcher never invents one: an empty field blocks the ticket at `testing` with `test_cmd is empty` so you
+can fill it in and move it back to `ready`. The dialog warns while the field is empty.
 
 ## 5. Walkthrough: adopt a running thread
 

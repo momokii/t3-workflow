@@ -15,6 +15,19 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **The board reads as well as writes.** `report` opens the markdown in a dialog rendered with headings,
+  lists, tables, code and links (plus a link to the raw file); `thread` shows the thread's title,
+  project, status and created time beside its id, with a copy button, instead of a toast with the raw
+  id. Both are client-side, with no dependency.
+- **A folder picker for every path field.** `GET /api/fs` lists names inside the home directory only
+  and requires the board token; the attachment and project dialogs use it (file mode and folder mode).
+- **The test command explains itself.** The field suggests common commands and warns live while empty;
+  the guide states that a project can default it and that the watcher blocks rather than inventing one.
+- **Automation messages are labelled.** Every ticket-driven Telegram message starts with
+  `🤖 ticket automation`, so it reads differently from a reply to a command typed by hand.
+
+### Fixed
+
 - **A usage limit retries itself, within bounds.** T3's error item marks a usage limit permanent but
   never carries a reset time, so the watcher blocks the ticket with `retry_after` and `quota_attempts`
   and returns it to `ready` after `retry.quotaBackoffMinutes` (default 60), up to

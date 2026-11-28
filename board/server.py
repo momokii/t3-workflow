@@ -21,7 +21,7 @@ import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tickets"))
@@ -178,6 +178,52 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/catalog":
             config = load_config(Path(self.config_path))
             self._json(200, load_catalog_cached(Path(self.catalog_dir), config=config))
+            return
+        if path == "/api/fs":
+            # A folder picker for the board. It reads names only, stays inside the home
+            # directory, and needs the board token, because a directory tree is not a
+            # public page.
+            if not self._authorised():
+                self._json(401, {"error": "invalid token"})
+                return
+            query = parse_qs(urlparse(self.path).query)
+            raw = (query.get("path") or [str(Path.home())])[0]
+            home = Path.home().resolve()
+            try:
+                target = Path(raw).expanduser().resolve()
+            except OSError as exc:
+                self._json(400, {"error": str(exc)})
+                return
+            if target != home and home not in target.parents:
+                self._json(403, {"error": "outside the home directory"})
+                return
+            if not target.is_dir():
+                self._json(404, {"error": "not a directory"})
+                return
+            directories, files = [], []
+            try:
+                children = sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+            except OSError as exc:
+                self._json(400, {"error": str(exc)})
+                return
+            for child in children:
+                if child.name.startswith("."):
+                    continue
+                try:
+                    if child.is_dir():
+                        directories.append({"name": child.name, "path": str(child)})
+                    elif child.is_file():
+                        files.append({"name": child.name, "path": str(child),
+                                      "size": child.stat().st_size})
+                except OSError:
+                    continue
+            self._json(200, {
+                "path": str(target),
+                "parent": str(target.parent) if target != home else "",
+                "home": str(home),
+                "directories": directories,
+                "files": files,
+            })
             return
         if path == "/api/projects":
             self._json(200, {"projects": t3_projects(Path(self.t3_db_path))})
