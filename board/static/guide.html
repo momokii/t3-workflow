@@ -117,6 +117,7 @@
       <li><a href="#limits">Limits, failures and overrides</a></li>
       <li><a href="#retries">When something fails</a></li>
       <li><a href="#telegram">Driving it from Telegram</a></li>
+      <li><a href="#deletion">Deleting here or in T3</a></li>
       <li><a href="#data">Where the data lives</a></li>
   <section id="retries">
     <h2>When something fails</h2>
@@ -347,6 +348,20 @@ npm test -- --run</code></pre>
     </table>
     <p>Only allowlisted chats get answers; anything else is logged and ignored. Read commands work with the T3
     database read-only; write commands honour <code>bridge.allowWrites</code>.</p>
+  </section>
+
+  <section id="deletion">
+    <h2>Deleting here or in T3</h2>
+    <p>The board and T3 own different things, so deletions do not cascade into each other.</p>
+    <table>
+      <thead><tr><th>You delete</th><th>Tickets and reports</th><th>T3</th></tr></thead>
+      <tbody>
+        <tr><td>A thread in T3</td><td>kept; the watcher blocks the ticket with <code>thread … no longer exists in T3</code></td><td>gone</td></tr>
+        <tr><td>A project in T3</td><td>kept; the card shows <strong>project missing</strong></td><td>gone</td></tr>
+        <tr><td>A ticket (board or CLI)</td><td>row removed after a snapshot; report kept</td><td>untouched: a thread is work history</td></tr>
+      </tbody>
+    </table>
+    <p>A blocked ticket (a usage limit, a deleted thread) comes back with <strong>Move → Ready</strong> on its card.</p>
   </section>
 
   <section id="data">

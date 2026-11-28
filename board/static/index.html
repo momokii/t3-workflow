@@ -98,6 +98,7 @@
   .tag.verdict.accept { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
   .tag.verdict.reject, .tag.verdict.failed { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
   .tag.verdict.timeout, .tag.verdict.pending { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+  .tag.missing { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 55%, var(--line)); font-weight: 600; }
   a.thread { font-size: 11px; color: var(--accent); text-decoration: none; }
   a.thread:hover { text-decoration: underline; }
   button.act { font: inherit; font-size: 11px; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; }
@@ -329,6 +330,13 @@
       review.title = 'Independent review verdict; open the report for the findings';
       meta.appendChild(review);
     }
+    if (t.project_missing) {
+      const missing = document.createElement('span');
+      missing.className = 'tag missing';
+      missing.textContent = 'project missing';
+      missing.title = 'This project no longer exists in T3; the ticket and its report are kept';
+      meta.appendChild(missing);
+    }
     if (t.thread_id) {
       const a = document.createElement('a');
       a.className = 'thread';
@@ -380,6 +388,12 @@
     });
     move.append(label, sel);
     el.appendChild(move);
+    if (t.status === 'blocked') {
+      const retry = document.createElement('p');
+      retry.className = 'hint';
+      retry.textContent = 'Blocked: pick Ready in the Move control to retry, or Backlog to park it.';
+      el.appendChild(retry);
+    }
 
     const pending = approvalFor(t);
     if (pending) {

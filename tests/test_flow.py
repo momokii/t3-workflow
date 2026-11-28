@@ -279,6 +279,19 @@ class SyncTests(Base):
         for runner in seen:
             self.assertTrue(callable(runner), runner)
 
+    def test_a_thread_deleted_in_t3_blocks_instead_of_waiting(self) -> None:
+        ticket = self._ticket_with_thread("in-progress")
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            return subprocess.CompletedProcess(
+                command, 1, "", "Thread mcp:missing is no longer available."
+            )
+
+        watcher.sync_threads(self.store, CONFIG, runner=fake)
+        stored = self.store.get(ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("no longer exists in T3", stored["note"])
+
     def test_ticket_without_thread_is_ignored(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
 

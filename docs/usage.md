@@ -257,6 +257,20 @@ defaults remove the typing, not the proof.
 If the thread fails instead, the watcher moves the ticket to `blocked` and the note says
 `thread failed`. Move it back to `in-progress` after fixing the cause.
 
+### Deleting on one side, and what the board shows
+
+The board and T3 are not a mirror that copies deletions; they own different things.
+
+| You do this | Ticket | Board / T3 |
+|---|---|---|
+| Delete a thread in T3 | kept, with report and events | the watcher blocks it with `thread … no longer exists in T3` instead of waiting |
+| Remove a project in T3 | kept, with report and events | the card shows a **project missing** badge |
+| Delete a ticket (board, `cli delete --yes`, API with `confirm: true`) | row removed after a `deleted` snapshot; report file kept | the T3 thread is **not** deleted — it is work history T3 owns |
+| Delete a report file by hand | kept | `/api/report/<id>` no longer serves it |
+
+A blocked ticket (including after a usage limit) is retried from its card: **Move → Ready**. That is the
+manual control; nothing else is needed from you.
+
 ## 6. FAQ
 
 **Does everything happen on the same thread?**

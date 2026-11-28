@@ -198,8 +198,17 @@ class Handler(BaseHTTPRequestHandler):
                 ]
                 default_profile = (config.get("defaults") or {}).get("profile", "")
                 pending = store.pending_approvals()
+                titles = {item["title"] for item in t3_projects(Path(self.t3_db_path))}
+                tickets = store.list_public()
+                for ticket in tickets:
+                    project = (ticket.get("project") or "").strip()
+                    if project.startswith("/"):
+                        ticket["project_missing"] = not Path(project).is_dir()
+                    else:
+                        # An empty title set means T3 could not be read; say nothing.
+                        ticket["project_missing"] = bool(titles) and project not in titles
                 self._json(200, {
-                    "tickets": store.list_public(),
+                    "tickets": tickets,
                     "approvals": pending,
                     "statuses": list(STATUSES),
                     "transitions": {key: sorted(value) for key, value in TRANSITIONS.items()},

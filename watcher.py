@@ -117,8 +117,16 @@ def sync_threads(store: TicketStore, config: dict, runner=None) -> list[str]:
         thread_id = ticket.get("thread_id")
         if not thread_id:
             continue
-        anchor = thread_show(config, thread_id, messages=1, runner=runner).get("thread") or {}
+        data = thread_show(config, thread_id, messages=1, runner=runner)
+        anchor = data.get("thread") or {}
         status = str(anchor.get("status") or "")
+        if not status and thread_alive(config, thread_id, runner=runner) is False:
+            store.move(
+                ticket["id"], "blocked",
+                f"thread {thread_id} no longer exists in T3; the ticket and its report are kept",
+            )
+            notes.append(f"{ticket['id']} → blocked (thread deleted in T3)")
+            continue
         latest = str(anchor.get("latestRunId") or "")
         if status in ("completed", "idle"):
             baseline = str(ticket.get("dev_run_id") or "")
@@ -588,6 +596,30 @@ def thread_show(config: dict, thread_id: str, messages: int = 5, runner=subproce
         return {}
 
 
+def thread_alive(config: dict, thread_id: str, runner=None) -> bool | None:
+    """True when T3 still has the thread, False when it is gone, None when unknown.
+
+    Deleting a thread in T3 does not touch this repository, so the watcher has to notice:
+    a ticket pointing at a deleted thread used to wait until its budget ran out. The CLI
+    says "no longer available" (measured), and only that answer counts as gone.
+    """
+    runner = runner or subprocess.run
+    cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
+    try:
+        proc = runner(
+            [cli, "thread", "show", thread_id, "--json", "--messages", "1"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode == 0:
+        return True
+    message = ((proc.stderr or "") + (proc.stdout or "")).lower()
+    if "no longer available" in message or "not found" in message or "does not exist" in message:
+        return False
+    return None
+
+
 def verifier_reply(data: dict, run_id: str = "") -> str:
     """The last assistant message of the verified run, not merely the last message.
 
@@ -698,6 +730,10 @@ def verification_step(store: TicketStore, ticket: dict, config: dict, t3_cli: st
     anchor = data.get("thread") or {}
     status = str(anchor.get("status") or "")
     if not status:
+        if thread_alive(config, thread_id, runner=runner) is False:
+            store.record_verdict(ticket_id, "FAILED", "the review thread was deleted in T3")
+            store.move(ticket_id, "blocked", "review: the reviewer thread no longer exists in T3")
+            return f"{ticket_id}: reviewer thread deleted → blocked"
         return f"{ticket_id}: waiting for the reviewer (thread not readable yet)"
     if status in ("preparing", "queued", "starting", "running"):
         return f"{ticket_id}: waiting for the reviewer ({status})"

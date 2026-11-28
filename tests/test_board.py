@@ -201,6 +201,16 @@ class BoardApiTests(unittest.TestCase):
         for needle in ("/edit", "/delete", "Delete", "confirm: true", "edit", "Save changes"):
             self.assertIn(needle, raw)
 
+    def test_a_ticket_whose_project_left_t3_is_marked(self) -> None:
+        store = TicketStore(self.db, self.config)
+        store.add("orphan", "no-such-project", model_profile="fast", status="backlog")
+        store.close()
+        response, raw = self.request("GET", "/api/tickets")
+        payload = json.loads(raw)
+        by_project = {ticket["project"]: ticket for ticket in payload["tickets"]}
+        self.assertTrue(by_project["no-such-project"]["project_missing"])
+        self.assertFalse(by_project["t3-workflow"]["project_missing"])
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)

@@ -264,6 +264,25 @@ default options. Applying per-ticket options would need a CLI flag that does not
 | No verdict, reviewer failed, timed out, or the tree changed | ticket moves to `blocked`; nothing is accepted silently |
 | Unit crash | systemd restarts it (`Restart=on-failure`) and `OnFailure=` sends one Telegram alert |
 
+## Ownership and deletion
+
+T3 owns projects and threads; this repository owns tickets, events and reports. There is no
+foreign key between the two, and neither side deletes the other:
+
+| You delete | Ticket store | T3 |
+|---|---|---|
+| a thread in T3 | the ticket stays, with its report and history | gone |
+| a project in T3 | the ticket stays; the card shows **project missing** | gone |
+| a ticket on the board / CLI | row removed after a `deleted` event snapshot; report file kept | threads untouched |
+| a report file by hand | the ticket stays, `GET /api/report/<id>` fails | untouched |
+
+The mirroring is therefore deliberately one-way and non-destructive. When T3 loses a thread that a
+ticket points at, the watcher detects the CLI's "no longer available" answer and blocks the ticket with
+that reason instead of waiting for its budget; when T3 loses a project, `GET /api/tickets` marks the
+ticket `project_missing`. The board reflects reality; it never erases evidence because a thread was
+deleted elsewhere. Deleting a ticket never deletes a thread: a thread is work history in T3, and the
+`deleted` event plus the report are the ticket's own record.
+
 ## Why no daemon on the T3 side
 
 The target of this tooling is the operator's machine, not a fleet. Every T3 interaction is a one-shot CLI call or a database read, which keeps the system readable and means a dead service never leaves a half-written state in T3: the worst case is a ticket that stays where it was.

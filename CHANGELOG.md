@@ -15,6 +15,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **The board reflects a deletion made in T3 instead of silently waiting.** When a ticket's thread is
+  gone, the watcher reads the CLI's "no longer available" answer and blocks the ticket with that reason
+  (including a deleted reviewer thread); when a ticket's project no longer exists in T3, `GET
+  /api/tickets` marks it `project_missing` and the card shows a badge. Deleting a ticket still never
+  deletes a T3 thread — a thread is T3's work history — and a deleted ticket keeps its report and a
+  snapshot in the event log. A blocked card now says how to retry: **Move → Ready**.
+
+### Fixed
+
 - **The plan arrives on Telegram.** After the "in progress" acknowledgement the bridge forwards the dev
   thread's first assistant message of the run (trimmed to 900 characters), once per run, keyed by
   `thread:latestRunId` in its state file. It is read from the thread T3 already keeps, not asked for.

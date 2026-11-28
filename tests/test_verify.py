@@ -225,6 +225,17 @@ class VerificationTests(unittest.TestCase):
         watcher.verification_step(self.store, self.store.get(self.ticket["id"]), CONFIG, "/bin/true", runner=fake)
         self.assertEqual(self.store.get(self.ticket["id"])["status"], "blocked")
 
+    def test_a_reviewer_thread_deleted_in_t3_blocks(self) -> None:
+        self._attach()
+
+        def fake(command, **kwargs):  # noqa: ARG001
+            return subprocess.CompletedProcess(command, 1, "", "Thread does not exist.")
+
+        watcher.verification_step(self.store, self.store.get(self.ticket["id"]), CONFIG, "/bin/true", runner=fake)
+        stored = self.store.get(self.ticket["id"])
+        self.assertEqual(stored["status"], "blocked")
+        self.assertIn("no longer exists in T3", stored["note"])
+
     def test_a_running_reviewer_keeps_the_ticket_in_review(self) -> None:
         self._attach()
         fake = FakeT3(status="running")
