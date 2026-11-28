@@ -302,19 +302,20 @@ class BoardApiTests(unittest.TestCase):
     def test_the_board_explains_its_own_labels(self) -> None:
         _, raw = self.request("GET", "/")
         text = " ".join(raw.split())
-        for phrase in ("What the board means", "Priority", "project missing",
-                       "review", "Force move"):
+        for phrase in ("What the board means", "Priority", "urgent", "later",
+                       "project missing", "review", "Force move"):
             self.assertIn(phrase, text)
         self.assertIn('aria-label="What the columns, priorities and badges mean"', raw)
-        self.assertIn("priority 1, urgent", raw)
 
     def test_the_layout_contract_that_keeps_the_actions_reachable(self) -> None:
         _, raw = self.request("GET", "/")
         style = raw.split("</style>")[0]
         for rule in ("position: sticky", "max-height: 88dvh", "max-height: 26dvh"):
             self.assertIn(rule, style)
-        # the scrollable list comes before the sticky action row in the dialog
-        self.assertLess(raw.index('id="project-rows"'), raw.index('class="row actions"'))
+        # inside the project dialog, the scrollable list comes before the sticky action row
+        dialog = raw[raw.index('id="dlg-project"'):]
+        dialog = dialog[:dialog.index("</dialog>")]
+        self.assertLess(dialog.index('id="project-rows"'), dialog.index('class="row actions"'))
 
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
