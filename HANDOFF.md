@@ -108,7 +108,13 @@ started. The sync stage moves a ticket to `testing` when T3 reports the thread `
    rejection sends the findings into the dev thread and spends one of `maxAttempts` (2). A missing
    verdict, a failed reviewer, a timeout or a tree that changed mid-review blocks the ticket. The guard
    is a tree fingerprint, because T3 0.1.9 has no read-only mode (`docs/readonly-verifier.md`).
-7. **Verification:** both suites green (`make check`), board `/healthz`, `/api/*` and `/guide` exercised
+7. **End-to-end proven on a throwaway project.** `T-0004` (real dev thread, real reviewer thread,
+   same model) went ticket → thread → `completed` → test PASS → review `ACCEPT` in one attempt →
+   `ticket/t-0004-…` pushed to a local bare origin → `done`, with the report on disk (including the
+   independent review and its findings) and delivered to Telegram. The run also exposed a production
+   bug: `sync_threads()` passed `runner=None` into `thread_show()`, which crashed the service; fixed
+   and covered by a regression test.
+8. **Verification:** both suites green (`make check`), board `/healthz`, `/api/*` and `/guide` exercised
    over the tailnet, Docker image built and run (board healthy, workers one-shot, host services
    untouched), CI green.
 

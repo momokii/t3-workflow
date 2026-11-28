@@ -209,6 +209,8 @@ def send_document(config: dict, chat_id: str, path: Path, caption: str = "") -> 
     if not payload.get("ok"):
         log(f"report not sent: {payload.get('description')}")
         return False
+    audit({"action": "report", "file": Path(path).name, "chatId": str(chat_id)})
+    log(f"report delivered: {Path(path).name}")
     return True
 
 

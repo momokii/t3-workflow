@@ -110,6 +110,7 @@ def sync_threads(store: TicketStore, config: dict, runner=None) -> list[str]:
     This is what makes thread adoption real: the work happens in the same thread and
     the watcher advances the ticket from the thread's status, not from a guess.
     """
+    runner = runner or subprocess.run
     notes: list[str] = []
     limit = retry_settings(config)["maxThreadAttempts"]
     for ticket in store.list("in-progress"):
@@ -570,6 +571,7 @@ def parse_verdict(text: str) -> tuple[str, str]:
 
 
 def thread_show(config: dict, thread_id: str, messages: int = 5, runner=subprocess.run) -> dict:
+    runner = runner or subprocess.run
     cli = (config.get("t3") or {}).get("cli", str(Path.home() / ".local/bin/t3"))
     try:
         proc = runner(

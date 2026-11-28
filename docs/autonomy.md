@@ -47,6 +47,23 @@ Prompted, not enforced: the quality of the dev agent's plan, the reviewer's judg
 willingness to keep the verdict on its own line (tolerated decorations are listed in
 `docs/verification-assumptions.md`).
 
+## Evidence: one real end-to-end run
+
+`T-0004` ("Add greet() with a unittest") ran on a throwaway T3 project with a local bare remote:
+
+| Step | Observed |
+|---|---|
+| ack | ticket claimed, thread `mcp:33273dcf…` created |
+| execute | the thread wrote `greet.py` and `tests/test_greet.py` and finished |
+| proof | `python3 -m unittest discover -s tests -q` → `[PASS]`, 2 tests |
+| review | reviewer `mcp:6f1d96ab…`, same model, verdict `ACCEPT` on attempt 1, findings cite `greet.py:1-2` |
+| finish | branch `ticket/t-0004-add-greet-with-a-unittest` pushed to the bare origin, `done` |
+| report | `reports/T-0004.md` with the review section; delivered to Telegram as a document |
+
+The run caught a real bug that no hermetic test could: the service calls `sync_threads()` without a
+runner, and that `None` reached `thread_show()`, crashing the watcher. Fixed, with a regression test.
+That is the argument for running the loop on real work before trusting it.
+
 ## Out of scope for this effort
 
 Pull-request creation (needs `gh` or a token), deploy + rollback (needs a real target), token/cost

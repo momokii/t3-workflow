@@ -259,6 +259,26 @@ class SyncTests(Base):
         watcher.sync_threads(self.store, CONFIG, runner=resumed)
         self.assertEqual(self.store.get(ticket["id"])["status"], "testing")
 
+    def test_sync_works_when_no_runner_is_given(self) -> None:
+        """The service calls sync_threads() without a runner; None must not reach the CLI."""
+        ticket = self._ticket_with_thread("in-progress")
+        seen: list[object] = []
+        original = watcher.thread_show
+
+        def capture(config, thread_id, messages=5, runner=None):
+            seen.append(runner)
+            return {"thread": {"status": "running", "latestRunId": "r1"}}
+
+        watcher.thread_show = capture
+        try:
+            watcher.sync_threads(self.store, CONFIG)
+        finally:
+            watcher.thread_show = original
+        self.assertEqual(self.store.get(ticket["id"])["status"], "in-progress")
+        self.assertTrue(seen)
+        for runner in seen:
+            self.assertTrue(callable(runner), runner)
+
     def test_ticket_without_thread_is_ignored(self) -> None:
         ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="in-progress")
 
