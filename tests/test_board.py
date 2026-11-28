@@ -220,16 +220,18 @@ class BoardApiTests(unittest.TestCase):
     def test_folder_picker_needs_the_token_and_stays_inside_home(self) -> None:
         response, _ = self.request("GET", "/api/fs?path=")
         self.assertEqual(response.status, 401)
-        response, raw = self.request("GET", f"/api/fs?path={Path.home()}", token="secret")
+        folder = Path(tempfile.mkdtemp(prefix="fs-"))
+        (folder / "child").mkdir()
+        response, raw = self.request("GET", f"/api/fs?path={folder}", token="secret")
         self.assertEqual(response.status, 200, raw)
         payload = json.loads(raw)
-        self.assertEqual(payload["path"], str(Path.home()))
-        self.assertIn("directories", payload)
+        self.assertEqual(payload["path"], str(folder.resolve()))
+        self.assertIn("child", [entry["name"] for entry in payload["directories"]])
         # outside home is allowed when the filesystem allows it (the process runs as the owner)
         response, _ = self.request("GET", "/api/fs?path=/tmp", token="secret")
         self.assertEqual(response.status, 200)
         # system and hidden trees are refused before any listing
-        for blocked in ("/proc", "/sys", f"{Path.home()}/.ssh"):
+        for blocked in ("/proc", "/sys", f"{folder}/.hidden"):
             response, _ = self.request("GET", f"/api/fs?path={blocked}", token="secret")
             self.assertEqual(response.status, 403, blocked)
 
@@ -262,6 +264,19 @@ class BoardApiTests(unittest.TestCase):
     def test_project_removal_needs_the_token(self) -> None:
         response, _ = self.request("POST", "/api/projects/p1/remove", {"confirm": "t3-workflow"})
         self.assertEqual(response.status, 401)
+
+    def test_report_html_is_escaped_and_carries_the_review(self) -> None:
+        store = TicketStore(self.db, self.config)
+        store.update("T-0001", title="<script>alert(1)</script>")
+        store.attach_verifier("T-0001", "rev-1", "run-1", "pi", "m", "baseline")
+        store.record_verdict("T-0001", "ACCEPT", "looks right")
+        store.close()
+        response, raw = self.request("GET", "/api/report/T-0001?format=html")
+        self.assertEqual(response.status, 200)
+        self.assertIn("text/html", response.headers.get("Content-Type", ""))
+        self.assertIn("Independent review", raw)
+        self.assertIn("&lt;script&gt;", raw)
+        self.assertNotIn("<script>alert(1)</script>", raw)
 
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")

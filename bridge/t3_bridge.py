@@ -690,8 +690,9 @@ def notify_ticket_states(config: dict, state: dict) -> int:
             sent += announce_plan(config, state, ticket)
         report = (ticket.get("report_path") or "").strip()
         if ticket["status"] == "done" and report:
+            readable = Path(report).with_suffix(".html")
             send_document(
-                config, str(chats[0]), Path(report),
+                config, str(chats[0]), readable if readable.is_file() else Path(report),
                 f"{AUTOMATION_PREFIX} · {ticket['id']} report",
             )
     state["ticketStates"] = known

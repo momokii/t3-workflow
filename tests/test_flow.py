@@ -496,3 +496,28 @@ class FailureClassificationTests(unittest.TestCase):
         stored = self.store.get(ticket["id"])
         self.assertEqual(stored["status"], "ready")
         self.assertIn("retry", stored["note"])
+
+
+class HtmlReportTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="report-html-"))
+        os.environ["T3_REPORTS_DIR"] = str(self.tmp / "reports")
+        self.config = self.tmp / "config.json"
+        self.config.write_text(json.dumps(CONFIG))
+        self.store = TicketStore(self.tmp / "t.sqlite", self.config)
+
+    def tearDown(self) -> None:
+        self.store.close()
+
+    def test_every_user_field_is_escaped(self) -> None:
+        ticket = self.store.add("<img src=x onerror=alert(1)>", "/tmp/p", model_profile="fast")
+        html = self.store.report_html(ticket["id"])
+        self.assertIn("&lt;img", html)
+        self.assertNotIn("<img src=x", html)
+
+    def test_the_standalone_page_is_a_document(self) -> None:
+        ticket = self.store.add("readable", "/tmp/p", model_profile="fast")
+        page = self.store.report_html(ticket["id"], document=True)
+        self.assertTrue(page.startswith("<!doctype html>"))
+        self.assertIn("<main>", page)
+        self.assertIn("readable", page)

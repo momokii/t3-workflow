@@ -246,8 +246,9 @@ defaults remove the typing, not the proof.
 
 ### Reading in the board
 
-- **report** on a card opens a reader: the markdown is rendered in a dialog (headings, lists, tables,
-  code, links), with "Open raw markdown" for the original file.
+- **report** on a card opens a reader: the server renders the report as HTML (headings, tables, code,
+  findings) and the dialog shows it, with "Open raw markdown" for the original. On `done` a standalone
+  HTML page is written next to the markdown and sent to Telegram as the report document.
 - **thread** opens the thread's details — title, project, status, created time and the raw id — from
   T3's own list, with a copy button. The board mirrors a thread; it does not own it.
 - **Browse…** next to an attachment or a project path opens a folder picker that reads this machine,

@@ -278,24 +278,28 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/report/"):
             ticket_id = path.rsplit("/", 1)[-1]
+            query = parse_qs(urlparse(self.path).query)
+            as_html = (query.get("format") or [""])[0].lower() == "html"
             store = self._store()
             try:
-                text = store.report(ticket_id)
+                text = store.report_html(ticket_id) if as_html else store.report(ticket_id)
             except TicketError as exc:
                 # A deleted ticket keeps its report: the file is the evidence that outlives
                 # the row, and the delete path writes it before removing anything.
                 reports = Path(os.environ.get(
                     "T3_REPORTS_DIR", Path.home() / ".local/state/t3-workflow/reports"
                 ))
-                fallback = reports / f"{ticket_id}.md"
+                fallback = reports / f"{ticket_id}.{'html' if as_html else 'md'}"
                 if fallback.is_file():
-                    self._send(200, fallback.read_bytes(), "text/markdown; charset=utf-8")
+                    kind = "text/html; charset=utf-8" if as_html else "text/markdown; charset=utf-8"
+                    self._send(200, fallback.read_bytes(), kind)
                 else:
                     self._json(404, {"error": str(exc)})
                 return
             finally:
                 store.close()
-            self._send(200, text.encode(), "text/markdown; charset=utf-8")
+            kind = "text/html; charset=utf-8" if as_html else "text/markdown; charset=utf-8"
+            self._send(200, text.encode(), kind)
             return
         if path.startswith("/api/tickets/") and path.endswith("/events"):
             ticket_id = path.split("/")[3]

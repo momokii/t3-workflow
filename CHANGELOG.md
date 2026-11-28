@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **The report is a page, not a wall of markdown.** `GET /api/report/<id>?format=html` returns a
+  server-rendered, fully escaped fragment that the board's report dialog shows directly; the release
+  writes a standalone `T-xxxx.html` next to the markdown, and Telegram receives that page. The client
+  markdown renderer is gone with it.
+- **The review badge says what it means.** `review accept · attempt 1 of 2` (with a title explaining that
+  the budget is a maximum) instead of `review accept 1/2`, which read like a progress bar that stopped
+  halfway.
+
 - **Remove a project from the board, with a typed confirmation.** `POST /api/projects/<id>/remove`
   requires `confirm` to equal the project title, then runs `t3 project remove --force` — the only
   thread deletion T3's CLI offers. The Register-project dialog lists existing projects and warns that

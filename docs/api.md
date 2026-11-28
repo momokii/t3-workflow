@@ -252,6 +252,8 @@ The first decision wins; a second one returns `409 {"error": "approval 1 is alre
 
 Returns `text/markdown`: status, project, profile, thread, test command, description, proof, approval state and the full event table. `404` for an unknown ticket.
 
+`?format=html` returns the same report as an HTML fragment, built by the server with every ticket field escaped. The board inserts it into the report dialog; the release also writes a standalone `T-xxxx.html` page next to the markdown, and that page is what Telegram receives as the report document.
+
 ```bash
 curl -s http://127.0.0.1:8787/api/report/T-0001 | head -20
 ```

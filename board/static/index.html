@@ -420,8 +420,10 @@
       const limit = (state.verification && state.verification.maxAttempts) || 2;
       const review = document.createElement('span');
       review.className = 'tag verdict ' + verdict;
-      review.textContent = `review ${verdict}${t.verify_attempt ? ` ${t.verify_attempt}/${limit}` : ''}`;
-      review.title = 'Independent review verdict; open the report for the findings';
+      review.textContent = `review ${verdict}` +
+        (t.verify_attempt ? ` · attempt ${t.verify_attempt} of ${limit}` : '');
+      review.title = `Independent review: ${verdict}, attempt ${t.verify_attempt || 0} of a budget of ` +
+        `${limit}. Accepted on the first attempt is normal; the budget is the maximum, not a target.`;
       meta.appendChild(review);
     }
     if (t.project_missing) {
@@ -759,74 +761,6 @@
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
 
-  function inlineMd(line) {
-    return escapeHtml(line)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
-      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  }
-
-  function renderMarkdown(text) {
-    const lines = String(text || '').replace(/\r\n/g, '\n').split('\n');
-    const out = [];
-    let index = 0;
-    let inCode = false;
-    let code = [];
-    let list = null;
-    const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
-    while (index < lines.length) {
-      const line = lines[index];
-      if (line.startsWith('```')) {
-        if (!inCode) { closeList(); inCode = true; code = []; }
-        else { out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`); inCode = false; }
-        index += 1; continue;
-      }
-      if (inCode) { code.push(line); index += 1; continue; }
-      if (!line.trim()) { closeList(); index += 1; continue; }
-      let match;
-      if (/^---+$/.test(line.trim())) { closeList(); out.push('<hr>'); index += 1; continue; }
-      if ((match = line.match(/^(#{1,4})\s+(.*)$/))) {
-        closeList();
-        const level = match[1].length;
-        out.push(`<h${level}>${inlineMd(match[2])}</h${level}>`);
-        index += 1; continue;
-      }
-      if (line.trim().startsWith('|')) {
-        closeList();
-        const rows = [];
-        while (index < lines.length && lines[index].trim().startsWith('|')) {
-          const cells = lines[index].trim().replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim());
-          if (!cells.every((cell) => /^:?-{2,}:?$/.test(cell))) rows.push(cells);
-          index += 1;
-        }
-        if (rows.length) {
-          const [head, ...body] = rows;
-          out.push('<table><thead><tr>' + head.map((c) => `<th>${inlineMd(c)}</th>`).join('') + '</tr></thead><tbody>');
-          for (const row of body) {
-            out.push('<tr>' + row.map((c) => `<td>${inlineMd(c)}</td>`).join('') + '</tr>');
-          }
-          out.push('</tbody></table>');
-        }
-        continue;
-      }
-      if ((match = line.match(/^\s*[-*]\s+(.*)$/))) {
-        if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
-        out.push(`<li>${inlineMd(match[1])}</li>`); index += 1; continue;
-      }
-      if ((match = line.match(/^\s*\d+[.)]\s+(.*)$/))) {
-        if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
-        out.push(`<li>${inlineMd(match[1])}</li>`); index += 1; continue;
-      }
-      closeList();
-      out.push(`<p>${inlineMd(line)}</p>`);
-      index += 1;
-    }
-    closeList();
-    if (inCode) out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`);
-    return out.join('\n');
-  }
-
   async function openReport(ticket) {
     const dlg = document.getElementById('dlg-report');
     document.getElementById('dlg-report-title').textContent = `${ticket.id} · report`;
@@ -835,9 +769,10 @@
     document.getElementById('report-raw').href = `/api/report/${ticket.id}`;
     dlg.showModal();
     try {
-      const res = await fetch(`/api/report/${ticket.id}`, { cache: 'no-store' });
+      const res = await fetch(`/api/report/${ticket.id}?format=html`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      document.getElementById('report-body').innerHTML = renderMarkdown(await res.text());
+      // The server escapes every ticket field, so the fragment is trusted markup.
+      document.getElementById('report-body').innerHTML = await res.text();
       document.getElementById('report-status').textContent = '';
     } catch (err) {
       document.getElementById('report-status').textContent = 'Could not load the report: ' + (err.message || err);
@@ -943,9 +878,7 @@
   }
 
   // ------------------------------------------------------------ folder picker
-  let fsTarget = null;
-  let fsMode = 'dir';
-  let fsCurrent = '';
+  const fsState = { target: null, mode: 'dir', current: '' };
 
   function fsOffer(path, name, kind) {
     const list = document.getElementById('fs-list');
@@ -967,16 +900,16 @@
     status.textContent = 'Reading…';
     try {
       const data = await api(`/api/fs?path=${encodeURIComponent(path || '')}`);
-      fsCurrent = data.path;
+      fsState.current = data.path;
       document.getElementById('fs-path').textContent = data.path;
       list.innerHTML = '';
       data.directories.forEach((entry) => fsOffer(entry.path, entry.name, 'dir'));
-      if (fsMode === 'file') data.files.forEach((entry) => fsOffer(entry.path, entry.name, 'file'));
+      if (fsState.mode === 'file') data.files.forEach((entry) => fsOffer(entry.path, entry.name, 'file'));
       const up = document.getElementById('fs-up');
       up.disabled = !data.parent;
       up.dataset.parent = data.parent || '';
-      document.getElementById('fs-use').hidden = fsMode !== 'dir';
-      status.textContent = (data.directories.length || (fsMode === 'file' && data.files.length))
+      document.getElementById('fs-use').hidden = fsState.mode !== 'dir';
+      status.textContent = (data.directories.length || (fsState.mode === 'file' && data.files.length))
         ? '' : 'This folder is empty.';
     } catch (err) {
       if (retryParent && path) {
@@ -989,18 +922,18 @@
   }
 
   function chooseFs(path) {
-    if (fsTarget) {
-      fsTarget.value = path;
-      fsTarget.dispatchEvent(new Event('input', { bubbles: true }));
+    if (fsState.target) {
+      fsState.target.value = path;
+      fsState.target.dispatchEvent(new Event('input', { bubbles: true }));
     }
     document.getElementById('dlg-fs').close();
   }
 
   function openFsDialog(input, mode) {
-    fsTarget = input;
-    fsMode = mode || 'dir';
+    fsState.target = input;
+    fsState.mode = mode || 'dir';
     document.getElementById('dlg-fs-title').textContent =
-      fsMode === 'file' ? 'Choose a file' : 'Choose a folder';
+      fsState.mode === 'file' ? 'Choose a file' : 'Choose a folder';
     document.getElementById('fs-hint').textContent = '';
     document.getElementById('dlg-fs').showModal();
     const start = input && input.value.startsWith('/') ? input.value
@@ -1013,7 +946,7 @@
     if (parent) loadFs(parent);
   });
   document.getElementById('fs-home').addEventListener('click', () => loadFs(''));
-  document.getElementById('fs-use').addEventListener('click', () => { if (fsCurrent) chooseFs(fsCurrent); });
+  document.getElementById('fs-use').addEventListener('click', () => { if (fsState.current) chooseFs(fsState.current); });
 
   function updateTestWarning() {
     const form = document.getElementById('form-ticket');

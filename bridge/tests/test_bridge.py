@@ -142,7 +142,7 @@ class TicketCommandTests(unittest.TestCase):
             self.assertIn("done", sent[0])
             self.assertEqual(bridge.notify_ticket_states(self.config, state), 0)  # not duplicated
             self.assertEqual(len(documents), 1)
-            self.assertTrue(documents[0].name.endswith(".md"))
+            self.assertTrue(documents[0].name.endswith(".html"))  # readable page first
         finally:
             bridge.reply = original
             bridge.send_document = original_document

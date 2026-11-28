@@ -194,7 +194,7 @@ npm test -- --run</code></pre>
 
   <section id="fields">
     <h2>What each ticket field does</h2>
-    <p class="note">Reading is part of the dialog: <strong>report</strong> opens the report as a rendered page,
+    <p class="note">Reading is part of the dialog: <strong>report</strong> opens the report as a server-rendered page,
     <strong>thread</strong> shows the thread's title, project and status beside its id, and every path field has a
     <strong>Browse…</strong> picker that reads this machine (names only, token-guarded, system and hidden paths refused).</p>
     <figure class="shot">
@@ -227,7 +227,7 @@ npm test -- --run</code></pre>
     <table>
       <thead><tr><th>Outcome</th><th>Ticket</th></tr></thead>
       <tbody>
-        <tr><td>ACCEPT</td><td>release runs: branch pushed, report written, <code>done</code>.</td></tr>
+        <tr><td>ACCEPT</td><td>release runs: branch pushed, report written, <code>done</code>. <code>attempt 1 of 2</code> means accepted on the first try; the second slot is spare budget, not work left.</td></tr>
         <tr><td>REJECT with attempts left</td><td>findings are sent into the dev thread; ticket returns to <code>in-progress</code>.</td></tr>
         <tr><td>REJECT at <code>maxAttempts</code></td><td><code>blocked</code>, with the findings in the note and the report.</td></tr>
         <tr><td>no verdict line, reviewer failed, asked a question, or timed out</td><td><code>blocked</code>. A reply that does not decide is never an acceptance.</td></tr>

@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from html import escape
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -363,6 +364,7 @@ class TicketStore:
         target = reports_dir / f"{ticket_id}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(self.report(ticket_id), encoding="utf-8")
+        target.with_suffix(".html").write_text(self.report_html(ticket_id, document=True), encoding="utf-8")
         self.con.execute(
             "update tickets set report_path=?, updated_at=? where id=?", (str(target), now(), ticket_id)
         )
@@ -671,6 +673,91 @@ class TicketStore:
         for event in events:
             lines.append(f"| {event['at'][:19]} | {event['kind']} | {event['detail'].replace('|', '/')} |")
         return "\n".join(lines) + "\n"
+
+    REPORT_STYLE = """
+    body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
+           margin: 0; padding: 28px; color: #16181d; background: #f6f7f9; }
+    main { max-width: 820px; margin: 0 auto; background: #fff; border: 1px solid #dfe3ea;
+           border-radius: 12px; padding: 24px 26px; }
+    h1 { font-size: 22px; margin: 0 0 12px; } h2 { font-size: 16px; margin: 22px 0 8px; }
+    h3 { font-size: 14px; margin: 16px 0 6px; } p { margin: 8px 0; }
+    code { background: #eef1f5; border: 1px solid #dfe3ea; border-radius: 5px; padding: 1px 4px; font-size: 12px; }
+    pre { background: #eef1f5; border: 1px solid #dfe3ea; border-radius: 9px; padding: 10px 12px;
+          overflow-x: auto; font-size: 12px; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 8px 0; display: block; overflow-x: auto; }
+    th, td { border-bottom: 1px solid #dfe3ea; padding: 6px 10px; text-align: left; vertical-align: top; }
+    dt { color: #5b6472; float: left; clear: left; width: 130px; } dd { margin: 0 0 4px 140px; word-break: break-all; }
+    .verdict { font-weight: 700; }
+    """
+
+    def report_html(self, ticket_id: str, t3_link: str = "", document: bool = False) -> str:
+        """A self-contained HTML rendering of the report, built from the ticket itself.
+
+        The board inserts the fragment (`document=False`); the release writes the full page next
+        to the markdown so the delivered document reads properly on a phone. Every field is
+        escaped: a ticket title is user input.
+        """
+        ticket = self.get(ticket_id)
+        events = self.events(ticket_id)
+        esc = escape
+        body: list[str] = [f"<h1>{esc(ticket['id'])} · {esc(ticket['title'])}</h1>", "<dl>"]
+        facts = [
+            ("Status", esc(ticket["status"])),
+            ("Project", esc(ticket["project"])),
+            ("Model profile", esc(ticket["model_profile"] or "(default config)")),
+            ("Priority", str(ticket["priority"])),
+            ("Created", esc(ticket["created_at"])),
+            ("Updated", esc(ticket["updated_at"])),
+        ]
+        if ticket["thread_id"]:
+            facts.append(("Thread", f"<code>{esc(ticket['thread_id'])}</code>"))
+        if t3_link:
+            facts.append(("Link", esc(t3_link)))
+        for key, value in facts:
+            body.append(f"<dt>{esc(key)}</dt><dd>{value}</dd>")
+        body.append("</dl>")
+        if ticket["test_cmd"]:
+            body += ["<h2>Test command</h2>", f"<pre><code>{esc(ticket['test_cmd'])}</code></pre>"]
+        if ticket["body"]:
+            body += ["<h2>Description</h2>", f"<p>{esc(ticket['body'])}</p>"]
+        approval = self.approval_state(ticket_id)
+        if approval != "none":
+            body.append(f"<p><strong>Approval</strong>: {esc(approval)}</p>")
+        body += ["<h2>Evidence and notes</h2>", f"<p>{esc(ticket['note'] or 'no evidence note yet')}</p>"]
+        if ticket.get("proof"):
+            body += ["<h3>Test evidence</h3>", f"<pre>{esc(ticket['proof'])}</pre>"]
+        verdict = (ticket.get("verify_verdict") or "").strip()
+        if verdict or ticket.get("verify_attempt"):
+            body += ["<h2>Independent review</h2>", "<dl>"]
+            body.append(f"<dt>Verdict</dt><dd class=\"verdict\">{esc(verdict or 'not decided')}</dd>")
+            if ticket.get("verify_provider") or ticket.get("verify_model"):
+                reviewer = f"{ticket.get('verify_provider') or '?'} / {ticket.get('verify_model') or '?'}"
+                body.append(f"<dt>Reviewer</dt><dd>{esc(reviewer)}</dd>")
+            if ticket.get("verify_thread_id"):
+                body.append(f"<dt>Review thread</dt><dd><code>{esc(ticket['verify_thread_id'])}</code></dd>")
+            body.append(f"<dt>Attempt</dt><dd>{ticket.get('verify_attempt') or 0}</dd>")
+            if ticket.get("verify_finished_at"):
+                body.append(f"<dt>Finished</dt><dd>{esc(ticket['verify_finished_at'])}</dd>")
+            body.append("</dl>")
+            if ticket.get("verify_findings"):
+                body += ["<h3>Findings</h3>", f"<pre>{esc(ticket['verify_findings'])}</pre>"]
+        body += ["<h2>History</h2>", "<table><thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead><tbody>"]
+        for event in events:
+            body.append(
+                f"<tr><td>{esc(event['at'][:19])}</td><td>{esc(event['kind'])}</td>"
+                f"<td>{esc(event['detail'])}</td></tr>"
+            )
+        body += ["</tbody></table>"]
+        fragment = "\n".join(body)
+        if not document:
+            return fragment
+        return (
+            "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+            f"<title>{esc(ticket['id'])} · {esc(ticket['title'])}</title>\n"
+            f"<style>{self.REPORT_STYLE}</style>\n</head>\n<body>\n<main>\n"
+            f"{fragment}\n</main>\n</body>\n</html>\n"
+        )
 
     def events(self, ticket_id: str) -> list[dict]:
         rows = self.con.execute(
