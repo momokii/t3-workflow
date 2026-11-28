@@ -279,6 +279,23 @@ class BoardApiTests(unittest.TestCase):
         self.assertIn("&lt;script&gt;", raw)
         self.assertNotIn("<script>alert(1)</script>", raw)
 
+    def test_the_payload_carries_a_review_label(self) -> None:
+        store = TicketStore(self.db, self.config)
+        store.attach_verifier("T-0001", "rev-1", "run-1", "pi", "m", "base")
+        store.record_verdict("T-0001", "ACCEPT", "ok")
+        store.close()
+        _, raw = self.request("GET", "/api/tickets")
+        ticket = next(item for item in json.loads(raw)["tickets"] if item["id"] == "T-0001")
+        self.assertEqual(ticket["review_label"], "accept · first attempt")
+
+    def test_a_deleted_tickets_html_report_is_served_from_disk(self) -> None:
+        store = TicketStore(self.db, self.config)
+        store.delete("T-0001")           # writes the markdown and the page first
+        store.close()
+        response, raw = self.request("GET", "/api/report/T-0001?format=html")
+        self.assertEqual(response.status, 200)
+        self.assertIn("T-0001", raw)
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)

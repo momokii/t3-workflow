@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
+- **The review label on a card no longer shows a fraction that means nothing.** An acceptance reads
+  `review accept · first attempt`; only a rejection shows the budget (`reject · attempt 1 of 2`). The
+  label is computed once on the server (`review_label`), so the card, the markdown report and the HTML
+  page cannot disagree, and tests cover it.
+- **Old reports still open.** The dialog asks for the HTML page and falls back to the markdown when a
+  ticket predates it (for example a deleted ticket whose page was never written).
+
 - **The markdown and HTML reports drifted.** They enumerated the same fields twice and the HTML page
   was missing the review's start time; both now build from `report_facts()` / `review_facts()`, and the
   `.html` page path has one helper (`report_page_path()`) shared by the store and the bridge.

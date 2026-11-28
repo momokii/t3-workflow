@@ -521,3 +521,30 @@ class HtmlReportTests(unittest.TestCase):
         self.assertTrue(page.startswith("<!doctype html>"))
         self.assertIn("<main>", page)
         self.assertIn("readable", page)
+
+
+class ReviewLabelTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="label-"))
+        self.config = self.tmp / "config.json"
+        self.config.write_text(json.dumps(CONFIG))
+        self.store = TicketStore(self.tmp / "t.sqlite", self.config)
+        self.ticket = self.store.add("x", "/tmp/p", model_profile="fast", status="review")
+
+    def tearDown(self) -> None:
+        self.store.close()
+
+    def test_acceptance_on_the_first_attempt_has_no_denominator(self) -> None:
+        self.store.attach_verifier(self.ticket["id"], "rev", "run", "pi", "m", "base")
+        self.store.record_verdict(self.ticket["id"], "ACCEPT", "ok")
+        self.assertEqual(self.store.review_label(self.store.get(self.ticket["id"])),
+                         "accept · first attempt")
+
+    def test_a_rejection_shows_the_budget(self) -> None:
+        self.store.attach_verifier(self.ticket["id"], "rev", "run", "pi", "m", "base")
+        self.store.record_verdict(self.ticket["id"], "REJECT", "no")
+        self.assertEqual(self.store.review_label(self.store.get(self.ticket["id"])),
+                         "reject · attempt 1 of 2")
+
+    def test_an_unreviewed_ticket_says_so(self) -> None:
+        self.assertEqual(self.store.review_label(self.store.get(self.ticket["id"])), "not reviewed")

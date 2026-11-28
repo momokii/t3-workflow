@@ -104,7 +104,7 @@ VERDICT: REJECT
 
 | Outcome | Ticket |
 |---|---|
-| `VERDICT: ACCEPT` | release runs: branch pushed, report written, `done` |
+| `VERDICT: ACCEPT` | release runs: branch pushed, report written, `done`. The card reads `review accept · first attempt`; the budget appears only after a rejection (`reject · attempt 1 of 2`), because a spare attempt is not work left undone |
 | `VERDICT: REJECT`, attempts left | findings are sent into the dev thread and the ticket goes back to `in-progress` |
 | `VERDICT: REJECT` at `verification.maxAttempts` | `blocked`, findings in the note and the report |
 | no verdict line | `blocked` — a reply that does not decide is not an acceptance |
@@ -248,7 +248,9 @@ defaults remove the typing, not the proof.
 
 - **report** on a card opens a reader: the server renders the report as HTML (headings, tables, code,
   findings) and the dialog shows it, with "Open raw markdown" for the original. On `done` a standalone
-  HTML page is written next to the markdown and sent to Telegram as the report document.
+  HTML page is written next to the markdown and sent to Telegram as the report document — that page is
+  the lightweight, proper report; a PDF would only add a renderer. A report written before the page
+  existed (or a ticket deleted before it) still opens: the dialog falls back to the markdown.
 - **thread** opens the thread's details — title, project, status, created time and the raw id — from
   T3's own list, with a copy button. The board mirrors a thread; it does not own it.
 - **Browse…** next to an attachment or a project path opens a folder picker that reads this machine,

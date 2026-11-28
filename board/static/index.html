@@ -417,15 +417,11 @@
     }
     if (t.verify_verdict || t.verify_attempt) {
       const verdict = (t.verify_verdict || 'pending').toLowerCase();
-      const limit = (state.verification && state.verification.maxAttempts) || 2;
       const review = document.createElement('span');
       review.className = 'tag verdict ' + verdict;
-      review.textContent = `review ${verdict}` +
-        (t.verify_attempt ? ` · attempt ${t.verify_attempt} of ${limit}` : '');
-      review.title = t.verify_attempt
-        ? `Independent review: ${verdict}, attempt ${t.verify_attempt} of a budget of ${limit}. ` +
-          'Accepted on the first attempt is normal; the budget is the maximum, not a target.'
-        : 'Independent review: no attempt recorded yet';
+      review.textContent = `review ${t.review_label || verdict}`;
+      review.title = 'Independent review verdict and how many attempts it took; ' +
+        'the budget is a maximum, not a target. Open the report for the findings.';
       meta.appendChild(review);
     }
     if (t.project_missing) {
@@ -777,7 +773,21 @@
       document.getElementById('report-body').innerHTML = await res.text();
       document.getElementById('report-status').textContent = '';
     } catch (err) {
-      document.getElementById('report-status').textContent = 'Could not load the report: ' + (err.message || err);
+      // A report written before the HTML page existed has only markdown; show that rather than
+      // a dead dialog. Same for a ticket deleted before its page was written.
+      try {
+        const res = await fetch(`/api/report/${ticket.id}`, { cache: 'no-store' });
+        if (!res.ok) throw err;
+        const pre = document.createElement('pre');
+        pre.textContent = await res.text();
+        document.getElementById('report-body').innerHTML = '';
+        document.getElementById('report-body').appendChild(pre);
+        document.getElementById('report-status').textContent =
+          'Showing the markdown report: no rendered page exists for this ticket.';
+      } catch {
+        document.getElementById('report-status').textContent =
+          'Could not load the report: ' + (err.message || err);
+      }
     }
   }
 

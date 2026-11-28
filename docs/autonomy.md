@@ -64,6 +64,16 @@ The run caught a real bug that no hermetic test could: the service calls `sync_t
 runner, and that `None` reached `thread_show()`, crashing the watcher. Fixed, with a regression test.
 That is the argument for running the loop on real work before trusting it.
 
+## Report delivery (the "PDF" question)
+
+The report is written twice on `done`: `T-xxxx.md` (canonical) and `T-xxxx.html` (a standalone page with
+the same facts, verdict and history), and Telegram receives the HTML page. That is the lightweight,
+proper report; a PDF would need a renderer this repository does not carry. Reports written before the
+page existed are still readable — the board falls back to the markdown. A browser-driven test for the
+board remains impossible here (AppArmor blocks the sandbox), and deleting a ticket cannot delete a T3
+thread: only `t3 project remove --force` deletes threads, which is why that action is project-wide and
+typed-confirmation only.
+
 ## Out of scope for this effort
 
 Pull-request creation (needs `gh` or a token), deploy + rollback (needs a real target), token/cost

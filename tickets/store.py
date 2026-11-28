@@ -353,6 +353,7 @@ class TicketStore:
         """List for HTTP: drop columns that can be large or sensitive."""
         rows = self.list(status)
         for row in rows:
+            row["review_label"] = self.review_label(row)
             row.pop("proof", None)
             row.pop("verify_findings", None)   # reviewer prose is not for a list endpoint
             row.pop("verify_baseline", None)   # internal fingerprint of the tree under review
@@ -645,8 +646,7 @@ class TicketStore:
             facts.append(("Thread", ticket["thread_id"], True))
         return facts
 
-    @staticmethod
-    def review_facts(ticket: dict) -> list[tuple[str, str, bool]]:
+    def review_facts(self, ticket: dict) -> list[tuple[str, str, bool]]:
         verdict = (ticket.get("verify_verdict") or "").strip()
         facts = [("Verdict", verdict or "not decided", True)]
         if ticket.get("verify_provider") or ticket.get("verify_model"):
@@ -657,12 +657,29 @@ class TicketStore:
             ))
         if ticket.get("verify_thread_id"):
             facts.append(("Review thread", ticket["verify_thread_id"], True))
-        facts.append(("Attempt", str(ticket.get("verify_attempt") or 0), False))
+        facts.append(("Attempt", self.review_label(ticket), False))
         if ticket.get("verify_started_at"):
             facts.append(("Started", ticket["verify_started_at"], False))
         if ticket.get("verify_finished_at"):
             facts.append(("Finished", ticket["verify_finished_at"], False))
         return facts
+
+    def review_label(self, ticket: dict) -> str:
+        """One phrase that says what the verdict and the attempt count actually mean."""
+        attempt = int(ticket.get("verify_attempt") or 0)
+        verdict = (ticket.get("verify_verdict") or "").strip()
+        if not attempt and not verdict:
+            return "not reviewed"
+        try:
+            budget = int((load_config(self.config_path).get("verification") or {}).get("maxAttempts", 2) or 2)
+        except TicketError:
+            budget = 2
+        if verdict.upper() == "ACCEPT":
+            # The budget is a maximum, not a target: the denominator is noise on an acceptance.
+            return "accept · first attempt" if attempt <= 1 else f"accept · attempt {attempt}"
+        if verdict:
+            return f"{verdict.lower()} · attempt {max(attempt, 1)} of {budget}"
+        return f"pending · attempt {attempt} of {budget}"
 
     def report(self, ticket_id: str, t3_link: str = "") -> str:
         """Markdown report for a finished (or in-flight) ticket."""

@@ -227,7 +227,7 @@ npm test -- --run</code></pre>
     <table>
       <thead><tr><th>Outcome</th><th>Ticket</th></tr></thead>
       <tbody>
-        <tr><td>ACCEPT</td><td>release runs: branch pushed, report written, <code>done</code>. <code>attempt 1 of 2</code> means accepted on the first try; the second slot is spare budget, not work left.</td></tr>
+        <tr><td>ACCEPT</td><td>release runs: branch pushed, report written, <code>done</code>. The card then reads <code>review accept · first attempt</code>; the budget only appears for a rejection (<code>reject · attempt 1 of 2</code>), because a spare attempt is not work left undone.</td></tr>
         <tr><td>REJECT with attempts left</td><td>findings are sent into the dev thread; ticket returns to <code>in-progress</code>.</td></tr>
         <tr><td>REJECT at <code>maxAttempts</code></td><td><code>blocked</code>, with the findings in the note and the report.</td></tr>
         <tr><td>no verdict line, reviewer failed, asked a question, or timed out</td><td><code>blocked</code>. A reply that does not decide is never an acceptance.</td></tr>
