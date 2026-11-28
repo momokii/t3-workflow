@@ -4,8 +4,8 @@
     "allowChatIds": ["<your-telegram-chat-id>"]
   },
   "t3": {
-    "cli": "/home/kelanach/.local/bin/t3",
-    "dbPath": "/home/kelanach/.t3/userdata/statev2.sqlite",
+    "cli": "/home/you/.local/bin/t3",
+    "dbPath": "/home/you/.t3/userdata/statev2.sqlite",
     "timeoutSeconds": 180
   },
   "bridge": {

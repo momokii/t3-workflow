@@ -4,7 +4,7 @@
 
 [![check](https://github.com/momokii/t3-workflow/actions/workflows/check.yml/badge.svg)](https://github.com/momokii/t3-workflow/actions/workflows/check.yml)
 
-Ticket-driven automation for [T3 Code](https://github.com/): a ticket becomes an agent thread, the thread's work is tested with evidence, and a passing ticket is pushed as its own branch — with a local kanban board and a Telegram bridge to drive it from a phone.
+Ticket-driven automation for [T3 Code](https://github.com/pingdotgg/t3code): a ticket becomes an agent thread, the thread's work is tested with evidence, and a passing ticket is pushed as its own branch — with a local kanban board and a Telegram bridge to drive it from a phone.
 
 ```
 backlog ──► ready ──► in-progress ──► testing ──► review ──► done
@@ -21,6 +21,8 @@ Everything runs on one machine, without a daemon on the target side of T3 and wi
 
 - [What it does](#what-it-does)
 - [Quick start](#quick-start)
+- [Installation](docs/installation.md)
+- [Agent setup](docs/agent-setup.md)
 - [Services](#services)
 - [Commands](#commands)
 - [Configuration](#configuration)
@@ -49,30 +51,44 @@ T3 keeps owning threads and projects; this repository owns the queue, the eviden
 
 ## Quick start
 
-Requirements: Linux, Python 3.12 (standard library only), a running T3 Code server, and `t3` on `PATH`. The Second Brain view additionally needs the brain CLI and read access to its vault; its graph library is vendored, so there is still no build step.
+**T3 Code is required.** `t3-workflow` is an extension of T3 Code: T3 owns projects, threads and
+agents; this repository owns the ticket queue, test/review gates, release step and reports. Install and
+sign in to at least one T3 agent before queueing work. The Second Brain view is optional and needs the
+separate brain CLI and a Markdown vault.
+
+The complete fresh-machine walkthrough — T3 install, project registration, configuration, token,
+systemd, verification and troubleshooting — is [docs/installation.md](docs/installation.md). For an
+agent performing the setup, use [docs/agent-setup.md](docs/agent-setup.md).
 
 ```bash
 git clone https://github.com/momokii/t3-workflow.git
 cd t3-workflow
-
-# 1. configuration (never committed)
-mkdir -p ~/.config/t3-workflow
-cp bridge/config.example.json ~/.config/t3-workflow/config.json   # then edit
-chmod 600 ~/.config/t3-workflow/config.json
-
-# 2. database
-python3 tickets/cli.py init
-
-# 3. checks
 make check
 
-# 4. run by hand
-python3 tickets/cli.py list
-python3 watcher.py --once --dry-run
-python3 board/server.py --host 127.0.0.1 --port 8787
+# configuration: edit t3.cli and t3.dbPath; add a model preset if the CLI will create tickets
+install -d -m 700 ~/.config/t3-workflow
+cp -n config.example.json ~/.config/t3-workflow/config.json
+chmod 600 ~/.config/t3-workflow/config.json
+
+# board token (used by every write and by the Second Brain routes)
+if ! grep -q '^T3_BOARD_TOKEN=' ~/.config/t3-workflow/board.env 2>/dev/null; then
+  (umask 077; printf 'T3_BOARD_TOKEN=%s\n' "$(python3 -c "import secrets; print(secrets.token_hex(16))")" \
+    >> ~/.config/t3-workflow/board.env)
+fi
+
+# database and a loopback smoke test
+python3 tickets/cli.py init
+set -a; . ~/.config/t3-workflow/board.env; set +a
+python3 board/server.py --host 127.0.0.1 --port 8787 --token "$T3_BOARD_TOKEN"
 ```
 
-The Telegram bridge needs a bot token and at least one allowlisted chat id; see [Configuration](#configuration). Without them the bridge exits with a clear message and the rest still works.
+Open `http://127.0.0.1:8787/`, register the T3 project with **Register project** (or `t3 project add
+/absolute/path --title name`), and create a ticket. Run one watcher step only after the catalogue shows
+an enabled model: `python3 watcher.py --once --dry-run`.
+
+The Telegram bridge is optional and has its own config at `~/.config/t3-bridge/config.json`; see
+[Configuration](#configuration) and [docs/installation.md](docs/installation.md#8-optional-telegram-bridge).
+Without it the rest still works.
 
 ## Run it in Docker
 
@@ -96,7 +112,7 @@ Installed as `systemd --user` units. The repository ships the templates and a re
 
 ```bash
 deploy/install.sh --print                          # inspect without writing
-deploy/install.sh --host 100.124.184.116 --port 8787
+deploy/install.sh --host "$(tailscale ip -4 | head -1)" --port 8787
 systemctl --user daemon-reload
 systemctl --user enable --now t3-bridge t3-watcher t3-board t3-backup.timer
 ```
@@ -153,14 +169,14 @@ journalctl --user -u t3-watcher -f
 - **Second Brain** (`/#brain`) is a separate destination: a searchable note list plus an interactive
   graph of `~/brain`, read-only and token-guarded. Desktop splits list and graph; mobile offers List and
   Graph tabs. The list is the keyboard-accessible text alternative to the canvas. See
-  [docs/second-brain.md](docs/second-brain.md).
+  [docs/second-brain.md](docs/second-brain.md#setup).
 
 ### From the terminal
 
 ```bash
 python3 tickets/cli.py init
 python3 tickets/cli.py profiles
-python3 tickets/cli.py add "Title" --project t3-workflow --profile fast --test "make check"
+python3 tickets/cli.py add "Title" --project t3-workflow --profile agent --test "make check"
 python3 tickets/cli.py list [--status ready]
 python3 tickets/cli.py show T-0001
 python3 tickets/cli.py move T-0001 ready [--note "..."] [--force]
@@ -175,24 +191,26 @@ make selftest      # bridge config check + model profiles
 make dry-run       # one watcher step, no side effects
 ```
 
+The template starts with no model presets. Add one from the board's harness/model picker or
+`GET /api/catalog` before using `--profile agent`.
+
 ## Configuration
 
-`~/.config/t3-workflow/config.json`, mode `600`. `bridge/config.example.json` documents the Telegram side.
+`~/.config/t3-workflow/config.json`, mode `600`. Start from [`config.example.json`](config.example.json);
+`bridge/config.example.json` documents the separate Telegram bridge config at
+`~/.config/t3-bridge/config.json`. Replace the example paths and model values with values from your T3
+installation; the values below are illustrative.
 
 ```json
 {
   "models": {
-    "fast":  { "provider": "pi", "model": "opencode-go/deepseek-v4.1-flash",
-               "options": [{ "id": "thinking", "value": "max" }] },
-    "deep":  { "provider": "pi", "model": "opencode-go/qwen3.8-max" },
-    "cheap": { "provider": "pi", "model": "opencode-go/claude-haiku-5-5" },
-    "build": { "provider": "opencode", "model": "opencode/big-pickle" }
+    "agent": { "provider": "your-provider-instance-id", "model": "your-model-slug" }
   },
-  "defaults": { "profile": "fast" },
+  "defaults": { "profile": "agent" },
   "watcher": { "enabled": true, "intervalSeconds": 120, "maxConcurrent": 1, "worker": "watcher" },
   "limits":  { "maxInProgressMinutes": 180 },
   "release": { "enabled": true, "remote": "origin", "mode": "branch", "baseBranch": "main" },
-  "t3":      { "cli": "/home/kelanach/.local/bin/t3", "dbPath": "/home/kelanach/.t3/userdata/statev2.sqlite" }
+  "t3":      { "cli": "/home/you/.local/bin/t3", "dbPath": "/home/you/.t3/userdata/statev2.sqlite" }
 }
 ```
 
@@ -279,7 +297,10 @@ Full runbook — pause, rotate the board token, restore a backup, read a failure
   traversal and symlinks.
 - **The release stage never pushes the base branch** and refuses a ticket without passing proof.
 - **`test_cmd` runs through a shell** in the project directory. Ticket creation is gated by the allowlist, so the blast radius is "the owner's own account", but a hijacked Telegram session becomes code execution as this user. Keep the bot token private and review tickets before moving them to `ready`.
-- **No Python dependencies**: the attack surface is the standard library plus the T3 CLI. The browser side vendors one MIT graph library, `board/static/vendor/cytoscape.min.js`, served from this repository rather than a CDN; it is not a runtime service.
+- **No Python dependencies**: the attack surface is the standard library plus the T3 CLI. T3 Code is a
+  required external service; the board only reads its SQLite state.
+- **T3 is the source of truth.** Do not point the workflow at a T3 database from a different user or a
+  different T3 data directory; the CLI and the board must agree on the running server. The browser side vendors one MIT graph library, `board/static/vendor/cytoscape.min.js`, served from this repository rather than a CDN; it is not a runtime service.
 
 ## Testing
 
@@ -305,6 +326,7 @@ T3_INTEGRATION=1 python3 -m unittest tests.test_integration_t3 -v
 ```
 board/          kanban HTTP server and single-page UI (no build step)
 deploy/         systemd unit templates, install.sh, docker/ (smoke test, .env example)
+config.example.json  safe starting configuration; edit the T3 paths and model values
 Dockerfile      python:3.12-slim plus git, openssh-client, libatomic1 (for the T3 CLI)
 docker-compose.yml  board by default, bridge and watcher under the "automation" profile
 bridge/         Telegram ⇄ T3 bridge, example config, tests
@@ -320,11 +342,13 @@ docs/           architecture, API, operations
 | File | Purpose |
 |---|---|
 | [README.md](README.md) | this file: usage and configuration |
+| [docs/installation.md](docs/installation.md) | fresh-machine install: T3, config, token, services, optional components |
+| [docs/agent-setup.md](docs/agent-setup.md) | agent-executable setup contract, checkpoints and completion report |
 | [docs/architecture.md](docs/architecture.md) | components, data model, state machine, sequences |
 | [docs/usage.md](docs/usage.md) | how to use it, which workflow to pick, model and priority guidance, FAQ |
 | [docs/handoff-template.md](docs/handoff-template.md) | how to hand work to another thread without losing state |
 | [docs/api.md](docs/api.md) | board HTTP API with payloads and curl examples |
-| [docs/second-brain.md](docs/second-brain.md) | the read-only vault view: data seam, path validation, graph behaviour, limits |
+| [docs/second-brain.md](docs/second-brain.md) | the read-only vault view: setup, data seam, path validation, graph behaviour, limits |
 | [docs/operations.md](docs/operations.md) | runbook: services, backup/restore, incidents, troubleshooting |
 | [docs/docker.md](docs/docker.md) | container deployment: mounts, host networking, verification, troubleshooting |
 | [RESEARCH.md](RESEARCH.md) | why the design looks like this, with the measured facts behind it |

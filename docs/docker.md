@@ -119,6 +119,43 @@ systemctl --user enable --now t3-bridge t3-watcher t3-board
 Running both would be two pollers on one Telegram bot (`getUpdates` returns a conflict) and two
 watchers competing for tickets — the claim protects the data, but the noise is pointless.
 
+## Second Brain (optional)
+
+The shipped compose file does not mount a brain vault. If you enable the read-only vault view, mount
+the vault and its CLI at the **same absolute paths** the board uses, and add them to
+`~/.config/t3-workflow/board.env`:
+
+```bash
+# board.env, using absolute host paths
+BRAIN_VAULT=/home/you/brain
+BRAIN_BIN=/home/you/brain/bin/brain
+```
+
+Then add the read-only bind mounts to the board service (for example through
+`docker-compose.override.yml`):
+
+```yaml
+services:
+  board:
+    volumes:
+      - /home/you/brain:/home/you/brain:ro
+```
+
+Rebuild/restart the board and verify with the token:
+
+```bash
+docker compose up -d board
+curl -s -o /dev/null -w '%{http_code}\n' \
+  http://127.0.0.1:8787/api/brain/notes          # 401
+curl -fsS -H "X-Board-Token: $T3_BOARD_TOKEN" \
+  http://127.0.0.1:8787/api/brain/notes | head
+```
+
+The CLI must be executable inside the container and be able to read the vault. The image already has
+Python 3.12 and `git`; `t3-brain` itself has no extra package requirements. A `503` means the mount,
+the executable bit or `BRAIN_VAULT` is wrong. The container is read-only for this feature: never mount
+the vault read-write just to make the viewer work.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |

@@ -1,6 +1,6 @@
 # Operations runbook
 
-Day-two operations for the four moving parts. Every command here has been run on the machine this repository was built on.
+Day-two operations for the four moving parts. For a fresh install, start with [installation.md](installation.md); for an agent-driven install, use [agent-setup.md](agent-setup.md). Every command here has been run on the machine this repository was built on.
 
 ## Services at a glance
 

@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format follows [Kee
   Existing board tests stay green.
 - **Docs**: `docs/second-brain.md`, new API sections, a usage section, README security/board notes, the
   operations runbook and a Guide section.
+- **Public installation path.** `docs/installation.md` starts with the required T3 Code install and
+  project registration, then config/token/services/optional Telegram and Second Brain.
+  `docs/agent-setup.md` turns the same path into checkpoints and stop conditions for an agent, and
+  `config.example.json` is a safe, validated starting config.
 
 ### Fixed
 

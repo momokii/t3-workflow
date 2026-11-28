@@ -1,0 +1,29 @@
+{
+  "models": {},
+  "defaults": {},
+  "projects": {},
+  "watcher": {
+    "enabled": true,
+    "intervalSeconds": 120,
+    "maxConcurrent": 1,
+    "worker": "watcher"
+  },
+  "limits": {
+    "maxInProgressMinutes": 180
+  },
+  "release": {
+    "enabled": false,
+    "remote": "origin",
+    "mode": "branch",
+    "baseBranch": "main"
+  },
+  "verification": {
+    "enabled": true,
+    "maxAttempts": 2
+  },
+  "t3": {
+    "cli": "/home/CHANGE_ME/.local/bin/t3",
+    "dbPath": "/home/CHANGE_ME/.t3/userdata/statev2.sqlite",
+    "timeoutSeconds": 180
+  }
+}

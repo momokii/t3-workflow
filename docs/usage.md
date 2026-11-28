@@ -225,7 +225,7 @@ A project can carry its own defaults, so creating a ticket is title + project:
 
 ```json
 "projects": {
-  "t3-workflow": { "test_cmd": "make check", "profile": "fast" }
+  "t3-workflow": { "test_cmd": "make check", "profile": "agent" }
 }
 ```
 
