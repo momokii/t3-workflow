@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import sqlite3
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from project_test import detect_test_command_info  # noqa: E402
 from store import (  # noqa: E402
     CONFIG_PATH,
     DB_PATH,
@@ -28,6 +30,42 @@ from store import (  # noqa: E402
     project_defaults,
     resolve_profile,
 )
+
+
+def project_root(project: str) -> Path | None:
+    """Resolve a project title to its workspace through T3's database (read-only)."""
+    if project.startswith("/"):
+        return Path(project)
+    db = Path(os.environ.get("T3_DB_PATH", Path.home() / ".t3/userdata/statev2.sqlite"))
+    if not db.exists():
+        return None
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+        try:
+            row = con.execute(
+                "select workspace_root from projection_projects"
+                " where deleted_at is null and lower(title)=lower(?)",
+                (project,),
+            ).fetchone()
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return None
+    return Path(row[0]) if row else None
+
+
+def detected_test_command(project: str) -> str:
+    root = project_root(project)
+    if root is None:
+        return ""
+    info = detect_test_command_info(root)
+    if info["needs_setup"]:
+        print(
+            f"detected {info['command'] or info['source']} but it needs setup; pass --test",
+            file=sys.stderr,
+        )
+        return ""
+    return info["command"]
 
 
 def print_ticket(ticket: dict, events: list[dict] | None = None) -> None:
@@ -123,12 +161,13 @@ def main() -> int:
                 print(f"{name}{mark}: {profile.get('provider')} / {profile.get('model')}")
         elif args.command == "add":
             defaults = project_defaults(load_config(Path(args.config)), args.project)
+            test_cmd = args.test_cmd or defaults.get("test_cmd", "") or detected_test_command(args.project)
             ticket = store.add(
                 title=args.title,
                 project=args.project,
                 body=args.body,
                 model_profile=args.profile or defaults.get("profile", ""),
-                test_cmd=args.test_cmd or defaults.get("test_cmd", ""),
+                test_cmd=test_cmd,
                 priority=args.priority,
                 status=args.status,
             )

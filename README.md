@@ -322,6 +322,7 @@ docs/           architecture, API, operations
 | [AGENTS.md](AGENTS.md) | invariants an agent must keep when changing this code |
 | [docs/autonomy.md](docs/autonomy.md) | the autonomous loop: decisions, enforcement, out of scope |
 | [docs/retry-evidence.md](docs/retry-evidence.md) | what a failed run records, and which failures may retry |
+| [docs/test-command-detection.md](docs/test-command-detection.md) | what each project declares as its test command, and which declarations are safe unattended |
 | [CHANGELOG.md](CHANGELOG.md) | released versions |
 
 ## Known limitations

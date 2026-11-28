@@ -42,6 +42,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Detection now refuses a command that cannot run unattended.** A Makefile recipe with Docker or a
+  Python `conftest.py` that reaches for a database marks the command `needs_setup`: the board shows it as
+  a suggestion but leaves the field empty, and `POST /api/tickets` never fills it. Pytest is run through
+  the project's `.venv` when present, a `go.mod` project runs build + vet + test, a `vitest run` script no
+  longer gets a second `--run`, and one `*/tests` directory is reachable. The CLI (`cli.py add`) now uses
+  the same detection. Measured evidence per project: `docs/test-command-detection.md`.
+
 - **A ticket's test command comes from what the project declares.** When nothing is configured or typed,
   the board reads the repository (`Makefile` target `check`/`test`, `go.mod`, a `package.json` test script
   with a single-run flag for vitest, `Cargo.toml`, pytest configuration, a `tests/` directory), fills the

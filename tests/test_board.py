@@ -372,6 +372,26 @@ class BoardApiTests(unittest.TestCase):
         self.assertEqual(response.status, 200, raw)
         self.assertEqual(json.loads(raw)["ticket"]["test_cmd"], "make check")
 
+    def test_a_project_that_needs_setup_is_not_auto_filled(self) -> None:
+        workspace = Path(tempfile.mkdtemp(prefix="needs-setup-"))
+        (workspace / "Makefile").write_text("check:\n\ttrue\n")
+        tests = workspace / "tests"
+        tests.mkdir()
+        (tests / "conftest.py").write_text("DATABASE_URL = 'postgresql://x'\n")
+        con = sqlite3.connect(self.t3_db)
+        con.execute("insert into projection_projects values ('p10','needs-setup','%s',null)" % workspace)
+        con.commit(); con.close()
+        _, raw = self.request("GET", "/api/projects")
+        project = next(item for item in json.loads(raw)["projects"] if item["title"] == "needs-setup")
+        self.assertTrue(project["test_command_needs_setup"])
+        response, raw = self.request(
+            "POST", "/api/tickets",
+            {"title": "one line", "project": "needs-setup", "profile": "fast"},
+            token="secret",
+        )
+        self.assertEqual(response.status, 200, raw)
+        self.assertEqual(json.loads(raw)["ticket"]["test_cmd"], "")
+
     def test_list_tickets(self) -> None:
         response, raw = self.request("GET", "/api/tickets")
         self.assertEqual(response.status, 200)

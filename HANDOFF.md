@@ -56,6 +56,7 @@ treat them as a hint and let `STATE.md` and §9 tell you the truth.
 | The same material as a page, with screenshots | `/guide` on the board (`board/static/guide.html`) |
 | Why the loop is safe to leave alone | `docs/autonomy.md` |
 | What a failed run records, and what may retry | `docs/retry-evidence.md` |
+| What each project declares as its test command | `docs/test-command-detection.md` |
 | Shape of a handoff like this one | `docs/handoff-template.md` |
 
 ## 4. Architecture in one screen

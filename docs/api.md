@@ -295,10 +295,12 @@ project are kept, their reports stay on disk, and their cards show **project mis
 ```
 
 Read from T3's `statev2.sqlite`, `deleted_at is null`, ordered by title. Each entry also carries the
-`test_command` the project declares (`Makefile` target, `go.mod`, `package.json` script, `Cargo.toml`,
-pytest configuration or a `tests/` directory) and its `test_command_source`; a configured
-`projects.<title>.test_cmd` wins and reports `project default`. An omitted `test_cmd` in
-`POST /api/tickets` is filled from the same order (configured default, then detected).
+`test_command` the project declares (`Makefile` target, a `go.mod` build/vet/test chain, a
+`package.json` script, `Cargo.toml`, pytest configuration resolved through the project's `.venv`, or a
+`tests/` directory), its `test_command_source`, and `test_command_needs_setup` when the declaration needs
+a database, Docker, a browser or a watch process. A configured `projects.<title>.test_cmd` wins and
+reports `project default`. An omitted `test_cmd` in `POST /api/tickets` is filled from the same order,
+but never from a command flagged `needs_setup`.
 
 ## GET /api/fs
 

@@ -277,10 +277,16 @@ project declares**, detected by reading the repository (a `Makefile` target `che
 `package.json` scripts, `Cargo.toml`, pytest configuration, or a `tests/` directory). The dialog fills the
 detected command and says where it came from; editing the field wins over all of it.
 
+The detector also marks a command that **needs setup** — a Makefile recipe that starts Docker, a Python
+`conftest.py` that reaches for a database, a browser suite, a watch script. It shows the command as a
+suggestion but does not fill the field, because running it unattended would fail three times and block
+the ticket for the wrong reason; type the command you trust, or put it in `projects.<title>.test_cmd`.
+
 The watcher never invents a command, and never derives one from the ticket text: a model-authored proof
 could be shaped by the model it is meant to judge. A project with nothing declared (a notes vault, for
 instance) still asks, and an empty field blocks the ticket at `testing` with `test_cmd is empty` so it can
-be filled in; that is the only honest outcome when there is nothing to run.
+be filled in; that is the only honest outcome when there is nothing to run. `tickets/cli.py add` uses the
+same order, so a ticket created from the terminal is no worse off than one created on the board.
 
 ## 5. Walkthrough: adopt a running thread
 

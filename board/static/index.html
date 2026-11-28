@@ -757,13 +757,17 @@
     const declared = projectCache.find((item) => item.title === project) || {};
     const command = defaults.test_cmd || declared.test_command || '';
     const source = defaults.test_cmd ? 'project default' : (declared.test_command_source || 'detected');
-    if (command && (!form.test_cmd.value.trim() || form.test_cmd.value === autoTest)) {
+    const needsSetup = !defaults.test_cmd && Boolean(declared.test_command_needs_setup);
+    if (command && !needsSetup && (!form.test_cmd.value.trim() || form.test_cmd.value === autoTest)) {
       form.test_cmd.value = command;
       autoTest = command;
     }
-    document.getElementById('test-source').textContent = command
-      ? `Using ${command} (${source}). Change it if this project needs something else.`
-      : '';
+    document.getElementById('test-source').textContent = !command
+      ? ''
+      : needsSetup
+        ? `Detected ${command} (${source}) but it needs setup (database, Docker or a browser). ` +
+          'Type the command you trust instead of letting the watcher retry it.'
+        : `Using ${command} (${source}). Change it if this project needs something else.`;
     if (defaults.profile && !form.profile.value) {
       form.profile.value = defaults.profile;
       form.profile.dispatchEvent(new Event('change'));

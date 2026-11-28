@@ -154,11 +154,13 @@
     the <strong>watcher</strong> runs on this machine, in the project folder, after the agent thread has
     finished — not inside the thread. Only the exit code is judged.</p>
     <p>The field fills itself from the project: a Configured default wins, otherwise the board reads what the
-    repository declares (<code>Makefile</code> target <code>check</code>/<code>test</code>, <code>go.mod</code>,
-    a <code>package.json</code> test script, <code>Cargo.toml</code>, pytest configuration, a <code>tests/</code>
-    directory) and shows the source. What you type wins. The watcher never invents a command or derives one
-    from the ticket text; a project with nothing declared asks, and an empty field blocks at
-    <code>testing</code> rather than pretending.</p>
+    repository declares (<code>Makefile</code> target <code>check</code>/<code>test</code>, a
+    <code>go.mod</code> build/vet/test chain, a <code>package.json</code> test script, <code>Cargo.toml</code>,
+    pytest configuration through the project's <code>.venv</code>, a <code>tests/</code> directory) and shows
+    the source. What you type wins. A command that needs setup — a database, Docker, a browser, a watch
+    process — is shown as a suggestion but not filled. The watcher never invents a command or derives one from
+    the ticket text; a project with nothing declared asks, and an empty field blocks at <code>testing</code>
+    rather than pretending.</p>
     <table>
       <thead><tr><th>Exit code</th><th>What happens</th></tr></thead>
       <tbody>

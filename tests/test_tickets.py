@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sqlite3
 import os
 import subprocess
 import sys
@@ -162,6 +163,30 @@ class CliAddTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("make check", proc.stdout)
         self.assertIn("deep", proc.stdout)
+
+
+class CliDetectionTests(unittest.TestCase):
+    def test_add_reads_the_projects_declared_test_command(self) -> None:
+        tmp = Path(tempfile.mkdtemp(prefix="cli-detect-"))
+        project = tmp / "project"
+        project.mkdir()
+        (project / "Makefile").write_text("check:\n\ttrue\n")
+        t3db = tmp / "t3.sqlite"
+        con = sqlite3.connect(t3db)
+        con.execute("create table projection_projects"
+                    " (project_id text, title text, workspace_root text, deleted_at text)")
+        con.execute("insert into projection_projects values ('p1','demo',?,null)", (str(project),))
+        con.commit(); con.close()
+        config = tmp / "config.json"
+        config.write_text(json.dumps(CONFIG))
+        env = dict(os.environ, T3_DB_PATH=str(t3db))
+        proc = subprocess.run(
+            [sys.executable, str(ROOT / "tickets/cli.py"), "--db", str(tmp / "t.sqlite"),
+             "--config", str(config), "add", "one line", "--project", "demo"],
+            capture_output=True, text=True, timeout=30, env=env,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("make check", proc.stdout)
 
 
 class CliShowTests(unittest.TestCase):
